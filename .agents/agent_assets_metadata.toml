@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "OjapuJfvsMAeJTvaQ-zZ2"
+uri = "file://lifegrid-beta-stress-test.md"
+type = "text"
+title = "LifeGrid Beta Stress Test Report"

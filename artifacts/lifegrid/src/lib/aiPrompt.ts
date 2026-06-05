@@ -350,8 +350,13 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
   const raw = input.trim();
   if (!raw) throw new Error('Nothing pasted. Copy the full AI response and paste it here.');
 
-  // Strip markdown code fences (handles ```json, ```JSON, plain ```, with or without newlines)
+  // Normalize typographic/curly quotes → straight ASCII quotes.
+  // iPhone and some desktop apps silently replace " with " " and ' with ' '
+  // when copying from ChatGPT, breaking JSON.parse every time.
   let s = raw
+    .replace(/[\u201C\u201D]/g, '"')   // " " → "
+    .replace(/[\u2018\u2019]/g, "'")   // ' ' → '
+    // Strip markdown code fences (handles ```json, ```JSON, plain ```, with or without newlines)
     .replace(/```(?:json|JSON)?\s*/g, '')
     .replace(/```\s*/g, '')
     .trim();

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, CheckSquare, Users, Cpu } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Cpu, Settings } from 'lucide-react';
 
 interface BottomNavProps {
   currentTab: string;
@@ -12,6 +12,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onChange }) =>
     { id: 'tasks',  label: 'Tasks',  icon: CheckSquare },
     { id: 'people', label: 'People', icon: Users },
     { id: 'ai',     label: 'AI',     icon: Cpu },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (

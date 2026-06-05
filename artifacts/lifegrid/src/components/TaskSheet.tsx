@@ -1,17 +1,19 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
-import { Task, TaskPriority, TaskStatus } from '../types';
-
-const CATEGORIES = ['work', 'personal', 'health', 'travel', 'family', 'other'];
+import { Task } from '../types';
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -21,6 +23,7 @@ const schema = z.object({
   owner: z.string().min(1),
   nextAction: z.string().nullable(),
   notes: z.string().nullable(),
+  schedulingNotes: z.string().nullable(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']),
 });
 
@@ -33,19 +36,16 @@ interface TaskSheetProps {
 }
 
 export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialData }) => {
-  const { addTask, updateTask, deleteTask } = useAppData();
+  const { addTask, updateTask, deleteTask, categories } = useAppData();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const defaultCat = categories.find(c => c.id === 'personal')?.id ?? categories[0]?.id ?? 'personal';
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
-      name: '',
-      category: 'personal',
-      dueDate: '',
-      status: 'todo',
-      owner: 'Me',
-      nextAction: '',
-      notes: '',
-      priority: 'medium',
+      name: '', category: defaultCat, dueDate: '', status: 'todo',
+      owner: 'Me', nextAction: '', notes: '', schedulingNotes: '', priority: 'medium',
     },
   });
 
@@ -60,22 +60,18 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
           owner: initialData.owner,
           nextAction: initialData.nextAction || '',
           notes: initialData.notes || '',
+          schedulingNotes: initialData.schedulingNotes || '',
           priority: initialData.priority,
         });
       } else {
         form.reset({
-          name: '',
-          category: 'personal',
-          dueDate: '',
-          status: 'todo',
-          owner: 'Me',
-          nextAction: '',
-          notes: '',
-          priority: 'medium',
+          name: '', category: defaultCat, dueDate: '', status: 'todo',
+          owner: 'Me', nextAction: '', notes: '', schedulingNotes: '', priority: 'medium',
         });
       }
     }
-  }, [isOpen, initialData, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialData]);
 
   const onSubmit = (data: FormData) => {
     const payload = {
@@ -83,15 +79,12 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
       dueDate: data.dueDate || null,
       nextAction: data.nextAction || null,
       notes: data.notes || null,
+      schedulingNotes: data.schedulingNotes || null,
     };
-
     if (initialData) {
       updateTask(initialData.id, payload);
     } else {
-      addTask({
-        id: crypto.randomUUID(),
-        ...payload,
-      });
+      addTask({ id: crypto.randomUUID(), ...payload });
     }
     onClose();
   };
@@ -111,9 +104,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Task Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="What needs to be done?" {...field} />
-                  </FormControl>
+                  <FormControl><Input placeholder="What needs to be done?" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -126,10 +117,8 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="todo">To Do</SelectItem>
                         <SelectItem value="in-progress">In Progress</SelectItem>
@@ -141,17 +130,14 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="priority"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Priority</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
                         <SelectItem value="low">Low</SelectItem>
                         <SelectItem value="medium">Medium</SelectItem>
@@ -172,27 +158,27 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Due Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} value={field.value || ''} />
-                    </FormControl>
+                    <FormControl><Input type="date" {...field} value={field.value || ''} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="category"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        {CATEGORIES.map(c => (
-                          <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>
+                        {categories.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                              {c.label}
+                            </span>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -208,9 +194,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Owner</FormLabel>
-                  <FormControl>
-                    <Input {...field} />
-                  </FormControl>
+                  <FormControl><Input {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -222,9 +206,28 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Next Action</FormLabel>
+                  <FormControl><Input placeholder="Smallest next step..." {...field} value={field.value || ''} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="schedulingNotes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Scheduling Notes &amp; Dependencies</FormLabel>
                   <FormControl>
-                    <Input placeholder="Smallest next step..." {...field} value={field.value || ''} />
+                    <Textarea
+                      placeholder="e.g. needs 2 hrs focus, must be before the trip, depends on permits, can only be done on a day off..."
+                      {...field}
+                      value={field.value || ''}
+                    />
                   </FormControl>
+                  <FormDescription>
+                    Constraints &amp; dependencies the AI uses when suggesting when to schedule this.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -236,9 +239,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Context..." {...field} value={field.value || ''} />
-                  </FormControl>
+                  <FormControl><Textarea placeholder="Context..." {...field} value={field.value || ''} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -247,12 +248,27 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
             <div className="flex flex-col gap-2 pt-4">
               <Button type="submit" className="w-full">Save Task</Button>
               {initialData && (
-                <Button type="button" variant="destructive" onClick={() => {
-                  deleteTask(initialData.id);
-                  onClose();
-                }}>
-                  Delete Task
-                </Button>
+                <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" variant="destructive">Delete Task</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete "{initialData.name}"?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This permanently removes the task from this calendar. This can't be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => { deleteTask(initialData.id); setConfirmDelete(false); onClose(); }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           </form>

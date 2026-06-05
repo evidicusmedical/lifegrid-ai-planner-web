@@ -8,6 +8,7 @@ import { GridView } from './pages/GridView';
 import { TasksView } from './pages/TasksView';
 import { PeopleView } from './pages/PeopleView';
 import { AIView } from './pages/AIView';
+import { SettingsView } from './pages/SettingsView';
 
 function AppContent() {
   const [tab, setTab] = useState('grid');
@@ -19,6 +20,7 @@ function AppContent() {
         {tab === 'tasks'  && <TasksView />}
         {tab === 'people' && <PeopleView />}
         {tab === 'ai'     && <AIView />}
+        {tab === 'settings' && <SettingsView />}
       </main>
       <BottomNav currentTab={tab} onChange={setTab} />
     </div>

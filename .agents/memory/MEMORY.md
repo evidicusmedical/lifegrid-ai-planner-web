@@ -1,1 +1,1 @@
-- [LifeGrid sample data versioning](lifegrid-data-versioning.md) — bump CURRENT_VERSION in AppDataContext.tsx to force re-seed on load
+- [LifeGrid build & export gotchas](lifegrid-build-config.md) — `vite build` needs PORT+BASE_PATH set; PNG export must use html-to-image (html2canvas can't parse modern hsl colors).

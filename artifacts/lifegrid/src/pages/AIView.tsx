@@ -6,47 +6,64 @@ import {
   generateOnboardingPrompt,
   parseAIUpdate,
   ParsedUpdate,
+  PromptType,
+  PROMPT_TYPES,
 } from '../lib/aiPrompt';
+import { CATEGORY_COLOR } from '../lib/aiPrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { toISODate } from '../lib/format';
 import {
   Copy, Check, Upload, AlertCircle, CheckCircle2,
   ArrowRight, Plus, PenLine, Trash2,
-  ExternalLink, ChevronRight, RotateCcw,
+  ExternalLink, ChevronRight, RotateCcw, Download, FileUp,
 } from 'lucide-react';
-
-const CATEGORY_COLOR: Record<string, string> = {
-  work: '#2563eb', personal: '#7c3aed', health: '#059669',
-  travel: '#d97706', family: '#dc2626', other: '#6b7280',
-};
 
 type Mode = 'choose' | 'optimize' | 'import' | 'onboard';
 
-// ─── External AI links shown after copying the prompt ────────────────────────
 const AI_LINKS = [
-  { name: 'ChatGPT',  url: 'https://chat.openai.com',  color: '#10a37f' },
-  { name: 'Claude',   url: 'https://claude.ai',         color: '#d97706' },
-  { name: 'Gemini',   url: 'https://gemini.google.com', color: '#4285f4' },
+  { name: 'ChatGPT', url: 'https://chat.openai.com', color: '#10a37f' },
+  { name: 'Claude', url: 'https://claude.ai', color: '#d97706' },
+  { name: 'Gemini', url: 'https://gemini.google.com', color: '#4285f4' },
 ];
+
+const addDays = (d: Date, n: number) => { const c = new Date(d); c.setDate(c.getDate() + n); return c; };
 
 export const AIView = () => {
   const appData = useAppData();
   const hasData = appData.events.length > 0 || appData.tasks.length > 0;
 
-  const [mode, setMode]           = useState<Mode>('choose');
-  const [rawInput, setRawInput]   = useState('');
-  const [prompt, setPrompt]       = useState('');
-  const [copied, setCopied]       = useState(false);
+  const [mode, setMode] = useState<Mode>('choose');
+  const [rawInput, setRawInput] = useState('');
+  const [prompt, setPrompt] = useState('');
+  const [copied, setCopied] = useState(false);
   const [importJson, setImportJson] = useState('');
-  const [preview, setPreview]     = useState<ParsedUpdate | null>(null);
-  const [error, setError]         = useState<string | null>(null);
+  const [preview, setPreview] = useState<ParsedUpdate | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // ── Build & copy prompt ─────────────────────────────────────────────────────
+  // Analyze options
+  const [promptType, setPromptType] = useState<PromptType>('analyze');
+  const [useRange, setUseRange] = useState(false);
+  const [rangeStart, setRangeStart] = useState(toISODate(new Date()));
+  const [rangeEnd, setRangeEnd] = useState(toISODate(addDays(new Date(), 30)));
+
+  // Apply-to-new-version toggle
+  const [applyAsVersion, setApplyAsVersion] = useState(false);
+  const [versionName, setVersionName] = useState('');
+
   const buildPrompt = () => {
-    if (mode === 'optimize') return generatePlanningPrompt(appData);
-    if (mode === 'import')   return generateImportPrompt(rawInput, appData);
-    if (mode === 'onboard')  return generateOnboardingPrompt();
+    if (mode === 'optimize')
+      return generatePlanningPrompt(appData, {
+        promptType,
+        focusStart: useRange ? rangeStart : null,
+        focusEnd: useRange ? rangeEnd : null,
+      });
+    if (mode === 'import') return generateImportPrompt(rawInput, appData);
+    if (mode === 'onboard') return generateOnboardingPrompt(appData);
     return '';
   };
 
@@ -56,6 +73,10 @@ export const AIView = () => {
       toast.error('Paste your schedule data first', { description: 'Add it in Step 1 before generating the prompt.' });
       return;
     }
+    if (useRange && mode === 'optimize' && rangeStart > rangeEnd) {
+      toast.error('Invalid date range', { description: 'The start date must be on or before the end date.' });
+      return;
+    }
     setPrompt(p);
     try {
       await navigator.clipboard.writeText(p);
@@ -63,59 +84,108 @@ export const AIView = () => {
       setTimeout(() => setCopied(false), 3000);
       toast.success('Prompt copied to clipboard', { description: 'Paste it into ChatGPT, Claude, or Gemini.' });
     } catch {
-      toast.error('Clipboard blocked', { description: 'Use the text box below to copy manually.' });
+      toast.error('Clipboard blocked', { description: 'Use the download or text box below instead.' });
     }
   };
 
-  // ── Parse & preview ─────────────────────────────────────────────────────────
+  const handleDownloadPrompt = () => {
+    const p = prompt || buildPrompt();
+    if (!p) { toast.error('Generate the prompt first'); return; }
+    const blob = new Blob([p], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lifegrid-prompt-${mode}-${toISODate(new Date())}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Prompt downloaded', { description: 'Upload the .txt to your AI, or open and copy it.' });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setImportJson(text);
+      setError(null);
+      setPreview(null);
+      setPreview(parseAIUpdate(text, appData.categories));
+      toast.success('File loaded', { description: `${file.name} parsed — review the changes below.` });
+    } catch (err: any) {
+      setError(err.message ?? 'Could not read that file.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
   const handlePreview = () => {
     setError(null);
     setPreview(null);
     try {
       if (!importJson.trim()) throw new Error('Paste the AI response first.');
-      setPreview(parseAIUpdate(importJson));
+      setPreview(parseAIUpdate(importJson, appData.categories));
     } catch (e: any) {
       setError(e.message ?? 'Could not parse the response.');
     }
   };
 
-  // ── Apply ───────────────────────────────────────────────────────────────────
   const handleApply = () => {
     if (!preview) return;
+    if (applyAsVersion && !versionName.trim()) {
+      toast.error('Name the new version', { description: 'Enter a name to save these changes as a separate calendar version.' });
+      return;
+    }
     try {
-      appData.applyImportUpdate(preview);
+      appData.applyImportUpdate(preview, applyAsVersion ? { newVersionName: versionName.trim() } : undefined);
       const add = (preview.events?.add.length ?? 0) + (preview.tasks?.add.length ?? 0);
       const upd = (preview.events?.update.length ?? 0) + (preview.tasks?.update.length ?? 0);
       const del = (preview.events?.delete.length ?? 0) + (preview.tasks?.delete.length ?? 0);
-      toast.success('Schedule updated!', {
+      toast.success(applyAsVersion ? `New version "${versionName.trim()}" created!` : 'Schedule updated!', {
         description: [add && `+${add} added`, upd && `~${upd} updated`, del && `−${del} removed`].filter(Boolean).join('  '),
       });
-      setImportJson(''); setPreview(null); setRawInput(''); setPrompt(''); setMode('choose');
+      reset();
     } catch { setError('Failed to apply — please try again.'); }
   };
 
-  const reset = () => { setMode('choose'); setRawInput(''); setPrompt(''); setImportJson(''); setPreview(null); setError(null); setCopied(false); };
+  const reset = () => {
+    setMode('choose'); setRawInput(''); setPrompt(''); setImportJson('');
+    setPreview(null); setError(null); setCopied(false);
+    setApplyAsVersion(false); setVersionName('');
+  };
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  //  MODE: CHOOSE
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ── Reusable apply-as-version control + diff ──
+  const renderPreviewBlock = () =>
+    preview && (
+      <div className="mt-2 space-y-2">
+        <VersionToggle
+          on={applyAsVersion} setOn={setApplyAsVersion}
+          name={versionName} setName={setVersionName}
+        />
+        <DiffPreview
+          preview={preview}
+          applyLabel={applyAsVersion ? 'Create Version' : undefined}
+          onApply={handleApply}
+          onCancel={() => { setPreview(null); setImportJson(''); setError(null); }}
+        />
+      </div>
+    );
+
+  // ─── MODE: CHOOSE ───────────────────────────────────────────────────────────
   if (mode === 'choose') {
     return (
       <div className="flex flex-col h-full bg-background overflow-y-auto">
         <Header title="AI Planner" subtitle="Works with any AI — ChatGPT, Claude, Gemini, and more" />
 
         <div className="p-4 space-y-3 pb-24">
-
-          {/* How it works — 3-step summary */}
           <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="px-4 py-2.5 border-b border-border bg-muted/30">
               <p className="text-xs font-semibold text-foreground">How it works</p>
             </div>
             <div className="flex items-start p-3 gap-0">
               {[
-                { n: '1', label: 'Copy the prompt from this app' },
-                { n: '2', label: 'Paste into any AI + add your schedule' },
-                { n: '3', label: 'Paste the AI response back here' },
+                { n: '1', label: 'Copy or download the prompt' },
+                { n: '2', label: 'Paste into any AI + your schedule' },
+                { n: '3', label: 'Paste or upload the AI response' },
               ].map((step, i) => (
                 <React.Fragment key={i}>
                   <div className="flex flex-col items-center text-center flex-1 px-1">
@@ -134,7 +204,7 @@ export const AIView = () => {
             <ModeCard
               emoji="🔍"
               title="Analyze my schedule"
-              description="Export your current events and tasks. The AI will spot conflicts, overloaded days, and missing prep work."
+              description="Spot conflicts, free time, balance issues, missing prep — your pick. Optionally scope it to a date range."
               tag="Has existing data"
               tagColor="text-primary bg-primary/10"
               onClick={() => setMode('optimize')}
@@ -161,11 +231,11 @@ export const AIView = () => {
             />
           )}
 
-          {/* Quick paste shortcut */}
+          {/* Quick paste / upload shortcut */}
           <div className="pt-2">
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Already have AI output?</p>
             <div className="bg-card border border-border rounded-xl p-3 space-y-2">
-              <p className="text-xs text-muted-foreground">Skip the flow — paste JSON directly:</p>
+              <p className="text-xs text-muted-foreground">Skip the flow — paste JSON or upload a file:</p>
               <Textarea
                 value={importJson}
                 onChange={e => { setImportJson(e.target.value); setError(null); setPreview(null); }}
@@ -173,15 +243,21 @@ export const AIView = () => {
                 className="font-mono text-[11px] h-28 bg-muted/20 resize-none"
                 data-testid="input-direct-paste"
               />
+              <div className="flex gap-2">
+                <label className="flex-1">
+                  <input type="file" accept=".txt,.json,application/json,text/plain" className="hidden" onChange={handleFileUpload} data-testid="input-file-upload" />
+                  <span className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-[11px] font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer">
+                    <FileUp size={13} /> Upload file
+                  </span>
+                </label>
+                {importJson.trim() && !preview && (
+                  <Button onClick={handlePreview} size="sm" variant="secondary" className="flex-1 gap-2">
+                    <Upload size={13} /> Preview
+                  </Button>
+                )}
+              </div>
               {error && <ErrorBanner message={error} />}
-              {importJson.trim() && !preview && (
-                <Button onClick={handlePreview} size="sm" variant="secondary" className="w-full gap-2">
-                  <Upload size={13} /> Preview Changes
-                </Button>
-              )}
-              {preview && (
-                <DiffPreview preview={preview} onApply={handleApply} onCancel={() => { setPreview(null); setImportJson(''); }} />
-              )}
+              {renderPreviewBlock()}
             </div>
           </div>
         </div>
@@ -189,16 +265,15 @@ export const AIView = () => {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  //  SHARED FLOW (optimize / import / onboard all follow the same 3-step layout)
-  // ─────────────────────────────────────────────────────────────────────────────
+  // ─── SHARED FLOW ────────────────────────────────────────────────────────────
   const modeConfig = {
-    optimize: { title: 'Analyze my schedule',   emoji: '🔍', promptLabel: 'Generate planning prompt' },
-    import:   { title: 'Import a calendar',      emoji: '📥', promptLabel: 'Generate import prompt' },
-    onboard:  { title: 'Build starter schedule', emoji: '✨', promptLabel: 'Generate starter prompt' },
+    optimize: { title: 'Analyze my schedule', emoji: '🔍', promptLabel: 'Generate planning prompt' },
+    import: { title: 'Import a calendar', emoji: '📥', promptLabel: 'Generate import prompt' },
+    onboard: { title: 'Build starter schedule', emoji: '✨', promptLabel: 'Generate starter prompt' },
   }[mode as 'optimize' | 'import' | 'onboard'];
 
   const promptReady = mode === 'import' ? rawInput.trim().length > 0 : true;
+  const responseStep = mode === 'import' ? 3 : 2;
 
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto">
@@ -212,7 +287,56 @@ export const AIView = () => {
 
       <div className="p-4 pb-24 space-y-4">
 
-        {/* ── STEP 1: raw input (import mode only) ── */}
+        {/* ── ANALYZE: prompt-type picker + range ── */}
+        {mode === 'optimize' && (
+          <StepBlock number={1} title="What should the AI focus on?">
+            <div className="grid grid-cols-2 gap-2">
+              {PROMPT_TYPES.map(pt => {
+                const on = promptType === pt.id;
+                return (
+                  <button
+                    key={pt.id}
+                    onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); }}
+                    className={`text-left p-2.5 rounded-lg border transition-all ${
+                      on ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+                    }`}
+                    data-testid={`prompt-type-${pt.id}`}
+                  >
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-sm">{pt.emoji}</span>
+                      <span className="text-xs font-semibold">{pt.title}</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{pt.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="text-xs font-semibold">Limit to a date range</Label>
+                  <p className="text-[10px] text-muted-foreground">Analyze just this window; the rest is sent as context.</p>
+                </div>
+                <Switch checked={useRange} onCheckedChange={(v) => { setUseRange(v); setPrompt(''); setCopied(false); }} data-testid="switch-range" />
+              </div>
+              {useRange && (
+                <div className="grid grid-cols-2 gap-2 mt-2 animate-in fade-in">
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">From</Label>
+                    <Input type="date" value={rangeStart} onChange={e => { setRangeStart(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-start" />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] text-muted-foreground">To</Label>
+                    <Input type="date" value={rangeEnd} onChange={e => { setRangeEnd(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-end" />
+                  </div>
+                </div>
+              )}
+            </div>
+          </StepBlock>
+        )}
+
+        {/* ── IMPORT: raw input ── */}
         {mode === 'import' && (
           <StepBlock number={1} title="Paste your raw schedule data">
             <p className="text-xs text-muted-foreground mb-2 leading-relaxed">
@@ -229,38 +353,38 @@ export const AIView = () => {
           </StepBlock>
         )}
 
-        {/* ── STEP 1 (non-import) or STEP 2 (import): generate prompt ── */}
+        {/* ── Generate prompt ── */}
         <StepBlock
-          number={mode === 'import' ? 2 : 1}
-          title="Copy the prompt — paste it into your AI"
+          number={mode === 'optimize' ? 2 : mode === 'import' ? 2 : 1}
+          title="Copy or download the prompt"
         >
           {mode === 'optimize' && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              This generates a structured text prompt containing your entire schedule ({appData.events.length} events, {appData.tasks.length} tasks). Copy it and paste it into ChatGPT, Claude, or any AI of your choice.
+              Generates a prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your entire schedule (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Paste it into any AI.
             </p>
           )}
           {mode === 'import' && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              This wraps your pasted data in a prompt that instructs the AI exactly how to reformat it. Copy and paste it into your AI.
+              This wraps your pasted data in a prompt that tells the AI exactly how to reformat it.
             </p>
           )}
           {mode === 'onboard' && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              This asks the AI to generate a realistic starter schedule. Copy and paste it into any AI assistant.
+              This asks the AI to generate a realistic starter schedule.
             </p>
           )}
 
-          <Button
-            onClick={handleCopyPrompt}
-            disabled={!promptReady}
-            className="w-full gap-2 h-11"
-            data-testid="button-copy-prompt"
-          >
+          <Button onClick={handleCopyPrompt} disabled={!promptReady} className="w-full gap-2 h-11" data-testid="button-copy-prompt">
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? 'Copied!' : modeConfig.promptLabel}
           </Button>
 
-          {/* Open in AI links */}
+          {prompt && (
+            <Button onClick={handleDownloadPrompt} variant="outline" className="w-full gap-2 mt-2 h-10" data-testid="button-download-prompt">
+              <Download size={14} /> Download as .txt
+            </Button>
+          )}
+
           {prompt && (
             <div className="mt-3 space-y-2">
               <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Open an AI assistant ↗</p>
@@ -280,14 +404,13 @@ export const AIView = () => {
                 ))}
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Paste the copied prompt, let the AI respond, then come back and paste the response in Step {mode === 'import' ? 3 : 2} below.
+                Paste the prompt, let the AI respond, then paste/upload the response in Step {responseStep} below.
               </p>
 
-              {/* Prompt preview — collapsible */}
               <details className="group">
                 <summary className="text-[10px] font-semibold text-primary cursor-pointer list-none flex items-center gap-1">
                   <ChevronRight size={10} className="group-open:rotate-90 transition-transform" />
-                  Preview prompt text
+                  Preview prompt text ({prompt.length.toLocaleString()} chars)
                 </summary>
                 <div className="mt-2 relative">
                   <pre className="text-[9px] font-mono bg-muted/30 rounded-lg p-3 max-h-52 overflow-y-auto whitespace-pre-wrap text-muted-foreground leading-relaxed">{prompt}</pre>
@@ -304,14 +427,11 @@ export const AIView = () => {
           )}
         </StepBlock>
 
-        {/* ── STEP 2 (non-import) or STEP 3 (import): paste AI response ── */}
+        {/* ── Paste/upload AI response ── */}
         {prompt && (
-          <StepBlock
-            number={mode === 'import' ? 3 : 2}
-            title="Paste the AI response here"
-          >
+          <StepBlock number={responseStep} title="Paste or upload the AI response">
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              Copy the <strong className="text-foreground">entire response</strong> from the AI and paste it below. The app automatically extracts the JSON — even if it's surrounded by explanation text or wrapped in code blocks.
+              Copy the <strong className="text-foreground">entire response</strong> from the AI and paste it below, or upload a saved file. The app extracts the JSON automatically.
             </p>
             <Textarea
               value={importJson}
@@ -320,21 +440,21 @@ export const AIView = () => {
               className="font-mono text-[11px] h-44 bg-muted/20 resize-none"
               data-testid="input-ai-response"
             />
+            <div className="flex gap-2 mt-2">
+              <label className="flex-1">
+                <input type="file" accept=".txt,.json,application/json,text/plain" className="hidden" onChange={handleFileUpload} data-testid="input-file-upload-flow" />
+                <span className="flex items-center justify-center gap-1.5 py-2 rounded-lg border border-border text-[11px] font-semibold text-foreground hover:bg-muted transition-colors cursor-pointer">
+                  <FileUp size={13} /> Upload file
+                </span>
+              </label>
+              {importJson.trim() && !preview && (
+                <Button onClick={handlePreview} variant="secondary" className="flex-1 gap-2" data-testid="button-preview">
+                  <Upload size={14} /> Preview Changes
+                </Button>
+              )}
+            </div>
             {error && <ErrorBanner message={error} />}
-            {importJson.trim() && !preview && (
-              <Button onClick={handlePreview} variant="secondary" className="w-full gap-2 mt-2" data-testid="button-preview">
-                <Upload size={14} /> Preview Changes
-              </Button>
-            )}
-            {preview && (
-              <div className="mt-2">
-                <DiffPreview
-                  preview={preview}
-                  onApply={handleApply}
-                  onCancel={() => { setPreview(null); setImportJson(''); setError(null); }}
-                />
-              </div>
-            )}
+            {renderPreviewBlock()}
           </StepBlock>
         )}
       </div>
@@ -389,6 +509,31 @@ function StepBlock({ number, title, children }: { number: number; title: string;
   );
 }
 
+function VersionToggle({ on, setOn, name, setName }: {
+  on: boolean; setOn: (v: boolean) => void; name: string; setName: (v: string) => void;
+}) {
+  return (
+    <div className="bg-muted/30 border border-border rounded-lg p-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-xs font-semibold">Save as a new version</Label>
+          <p className="text-[10px] text-muted-foreground">Keep your current calendar untouched and apply into a copy.</p>
+        </div>
+        <Switch checked={on} onCheckedChange={setOn} data-testid="switch-version" />
+      </div>
+      {on && (
+        <Input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="New version name (e.g. AI Plan v2)"
+          className="h-9 text-xs mt-2"
+          data-testid="input-version-name"
+        />
+      )}
+    </div>
+  );
+}
+
 function FormatHints() {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -399,17 +544,17 @@ function FormatHints() {
   );
 }
 
-function DiffPreview({ preview, onApply, onCancel }: {
-  preview: ParsedUpdate; onApply: () => void; onCancel: () => void;
+function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
+  preview: ParsedUpdate; onApply: () => void; onCancel: () => void; applyLabel?: string;
 }) {
-  const evtAdd    = preview.events?.add    ?? [];
+  const evtAdd = preview.events?.add ?? [];
   const evtUpdate = preview.events?.update ?? [];
   const evtDelete = preview.events?.delete ?? [];
-  const tskAdd    = preview.tasks?.add     ?? [];
-  const tskUpdate = preview.tasks?.update  ?? [];
-  const tskDelete = preview.tasks?.delete  ?? [];
+  const tskAdd = preview.tasks?.add ?? [];
+  const tskUpdate = preview.tasks?.update ?? [];
+  const tskDelete = preview.tasks?.delete ?? [];
   const total = evtAdd.length + evtUpdate.length + evtDelete.length +
-                tskAdd.length + tskUpdate.length + tskDelete.length;
+    tskAdd.length + tskUpdate.length + tskDelete.length;
 
   return (
     <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2">
@@ -419,12 +564,12 @@ function DiffPreview({ preview, onApply, onCancel }: {
           <span className="text-xs font-semibold">{total} change{total !== 1 ? 's' : ''} ready to apply</span>
         </div>
         <div className="p-3 space-y-1 max-h-60 overflow-y-auto">
-          {evtAdd.map((e, i)    => <DiffRow key={`ea${i}`} op="add"    label={`${e.date} — ${e.title}`} cat={e.category} />)}
+          {evtAdd.map((e, i) => <DiffRow key={`ea${i}`} op="add" label={`${e.date} — ${e.title}`} cat={e.category} />)}
           {evtUpdate.map((e, i) => <DiffRow key={`eu${i}`} op="update" label={`Update: ${(e as any).title ?? e.id}`} />)}
-          {evtDelete.map((id,i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0,20)}`} />)}
-          {tskAdd.map((t, i)    => <DiffRow key={`ta${i}`} op="add"    label={`Task: ${t.name}`} cat={t.category} isTask />)}
+          {evtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0, 20)}`} />)}
+          {tskAdd.map((t, i) => <DiffRow key={`ta${i}`} op="add" label={`Task: ${t.name}`} cat={t.category} isTask />)}
           {tskUpdate.map((t, i) => <DiffRow key={`tu${i}`} op="update" label={`Update task: ${(t as any).name ?? t.id}`} isTask />)}
-          {tskDelete.map((id,i) => <DiffRow key={`td${i}`} op="delete" label={`Remove task: ${String(id).slice(0,20)}`} isTask />)}
+          {tskDelete.map((id, i) => <DiffRow key={`td${i}`} op="delete" label={`Remove task: ${String(id).slice(0, 20)}`} isTask />)}
           {total === 0 && <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>}
         </div>
       </div>
@@ -438,7 +583,7 @@ function DiffPreview({ preview, onApply, onCancel }: {
           data-testid="button-apply"
         >
           <CheckCircle2 size={13} />
-          Apply {total > 0 ? `${total} ` : ''}Change{total !== 1 ? 's' : ''}
+          {applyLabel ?? `Apply ${total > 0 ? `${total} ` : ''}Change${total !== 1 ? 's' : ''}`}
         </Button>
       </div>
     </div>
@@ -448,15 +593,17 @@ function DiffPreview({ preview, onApply, onCancel }: {
 function DiffRow({ op, label, cat, isTask }: {
   op: 'add' | 'update' | 'delete'; label: string; cat?: string; isTask?: boolean;
 }) {
+  const { categories } = useAppData();
+  const color = cat ? (categories.find(c => c.id === cat)?.color ?? CATEGORY_COLOR[cat] ?? '#6b7280') : undefined;
   const styles = {
-    add:    { icon: <Plus size={9} />,    wrap: 'bg-green-500/8 border-green-500/20 dark:bg-green-500/10', icon_: 'text-green-600 dark:text-green-400' },
+    add: { icon: <Plus size={9} />, wrap: 'bg-green-500/8 border-green-500/20 dark:bg-green-500/10', icon_: 'text-green-600 dark:text-green-400' },
     update: { icon: <PenLine size={9} />, wrap: 'bg-amber-500/8 border-amber-500/20 dark:bg-amber-500/10', icon_: 'text-amber-600 dark:text-amber-400' },
-    delete: { icon: <Trash2 size={9} />,  wrap: 'bg-red-500/8 border-red-500/20 dark:bg-red-500/10',     icon_: 'text-red-600 dark:text-red-400' },
+    delete: { icon: <Trash2 size={9} />, wrap: 'bg-red-500/8 border-red-500/20 dark:bg-red-500/10', icon_: 'text-red-600 dark:text-red-400' },
   }[op];
   return (
     <div className={`flex items-center gap-2 px-2 py-1 rounded border text-[11px] ${styles.wrap}`}>
       <span className={styles.icon_}>{styles.icon}</span>
-      {cat && <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: CATEGORY_COLOR[cat] ?? '#6b7280' }} />}
+      {color && <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: color }} />}
       {isTask && !cat && <span className="text-[8px] font-bold bg-muted text-muted-foreground px-1 rounded shrink-0">TASK</span>}
       <span className="truncate font-medium text-foreground">{label}</span>
     </div>

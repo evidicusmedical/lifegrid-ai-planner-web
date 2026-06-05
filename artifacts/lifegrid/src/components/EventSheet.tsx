@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,24 +8,17 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
-import { Event, EventCategory } from '../types';
-
-const CATEGORIES: { label: string; value: EventCategory; color: string }[] = [
-  { label: 'Work', value: 'work', color: '#3b82f6' },
-  { label: 'Personal', value: 'personal', color: '#8b5cf6' },
-  { label: 'Health', value: 'health', color: '#10b981' },
-  { label: 'Travel', value: 'travel', color: '#f59e0b' },
-  { label: 'Family', value: 'family', color: '#ef4444' },
-  { label: 'Other', value: 'other', color: '#6b7280' },
-];
-
-const PRESET_COLORS = CATEGORIES.map(c => c.color);
+import { Event } from '../types';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  category: z.enum(['work', 'personal', 'health', 'travel', 'family', 'other']),
+  category: z.string().min(1),
   startTime: z.string().nullable(),
   endTime: z.string().nullable(),
   color: z.string().min(1),
@@ -42,17 +35,20 @@ interface EventSheetProps {
 }
 
 export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initialData, defaultDate }) => {
-  const { addEvent, updateEvent, deleteEvent } = useAppData();
+  const { addEvent, updateEvent, deleteEvent, categories } = useAppData();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const firstCat = categories[0];
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       title: '',
       date: defaultDate || new Date().toISOString().split('T')[0],
-      category: 'work',
+      category: firstCat?.id ?? 'work',
       startTime: '',
       endTime: '',
-      color: '#3b82f6',
+      color: firstCat?.color ?? '#2563eb',
       notes: '',
     },
   });
@@ -73,15 +69,16 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
         form.reset({
           title: '',
           date: defaultDate || new Date().toISOString().split('T')[0],
-          category: 'work',
+          category: firstCat?.id ?? 'work',
           startTime: '',
           endTime: '',
-          color: '#3b82f6',
+          color: firstCat?.color ?? '#2563eb',
           notes: '',
         });
       }
     }
-  }, [isOpen, initialData, defaultDate, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialData, defaultDate]);
 
   const onSubmit = (data: FormData) => {
     const payload = {
@@ -90,17 +87,15 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       endTime: data.endTime || null,
       notes: data.notes || null,
     };
-
     if (initialData) {
       updateEvent(initialData.id, payload);
     } else {
-      addEvent({
-        id: crypto.randomUUID(),
-        ...payload,
-      });
+      addEvent({ id: crypto.randomUUID(), ...payload });
     }
     onClose();
   };
+
+  const presetColors = categories.map(c => c.color);
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -117,9 +112,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Event title" {...field} />
-                  </FormControl>
+                  <FormControl><Input placeholder="Event title" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -132,9 +125,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
+                    <FormControl><Input type="date" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -146,21 +137,25 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <Select onValueChange={(val) => {
-                      field.onChange(val);
-                      const matched = CATEGORIES.find(c => c.value === val);
-                      if (matched) {
-                        form.setValue('color', matched.color);
-                      }
-                    }} defaultValue={field.value}>
+                    <Select
+                      onValueChange={(val) => {
+                        field.onChange(val);
+                        const matched = categories.find(c => c.id === val);
+                        if (matched) form.setValue('color', matched.color);
+                      }}
+                      value={field.value}
+                    >
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Category" />
-                        </SelectTrigger>
+                        <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {CATEGORIES.map(c => (
-                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        {categories.map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                              {c.label}
+                            </span>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -177,23 +172,18 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Start Time</FormLabel>
-                    <FormControl>
-                      <Input type="time" {...field} value={field.value || ''} />
-                    </FormControl>
+                    <FormControl><Input type="time" {...field} value={field.value || ''} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="endTime"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>End Time</FormLabel>
-                    <FormControl>
-                      <Input type="time" {...field} value={field.value || ''} />
-                    </FormControl>
+                    <FormControl><Input type="time" {...field} value={field.value || ''} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -207,10 +197,10 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                 <FormItem>
                   <FormLabel>Color</FormLabel>
                   <FormControl>
-                    <div className="flex items-center gap-2">
-                      {PRESET_COLORS.map(color => (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {presetColors.map((color, i) => (
                         <button
-                          key={color}
+                          key={`${color}-${i}`}
                           type="button"
                           className={`w-8 h-8 rounded-full border-2 ${field.value === color ? 'border-foreground' : 'border-transparent'}`}
                           style={{ backgroundColor: color }}
@@ -231,9 +221,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Optional details..." {...field} value={field.value || ''} />
-                  </FormControl>
+                  <FormControl><Textarea placeholder="Optional details..." {...field} value={field.value || ''} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -242,12 +230,27 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
             <div className="flex flex-col gap-2 pt-4">
               <Button type="submit" className="w-full">Save Event</Button>
               {initialData && (
-                <Button type="button" variant="destructive" onClick={() => {
-                  deleteEvent(initialData.id);
-                  onClose();
-                }}>
-                  Delete Event
-                </Button>
+                <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" variant="destructive">Delete Event</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete "{initialData.title}"?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This permanently removes the event from this calendar. This can't be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => { deleteEvent(initialData.id); setConfirmDelete(false); onClose(); }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           </form>

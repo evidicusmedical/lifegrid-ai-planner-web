@@ -1,74 +1,93 @@
 import React, { useState, useMemo } from 'react';
 import { useAppData } from '../context/AppDataContext';
-import { Plus } from 'lucide-react';
+import { Plus, Settings2 } from 'lucide-react';
 import { PersonEventSheet } from '../components/PersonEventSheet';
-import { PersonEvent, PersonType } from '../types';
+import { PersonEvent } from '../types';
+import { formatDate } from '../lib/format';
 
 export const PeopleView = () => {
-  const { personEvents } = useAppData();
+  const { personEvents, people } = useAppData();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<PersonEvent | null>(null);
-  const [defaultPerson, setDefaultPerson] = useState<PersonType>('wife');
+  const [defaultPerson, setDefaultPerson] = useState<string>(people[0]?.id ?? 'wife');
 
   const grouped = useMemo(() => {
-    const wife = personEvents.filter(e => e.person === 'wife').sort((a, b) => a.date.localeCompare(b.date));
-    const shared = personEvents.filter(e => e.person === 'shared').sort((a, b) => a.date.localeCompare(b.date));
-    return { wife, shared };
-  }, [personEvents]);
+    const map = new Map<string, PersonEvent[]>();
+    people.forEach(p => map.set(p.id, []));
+    personEvents.forEach(e => {
+      const arr = map.get(e.person);
+      if (arr) arr.push(e);
+      else map.set(e.person, [e]);
+    });
+    map.forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
+    return map;
+  }, [personEvents, people]);
 
-  const Section = ({ title, events, type }: { title: string, events: PersonEvent[], type: PersonType }) => (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-foreground">{title}</h2>
-        <button 
-          onClick={() => {
-            setSelectedEvent(null);
-            setDefaultPerson(type);
-            setSheetOpen(true);
-          }}
-          className="p-1.5 bg-muted text-muted-foreground rounded-full hover:text-foreground transition-colors"
-        >
-          <Plus size={18} />
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {events.length === 0 ? (
-          <div className="text-sm text-muted-foreground italic py-2">No entries yet.</div>
-        ) : (
-          events.map(evt => (
-            <div 
-              key={evt.id} 
-              className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={() => {
-                setSelectedEvent(evt);
-                setSheetOpen(true);
-              }}
-            >
-              <div 
-                className="w-1.5 h-10 rounded-full shrink-0" 
-                style={{ backgroundColor: evt.color }}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold text-sm truncate">{evt.title}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{evt.date}</div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
+  const openAdd = (personId: string) => {
+    setSelectedEvent(null);
+    setDefaultPerson(personId);
+    setSheetOpen(true);
+  };
 
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto">
       <div className="flex-none p-4 pb-2 border-b border-border bg-card sticky top-0 z-10">
         <h1 className="text-xl font-bold tracking-tight">People</h1>
+        <p className="text-xs text-muted-foreground mt-0.5">Track other people's schedules — manage sections in Settings.</p>
       </div>
 
       <div className="p-4 pb-24">
-        <Section title="Wife's Schedule" events={grouped.wife} type="wife" />
-        <Section title="Shared / Together" events={grouped.shared} type="shared" />
+        {people.length === 0 ? (
+          <div className="text-center text-muted-foreground mt-10">
+            <Settings2 className="mx-auto mb-2 opacity-20" size={40} />
+            <p className="text-sm">No people sections yet.</p>
+            <p className="text-xs mt-1">Add people in Settings to track their schedules here.</p>
+          </div>
+        ) : (
+          people.map(person => {
+            const events = grouped.get(person.id) ?? [];
+            return (
+              <div key={person.id} className="mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: person.color }} />
+                    <h2 className="text-lg font-bold text-foreground">{person.label}</h2>
+                  </div>
+                  <button
+                    onClick={() => openAdd(person.id)}
+                    className="p-1.5 bg-muted text-muted-foreground rounded-full hover:text-foreground transition-colors"
+                    data-testid={`add-person-event-${person.id}`}
+                  >
+                    <Plus size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {events.length === 0 ? (
+                    <div className="text-sm text-muted-foreground italic py-2">No entries yet.</div>
+                  ) : (
+                    events.map(evt => (
+                      <div
+                        key={evt.id}
+                        className="flex items-center gap-3 p-3 bg-card border border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors"
+                        onClick={() => { setSelectedEvent(evt); setSheetOpen(true); }}
+                      >
+                        <div className="w-1.5 h-10 rounded-full shrink-0" style={{ backgroundColor: evt.color }} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate">{evt.title}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {formatDate(evt.date)}
+                            {evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ''}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {sheetOpen && (

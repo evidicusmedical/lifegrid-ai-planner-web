@@ -1,4 +1,19 @@
-import { AppData } from '../types';
+import { AppData, Category, Person } from '../types';
+
+// ── Default categories & people (user-editable in Settings) ──────────────────
+export const DEFAULT_CATEGORIES: Category[] = [
+  { id: 'work',     label: 'Work',     color: '#2563eb' },
+  { id: 'personal', label: 'Personal', color: '#7c3aed' },
+  { id: 'health',   label: 'Health',   color: '#059669' },
+  { id: 'travel',   label: 'Travel',   color: '#d97706' },
+  { id: 'family',   label: 'Family',   color: '#dc2626' },
+  { id: 'other',    label: 'Other',    color: '#6b7280' },
+];
+
+export const DEFAULT_PEOPLE: Person[] = [
+  { id: 'wife',   label: "Wife's Schedule", color: '#8b5cf6' },
+  { id: 'shared', label: 'Shared / Together', color: '#dc2626' },
+];
 
 // ── ED shift helper ──────────────────────────────────────────────────────────
 type ShiftType = 'day' | 'midday' | 'mid' | 'evening' | 'night' | 'overnight' | 'early';
@@ -258,6 +273,8 @@ const ED_SHIFTS = [
 ];
 
 export const defaultData: AppData = {
+  categories: DEFAULT_CATEGORIES,
+  people: DEFAULT_PEOPLE,
   events: [
     ...ED_SHIFTS,
 

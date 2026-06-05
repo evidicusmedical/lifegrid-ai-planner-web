@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,13 +8,19 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
 import { PersonEvent, PersonType } from '../types';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
-  person: z.enum(['wife', 'shared']),
+  person: z.string().min(1),
+  startTime: z.string().nullable(),
+  endTime: z.string().nullable(),
   color: z.string().min(1),
   notes: z.string().nullable(),
 });
@@ -29,15 +35,21 @@ interface PersonEventSheetProps {
 }
 
 export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onClose, initialData, defaultPerson }) => {
-  const { addPersonEvent, updatePersonEvent, deletePersonEvent } = useAppData();
+  const { addPersonEvent, updatePersonEvent, deletePersonEvent, people } = useAppData();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const resolvePerson = (id?: string) => people.find(p => p.id === id) ?? people[0];
+  const initialPerson = resolvePerson(defaultPerson);
 
   const form = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       title: '',
       date: new Date().toISOString().split('T')[0],
-      person: defaultPerson || 'wife',
-      color: defaultPerson === 'wife' ? '#8b5cf6' : '#ef4444',
+      person: initialPerson?.id ?? 'wife',
+      startTime: '',
+      endTime: '',
+      color: initialPerson?.color ?? '#8b5cf6',
       notes: '',
     },
   });
@@ -49,34 +61,38 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
           title: initialData.title,
           date: initialData.date,
           person: initialData.person,
+          startTime: initialData.startTime || '',
+          endTime: initialData.endTime || '',
           color: initialData.color,
           notes: initialData.notes || '',
         });
       } else {
+        const p = resolvePerson(defaultPerson);
         form.reset({
           title: '',
           date: new Date().toISOString().split('T')[0],
-          person: defaultPerson || 'wife',
-          color: defaultPerson === 'wife' ? '#8b5cf6' : '#ef4444',
+          person: p?.id ?? 'wife',
+          startTime: '',
+          endTime: '',
+          color: p?.color ?? '#8b5cf6',
           notes: '',
         });
       }
     }
-  }, [isOpen, initialData, defaultPerson, form]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialData, defaultPerson]);
 
   const onSubmit = (data: FormData) => {
     const payload = {
       ...data,
+      startTime: data.startTime || null,
+      endTime: data.endTime || null,
       notes: data.notes || null,
     };
-
     if (initialData) {
       updatePersonEvent(initialData.id, payload);
     } else {
-      addPersonEvent({
-        id: crypto.randomUUID(),
-        ...payload,
-      });
+      addPersonEvent({ id: crypto.randomUUID(), ...payload });
     }
     onClose();
   };
@@ -96,9 +112,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Title</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Event title" {...field} />
-                  </FormControl>
+                  <FormControl><Input placeholder="Event title" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -111,29 +125,62 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
+                    <FormControl><Input type="date" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-
               <FormField
                 control={form.control}
                 name="person"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Section</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!!initialData || !!defaultPerson}>
-                      <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                      </FormControl>
+                    <Select
+                      onValueChange={(val) => {
+                        field.onChange(val);
+                        const matched = people.find(p => p.id === val);
+                        if (matched) form.setValue('color', matched.color);
+                      }}
+                      value={field.value}
+                    >
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                       <SelectContent>
-                        <SelectItem value="wife">Wife's Schedule</SelectItem>
-                        <SelectItem value="shared">Shared</SelectItem>
+                        {people.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                              {p.label}
+                            </span>
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="startTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Start Time</FormLabel>
+                    <FormControl><Input type="time" {...field} value={field.value || ''} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="endTime"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>End Time</FormLabel>
+                    <FormControl><Input type="time" {...field} value={field.value || ''} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -146,9 +193,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Color</FormLabel>
-                  <FormControl>
-                    <Input type="color" className="w-full h-10 p-1" {...field} />
-                  </FormControl>
+                  <FormControl><Input type="color" className="w-full h-10 p-1" {...field} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -160,9 +205,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <Textarea placeholder="Context..." {...field} value={field.value || ''} />
-                  </FormControl>
+                  <FormControl><Textarea placeholder="Context..." {...field} value={field.value || ''} /></FormControl>
                   <FormMessage />
                 </FormItem>
               )}
@@ -171,12 +214,27 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
             <div className="flex flex-col gap-2 pt-4">
               <Button type="submit" className="w-full">Save Entry</Button>
               {initialData && (
-                <Button type="button" variant="destructive" onClick={() => {
-                  deletePersonEvent(initialData.id);
-                  onClose();
-                }}>
-                  Delete Entry
-                </Button>
+                <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" variant="destructive">Delete Entry</Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete "{initialData.title}"?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This permanently removes the entry. This can't be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => { deletePersonEvent(initialData.id); setConfirmDelete(false); onClose(); }}
+                      >
+                        Delete
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
           </form>

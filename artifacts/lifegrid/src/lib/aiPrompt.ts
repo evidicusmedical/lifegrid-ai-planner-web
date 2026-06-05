@@ -280,6 +280,29 @@ END OF SOURCE DATA
 ${schemaReference(existingData.categories)}`;
 };
 
+// ─── 2b. IMAGE IMPORT PROMPT — read attached photos/screenshots into app JSON ─
+export const generateImagePrompt = (existingData: AppData): string => {
+  const hasExisting = existingData.events.length > 0 || existingData.tasks.length > 0;
+  const takenDates  = [...new Set(existingData.events.map(e => e.date))].slice(0, 20).join(', ');
+  const catGuide = existingData.categories.map(c => `  "${c.id}" (${c.label})`).join('\n');
+
+  return `I am going to ATTACH one or more images to this chat — screenshots or photos of my schedule (phone calendar screenshots, a photo of a paper planner, a printed timetable, a whiteboard, an email, etc.).
+
+Carefully read EVERY image I attach. Extract every event, appointment, meeting, class, shift, trip, and task you can see — including the date, day of week, start/end times, and titles. If a time or date is partially visible or ambiguous, make your best reasonable guess and keep going.
+
+Then return the result in the exact JSON format specified at the end of this message so it can be imported into a scheduling app. Today is ${today()}.
+${hasExisting ? `
+IMPORTANT — avoid duplicates:
+The app already has events on these dates: ${takenDates || 'none'}
+Do not add events that clearly already exist on those dates.
+` : ''}
+Use ONLY these category ids:
+${catGuide}
+
+⬇️ After you read this message, I will attach the image(s). Wait for them, read them, then reply with ONLY the JSON.
+${schemaReference(existingData.categories)}`;
+};
+
 // ─── 3. ONBOARDING PROMPT — generate a realistic starter schedule ─────────────
 export const generateOnboardingPrompt = (data: AppData): string => `Generate a realistic starter schedule and return it as the JSON format specified below so it can be imported into a scheduling app. Today is ${today()}.
 

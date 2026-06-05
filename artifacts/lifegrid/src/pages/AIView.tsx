@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import {
   generatePlanningPrompt,
   generateImportPrompt,
+  generateImagePrompt,
   generateOnboardingPrompt,
   parseAIUpdate,
   ParsedUpdate,
@@ -24,6 +25,28 @@ import {
 } from 'lucide-react';
 
 type Mode = 'choose' | 'optimize' | 'import' | 'onboard';
+type ImportSource = 'text' | 'image';
+
+// Persist the in-progress AI exchange so switching to ChatGPT/Claude and back
+// (which reloads the Safari tab on iPhone) does not wipe the prompt or the
+// response the user is mid-way through pasting.
+const DRAFT_KEY = 'lifegrid_ai_draft_v1';
+const DRAFT_TTL_MS = 72 * 60 * 60 * 1000; // forget half-finished exchanges after 3 days
+interface Draft {
+  mode: Mode; rawInput: string; prompt: string; importJson: string;
+  promptType: PromptType; useRange: boolean; rangeStart: string; rangeEnd: string;
+  importSource: ImportSource; savedAt: number;
+}
+const loadDraft = (): Partial<Draft> => {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}');
+    if (!d.savedAt || Date.now() - d.savedAt > DRAFT_TTL_MS) {
+      localStorage.removeItem(DRAFT_KEY);
+      return {};
+    }
+    return d;
+  } catch { return {}; }
+};
 
 const AI_LINKS = [
   { name: 'ChatGPT', url: 'https://chat.openai.com', color: '#10a37f' },
@@ -37,23 +60,40 @@ export const AIView = () => {
   const appData = useAppData();
   const hasData = appData.events.length > 0 || appData.tasks.length > 0;
 
-  const [mode, setMode] = useState<Mode>('choose');
-  const [rawInput, setRawInput] = useState('');
-  const [prompt, setPrompt] = useState('');
+  const draft = React.useRef(loadDraft()).current;
+
+  const [mode, setMode] = useState<Mode>(draft.mode ?? 'choose');
+  const [rawInput, setRawInput] = useState(draft.rawInput ?? '');
+  const [prompt, setPrompt] = useState(draft.prompt ?? '');
   const [copied, setCopied] = useState(false);
-  const [importJson, setImportJson] = useState('');
+  const [importJson, setImportJson] = useState(draft.importJson ?? '');
   const [preview, setPreview] = useState<ParsedUpdate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Analyze options
-  const [promptType, setPromptType] = useState<PromptType>('analyze');
-  const [useRange, setUseRange] = useState(false);
-  const [rangeStart, setRangeStart] = useState(toISODate(new Date()));
-  const [rangeEnd, setRangeEnd] = useState(toISODate(addDays(new Date(), 30)));
+  const [promptType, setPromptType] = useState<PromptType>(draft.promptType ?? 'analyze');
+  const [useRange, setUseRange] = useState(draft.useRange ?? false);
+  const [rangeStart, setRangeStart] = useState(draft.rangeStart ?? toISODate(new Date()));
+  const [rangeEnd, setRangeEnd] = useState(draft.rangeEnd ?? toISODate(addDays(new Date(), 30)));
+
+  // Import: text paste vs. photo/screenshot upload to the AI
+  const [importSource, setImportSource] = useState<ImportSource>(draft.importSource ?? 'text');
 
   // Apply-to-new-version toggle
   const [applyAsVersion, setApplyAsVersion] = useState(false);
   const [versionName, setVersionName] = useState('');
+
+  // Keep the draft in sync so an app-switch on mobile never loses progress.
+  // Only persist once there's real work in flight — keeps storage clean and
+  // makes "clear draft" semantics exact.
+  useEffect(() => {
+    const hasWork = mode !== 'choose' || rawInput.trim() || prompt || importJson.trim();
+    try {
+      if (!hasWork) { localStorage.removeItem(DRAFT_KEY); return; }
+      const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, importSource, savedAt: Date.now() };
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    } catch { /* quota */ }
+  }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, importSource]);
 
   const buildPrompt = () => {
     if (mode === 'optimize')
@@ -62,17 +102,18 @@ export const AIView = () => {
         focusStart: useRange ? rangeStart : null,
         focusEnd: useRange ? rangeEnd : null,
       });
-    if (mode === 'import') return generateImportPrompt(rawInput, appData);
+    if (mode === 'import')
+      return importSource === 'image' ? generateImagePrompt(appData) : generateImportPrompt(rawInput, appData);
     if (mode === 'onboard') return generateOnboardingPrompt(appData);
     return '';
   };
 
   const handleCopyPrompt = async () => {
-    const p = buildPrompt();
-    if (mode === 'import' && !rawInput.trim()) {
+    if (mode === 'import' && importSource === 'text' && !rawInput.trim()) {
       toast.error('Paste your schedule data first', { description: 'Add it in Step 1 before generating the prompt.' });
       return;
     }
+    const p = buildPrompt();
     if (useRange && mode === 'optimize' && rangeStart > rangeEnd) {
       toast.error('Invalid date range', { description: 'The start date must be on or before the end date.' });
       return;
@@ -150,7 +191,8 @@ export const AIView = () => {
   const reset = () => {
     setMode('choose'); setRawInput(''); setPrompt(''); setImportJson('');
     setPreview(null); setError(null); setCopied(false);
-    setApplyAsVersion(false); setVersionName('');
+    setApplyAsVersion(false); setVersionName(''); setImportSource('text');
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
   };
 
   // ── Reusable apply-as-version control + diff ──
@@ -272,8 +314,8 @@ export const AIView = () => {
     onboard: { title: 'Build starter schedule', emoji: '✨', promptLabel: 'Generate starter prompt' },
   }[mode as 'optimize' | 'import' | 'onboard'];
 
-  const promptReady = mode === 'import' ? rawInput.trim().length > 0 : true;
-  const responseStep = mode === 'import' ? 3 : 2;
+  const promptReady = mode === 'import' && importSource === 'text' ? rawInput.trim().length > 0 : true;
+  const responseStep = mode === 'onboard' ? 2 : 3;
 
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto">
@@ -336,20 +378,58 @@ export const AIView = () => {
           </StepBlock>
         )}
 
-        {/* ── IMPORT: raw input ── */}
+        {/* ── IMPORT: choose source, then raw input (text only) ── */}
         {mode === 'import' && (
-          <StepBlock number={1} title="Paste your raw schedule data">
-            <p className="text-xs text-muted-foreground mb-2 leading-relaxed">
-              Paste anything — iCal/ICS, plain English, Google Calendar CSV, Outlook export, or just type out your schedule. The AI will parse it.
-            </p>
-            <FormatHints />
-            <Textarea
-              value={rawInput}
-              onChange={e => setRawInput(e.target.value)}
-              placeholder={"Paste your schedule here in any format.\n\nExamples:\n  • BEGIN:VCALENDAR ... (ICS file)\n  • \"Mon Jun 9: 9am dentist, 2pm team meeting\"\n  • Subject,Start Date,Start Time ... (Google CSV)\n  • Just describe your week in plain sentences"}
-              className="font-mono text-[11px] h-44 bg-muted/20 resize-none mt-2"
-              data-testid="input-raw-schedule"
-            />
+          <StepBlock number={1} title="What are you importing from?">
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <button
+                onClick={() => { setImportSource('text'); setPrompt(''); setCopied(false); }}
+                className={`text-left p-2.5 rounded-lg border transition-all ${
+                  importSource === 'text' ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+                }`}
+                data-testid="import-source-text"
+              >
+                <div className="flex items-center gap-1.5 mb-0.5"><span className="text-sm">📝</span><span className="text-xs font-semibold">Paste text / file</span></div>
+                <p className="text-[10px] text-muted-foreground leading-tight">iCal, CSV, an export, or typed-out plans.</p>
+              </button>
+              <button
+                onClick={() => { setImportSource('image'); setPrompt(''); setCopied(false); }}
+                className={`text-left p-2.5 rounded-lg border transition-all ${
+                  importSource === 'image' ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+                }`}
+                data-testid="import-source-image"
+              >
+                <div className="flex items-center gap-1.5 mb-0.5"><span className="text-sm">📷</span><span className="text-xs font-semibold">Photos / screenshots</span></div>
+                <p className="text-[10px] text-muted-foreground leading-tight">Upload the images to the AI itself.</p>
+              </button>
+            </div>
+
+            {importSource === 'text' ? (
+              <>
+                <p className="text-xs text-muted-foreground mb-2 leading-relaxed">
+                  Paste anything — iCal/ICS, plain English, Google Calendar CSV, Outlook export, or just type out your schedule. The AI will parse it.
+                </p>
+                <FormatHints />
+                <Textarea
+                  value={rawInput}
+                  onChange={e => setRawInput(e.target.value)}
+                  placeholder={"Paste your schedule here in any format.\n\nExamples:\n  • BEGIN:VCALENDAR ... (ICS file)\n  • \"Mon Jun 9: 9am dentist, 2pm team meeting\"\n  • Subject,Start Date,Start Time ... (Google CSV)\n  • Just describe your week in plain sentences"}
+                  className="font-mono text-[11px] h-44 bg-muted/20 resize-none mt-2"
+                  data-testid="input-raw-schedule"
+                />
+              </>
+            ) : (
+              <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 space-y-2">
+                <p className="text-xs font-semibold text-foreground">How photo import works</p>
+                <ol className="text-[11px] text-muted-foreground leading-relaxed space-y-1 list-decimal list-inside">
+                  <li>Generate &amp; copy the prompt below.</li>
+                  <li>Open ChatGPT, Claude, or Gemini and paste the prompt.</li>
+                  <li><strong className="text-foreground">Attach your schedule photos/screenshots</strong> to that same AI chat and send.</li>
+                  <li>Copy the AI's JSON reply and paste it back here in the last step.</li>
+                </ol>
+                <p className="text-[10px] text-muted-foreground">The images go straight to the AI — you don't upload them here.</p>
+              </div>
+            )}
           </StepBlock>
         )}
 
@@ -363,9 +443,14 @@ export const AIView = () => {
               Generates a prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your entire schedule (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Paste it into any AI.
             </p>
           )}
-          {mode === 'import' && (
+          {mode === 'import' && importSource === 'text' && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
               This wraps your pasted data in a prompt that tells the AI exactly how to reformat it.
+            </p>
+          )}
+          {mode === 'import' && importSource === 'image' && (
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+              Copy this prompt, paste it into an AI, then <strong className="text-foreground">attach your schedule photos</strong> to that chat. The AI reads the images and replies with JSON.
             </p>
           )}
           {mode === 'onboard' && (
@@ -427,9 +512,9 @@ export const AIView = () => {
           )}
         </StepBlock>
 
-        {/* ── Paste/upload AI response ── */}
-        {prompt && (
-          <StepBlock number={responseStep} title="Paste or upload the AI response">
+        {/* ── Paste/upload AI response — ALWAYS visible so returning from the
+             AI app (which reloads Safari) never leaves you with nowhere to paste ── */}
+        <StepBlock number={responseStep} title="Paste or upload the AI response">
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
               Copy the <strong className="text-foreground">entire response</strong> from the AI and paste it below, or upload a saved file. The app extracts the JSON automatically.
             </p>
@@ -455,8 +540,7 @@ export const AIView = () => {
             </div>
             {error && <ErrorBanner message={error} />}
             {renderPreviewBlock()}
-          </StepBlock>
-        )}
+        </StepBlock>
       </div>
     </div>
   );

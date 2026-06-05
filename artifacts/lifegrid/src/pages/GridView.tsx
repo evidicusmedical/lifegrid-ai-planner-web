@@ -2,9 +2,10 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
 import { Event } from '../types';
-import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown, X, Download } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 import { DayDetailSheet } from '../components/DayDetailSheet';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
@@ -36,6 +37,7 @@ export const GridView = () => {
   const [addDate, setAddDate] = useState<string | null>(null);
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -83,7 +85,12 @@ export const GridView = () => {
 
   useEffect(() => { didScrollRef.current = false; }, [year]);
 
+  const exportFileName = `lifegrid-${activeCalendar?.name ?? 'calendar'}-${year}.png`.replace(/\s+/g, '-');
+
   // ── Image export (html-to-image renders modern CSS correctly) ──
+  // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
+  // download we render the PNG and show it in an in-app preview the user can
+  // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
     const table = tableRef.current;
     const container = scrollRef.current;
@@ -98,19 +105,42 @@ export const GridView = () => {
     container.style.width  = table.scrollWidth + 'px';
     container.style.height = table.scrollHeight + 'px';
 
+    const opts = {
+      pixelRatio: 2,
+      backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
+      width: table.scrollWidth,
+      height: table.scrollHeight,
+      cacheBust: true,
+    };
+
     try {
-      const dataUrl = await toPng(table, {
-        pixelRatio: 2,
-        backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
-        width: table.scrollWidth,
-        height: table.scrollHeight,
-        cacheBust: true,
-      });
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `lifegrid-${activeCalendar?.name ?? 'calendar'}-${year}.png`.replace(/\s+/g, '-');
-      a.click();
-      toast.success('Grid exported as PNG!', { id: 'export' });
+      // Safari frequently renders a blank/partial image on the first pass
+      // (fonts/styles not yet inlined). Rendering a few times fixes it.
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      let dataUrl = await toPng(table, opts);
+      if (isSafari) {
+        await toPng(table, opts);
+        dataUrl = await toPng(table, opts);
+      }
+
+      // Try the native share sheet first (best path on iOS — "Save Image").
+      let shared = false;
+      try {
+        const blob = await (await fetch(dataUrl)).blob();
+        const file = new File([blob], exportFileName, { type: 'image/png' });
+        const nav = navigator as any;
+        if (nav.canShare && nav.canShare({ files: [file] })) {
+          await nav.share({ files: [file], title: 'LifeGrid', text: 'My LifeGrid calendar' });
+          shared = true;
+        }
+      } catch { /* user cancelled or share unsupported — fall through to preview */ }
+
+      if (shared) {
+        toast.success('Grid image ready to share!', { id: 'export' });
+      } else {
+        setExportUrl(dataUrl);
+        toast.success('Grid image ready — save or share it', { id: 'export' });
+      }
     } catch (err) {
       console.error('Export failed', err);
       toast.error('Export failed — try again', { id: 'export' });
@@ -120,7 +150,15 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [year, theme, activeCalendar]);
+  }, [year, theme, activeCalendar, exportFileName]);
+
+  const downloadExport = () => {
+    if (!exportUrl) return;
+    const a = document.createElement('a');
+    a.href = exportUrl;
+    a.download = exportFileName;
+    a.click();
+  };
 
   const jumpToToday = () => {
     setYear(today.getFullYear());
@@ -418,6 +456,37 @@ export const GridView = () => {
           initialData={editEvent}
           defaultDate={addDate ?? undefined}
         />
+      )}
+
+      {/* Export image preview — iPhone-friendly (long-press to save) */}
+      {exportUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex flex-col"
+          onClick={() => setExportUrl(null)}
+          data-testid="export-preview"
+        >
+          <div className="flex-none px-4 py-3 flex items-center justify-between text-white">
+            <span className="text-sm font-semibold">Your grid image</span>
+            <button
+              onClick={() => setExportUrl(null)}
+              className="p-1.5 rounded-lg hover:bg-white/10"
+              data-testid="button-export-close"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto px-4 flex items-start justify-center" onClick={e => e.stopPropagation()}>
+            <img src={exportUrl} alt="LifeGrid calendar export" className="max-w-full rounded-lg shadow-2xl" />
+          </div>
+          <div className="flex-none p-4 space-y-2" onClick={e => e.stopPropagation()}>
+            <p className="text-center text-[11px] text-white/70">
+              On iPhone: press and hold the image, then “Save Image”.
+            </p>
+            <Button onClick={downloadExport} className="w-full gap-2 h-11" data-testid="button-export-download">
+              <Download size={16} /> Download image
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

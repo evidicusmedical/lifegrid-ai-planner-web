@@ -22,7 +22,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'lifegrid_data';
 const DATA_VERSION_KEY = 'lifegrid_data_version';
-const CURRENT_VERSION = '3';
+const CURRENT_VERSION = '4';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [data, setData] = useState<AppData>(() => {

@@ -328,21 +328,60 @@ export interface ParsedUpdate {
   };
 }
 
+// Find the closing brace that matches the opening brace at `start`.
+// More robust than lastIndexOf('}') when the AI appends text after the JSON.
+function findMatchingBrace(s: string, start: number): number {
+  let depth = 0;
+  let inStr = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inStr) { escape = true; continue; }
+    if (ch === '"') { inStr = !inStr; continue; }
+    if (inStr) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
 export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpdate => {
   const raw = input.trim();
   if (!raw) throw new Error('Nothing pasted. Copy the full AI response and paste it here.');
 
-  let s = raw.replace(/^```(?:json|JSON)?\s*/m, '').replace(/\s*```\s*$/m, '').trim();
+  // Strip markdown code fences (handles ```json, ```JSON, plain ```, with or without newlines)
+  let s = raw
+    .replace(/```(?:json|JSON)?\s*/g, '')
+    .replace(/```\s*/g, '')
+    .trim();
 
-  const start = s.indexOf('{');
-  const end   = s.lastIndexOf('}');
-  if (start < 0 || end < 0) {
+  // Locate the JSON object. ChatGPT/Claude analysis responses contain { characters
+  // in their prose text (e.g. "conflicts {Tuesday}"), so naive indexOf('{') picks
+  // the wrong brace. We look specifically for the {"events" or {"tasks" key first.
+  const dataKeyMatch = s.match(/\{\s*"(?:events|tasks)"/);
+  const start = dataKeyMatch?.index ?? s.indexOf('{');
+
+  if (start < 0) {
     throw new Error(
-      'No JSON object found in the response.\n\n' +
-      'Make sure you copied the entire AI response. ' +
-      'The AI should have returned a { ... } JSON block.'
+      'No JSON found in the response.\n\n' +
+      'Make sure you copied the ENTIRE AI reply — the JSON block at the end ' +
+      'is what the app needs. If the AI only gave analysis text with no JSON, ' +
+      'ask it: "Now return just the JSON change set."'
     );
   }
+
+  // Use brace-matching to find the correct end (more reliable than lastIndexOf
+  // when there is text or closing parentheses after the JSON).
+  let end = findMatchingBrace(s, start);
+  if (end < 0) end = s.lastIndexOf('}'); // fallback
+  if (end < start) {
+    throw new Error(
+      'The JSON block appears to be cut off. Make sure you copied the full response, ' +
+      'including the final closing }.'
+    );
+  }
+
   s = s.slice(start, end + 1);
 
   let parsed: any;
@@ -350,16 +389,17 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
     parsed = JSON.parse(s);
   } catch {
     const fixed = s
-      .replace(/,\s*([}\]])/g, '$1')
-      .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":');
+      .replace(/,\s*([}\]])/g, '$1')           // trailing commas
+      .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":'); // single-quoted keys
     try {
       parsed = JSON.parse(fixed);
     } catch (e2: any) {
       throw new Error(
-        `Could not parse the JSON. Common causes:\n` +
-        `• Copied only part of the response — paste the full output\n` +
-        `• AI returned garbled text — try asking it again\n\n` +
-        `Parser detail: ${e2.message}`
+        `The JSON could not be parsed.\n\n` +
+        `Common fixes:\n` +
+        `• Paste the FULL AI response, not just part of it\n` +
+        `• If it still fails, ask the AI: "Return only the raw JSON, no extra text"\n\n` +
+        `Technical detail: ${e2.message}`
       );
     }
   }

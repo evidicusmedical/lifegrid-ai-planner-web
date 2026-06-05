@@ -351,9 +351,64 @@ function PersonRow({ person, onUpdate, onDelete }: {
   );
 }
 
+// ─── Condensed text export ─────────────────────────────────────────────────────
+function buildTextExport(app: ReturnType<typeof useAppData>): string {
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const lines: string[] = [
+    `LIFEGRID DATA EXPORT — ${dateStr}`,
+    `Calendar: ${app.activeCalendar.name}`,
+    `Events: ${app.events.length}  |  Tasks: ${app.tasks.length}  |  People entries: ${app.personEvents.length}`,
+    '',
+    '═══════════════════════════════════════',
+    'EVENTS',
+    '═══════════════════════════════════════',
+  ];
+
+  const sortedEvents = [...app.events].sort((a, b) => a.date.localeCompare(b.date));
+  if (sortedEvents.length === 0) {
+    lines.push('  (none)');
+  } else {
+    sortedEvents.forEach(e => {
+      const time = e.startTime ? `  ${e.startTime}${e.endTime ? `–${e.endTime}` : ''}` : '';
+      const cat = app.categories.find(c => c.id === e.category)?.label ?? e.category;
+      lines.push(`${e.date}${time}  [${cat}]  ${e.title}${e.notes ? `  // ${e.notes}` : ''}`);
+    });
+  }
+
+  lines.push('', '═══════════════════════════════════════', 'TASKS', '═══════════════════════════════════════');
+
+  const rankOrder: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+  const sortedTasks = [...app.tasks].sort((a, b) => (rankOrder[a.priority] ?? 9) - (rankOrder[b.priority] ?? 9));
+  if (sortedTasks.length === 0) {
+    lines.push('  (none)');
+  } else {
+    sortedTasks.forEach(t => {
+      const cat = app.categories.find(c => c.id === t.category)?.label ?? t.category;
+      let row = `[${t.priority.toUpperCase().padEnd(6)}] ${t.name}  due:${t.dueDate ?? 'none'}  status:${t.status}  [${cat}]`;
+      if (t.nextAction) row += `  → ${t.nextAction}`;
+      if (t.notes) row += `  // ${t.notes}`;
+      if (t.schedulingNotes) row += `  ⚙ ${t.schedulingNotes}`;
+      lines.push(row);
+    });
+  }
+
+  if (app.personEvents.length > 0) {
+    lines.push('', '═══════════════════════════════════════', 'PEOPLE\'S SCHEDULE', '═══════════════════════════════════════');
+    [...app.personEvents].sort((a, b) => a.date.localeCompare(b.date)).forEach(pe => {
+      const personName = app.people.find(p => p.id === pe.person)?.label ?? pe.person;
+      const time = pe.startTime ? `  ${pe.startTime}${pe.endTime ? `–${pe.endTime}` : ''}` : '';
+      lines.push(`${pe.date}${time}  [${personName}]  ${pe.title}`);
+    });
+  }
+
+  lines.push('', '─── End of export ───');
+  return lines.join('\n');
+}
+
 // ─── Data backup / restore / clear ────────────────────────────────────────────
 function DataManager() {
-  const { exportBackup, importBackup, clearActiveCalendar, activeCalendar } = useAppData();
+  const app = useAppData();
+  const { exportBackup, importBackup, clearActiveCalendar, activeCalendar } = app;
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleExport = () => {
@@ -366,6 +421,18 @@ function DataManager() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Backup downloaded');
+  };
+
+  const handleTextExport = () => {
+    const text = buildTextExport(app);
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Text export downloaded', { description: 'Open the .txt file to read or share your schedule.' });
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -386,6 +453,10 @@ function DataManager() {
     <Section icon={<Database size={16} />} title="Data & backup" subtitle="Everything is stored only on this device.">
       <Button variant="secondary" onClick={handleExport} className="w-full gap-2 h-9" data-testid="button-export-backup">
         <Download size={14} /> Download backup (.json)
+      </Button>
+
+      <Button variant="secondary" onClick={handleTextExport} className="w-full gap-2 h-9" data-testid="button-export-text">
+        <Download size={14} /> Export as readable text (.txt)
       </Button>
 
       <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImport} data-testid="input-restore-backup" />

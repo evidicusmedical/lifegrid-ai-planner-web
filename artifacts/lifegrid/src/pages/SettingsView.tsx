@@ -10,7 +10,7 @@ import {
 import { toast } from 'sonner';
 import {
   Plus, Trash2, Check, X, Pencil, Copy, Download, Upload,
-  CalendarDays, Tag, Users, Database, Eraser,
+  CalendarDays, Tag, Users, Database, Eraser, Smartphone,
 } from 'lucide-react';
 import { Category, Person } from '../types';
 import { formatDate } from '../lib/format';
@@ -37,6 +37,7 @@ export const SettingsView = () => {
         <CalendarVersions />
         <CategoryManager />
         <PeopleManager />
+        <InstallSection />
         <DataManager />
       </div>
     </div>
@@ -405,11 +406,51 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
   return lines.join('\n');
 }
 
+// ─── Install & offline section ────────────────────────────────────────────────
+function InstallSection() {
+  return (
+    <Section icon={<Smartphone size={16} />} title="Install & use offline" subtitle="Works without Wi-Fi once installed.">
+      <div className="space-y-3 text-[11px] text-muted-foreground leading-relaxed">
+        <div>
+          <p className="font-semibold text-foreground mb-1">📱 iPhone / iPad (Safari)</p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            <li>Tap the <strong className="text-foreground">Share</strong> button (box with arrow ↑)</li>
+            <li>Scroll down → tap <strong className="text-foreground">Add to Home Screen</strong></li>
+            <li>Tap <strong className="text-foreground">Add</strong> — opens like a native app</li>
+          </ol>
+        </div>
+        <div>
+          <p className="font-semibold text-foreground mb-1">🤖 Android (Chrome)</p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            <li>Tap the <strong className="text-foreground">⋮ menu</strong> in Chrome</li>
+            <li>Tap <strong className="text-foreground">Add to Home screen</strong> or <strong className="text-foreground">Install app</strong></li>
+          </ol>
+        </div>
+        <div>
+          <p className="font-semibold text-foreground mb-1">💻 Desktop (Chrome / Edge)</p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            <li>Look for the <strong className="text-foreground">install ⊕ icon</strong> in the address bar</li>
+            <li>Click <strong className="text-foreground">Install</strong></li>
+          </ol>
+        </div>
+        <p className="text-[10px] text-muted-foreground/80 pt-1 border-t border-border">
+          Once installed the app loads instantly and works fully offline. All your data stays on this device — nothing is sent to any server.
+        </p>
+      </div>
+    </Section>
+  );
+}
+
 // ─── Data backup / restore / clear ────────────────────────────────────────────
 function DataManager() {
   const app = useAppData();
-  const { exportBackup, importBackup, clearActiveCalendar, activeCalendar } = app;
+  const { exportBackup, importBackup, clearActiveCalendar, activeCalendar, lastBackupAt, recordBackup } = app;
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const daysSince = lastBackupAt
+    ? Math.floor((Date.now() - new Date(lastBackupAt).getTime()) / 86400000)
+    : null;
+  const backupOk = daysSince !== null && daysSince < 7;
 
   const handleExport = () => {
     const json = exportBackup();
@@ -421,6 +462,7 @@ function DataManager() {
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Backup downloaded');
+    recordBackup();
   };
 
   const handleTextExport = () => {
@@ -451,6 +493,18 @@ function DataManager() {
 
   return (
     <Section icon={<Database size={16} />} title="Data & backup" subtitle="Everything is stored only on this device.">
+      <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] ${backupOk ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
+        <span className="mt-0.5 shrink-0">{backupOk ? '✓' : '⚠️'}</span>
+        <span>
+          {daysSince === null
+            ? 'No backup yet — download one below to protect your data.'
+            : daysSince === 0
+            ? 'Last backup: today'
+            : daysSince === 1
+            ? 'Last backup: yesterday'
+            : `Last backup: ${daysSince} days ago${daysSince >= 7 ? ' — consider a fresh backup' : ''}`}
+        </span>
+      </div>
       <Button variant="secondary" onClick={handleExport} className="w-full gap-2 h-9" data-testid="button-export-backup">
         <Download size={14} /> Download backup (.json)
       </Button>

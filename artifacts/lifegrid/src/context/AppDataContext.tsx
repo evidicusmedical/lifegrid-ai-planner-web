@@ -45,6 +45,8 @@ interface AppContextType extends AppData {
   exportBackup: () => string;
   importBackup: (json: string) => void;
   clearActiveCalendar: () => void;
+  lastBackupAt: string | null;
+  recordBackup: () => void;
 
   // Recurring / multi-day group deletes
   deleteEventGroup: (groupId: string) => void;
@@ -56,6 +58,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORE_KEY = 'lifegrid_store_v5';
 const LEGACY_KEY = 'lifegrid_data';
+const BACKUP_TS_KEY = 'lifegrid_last_backup';
 
 const uid = () =>
   (typeof crypto !== 'undefined' && crypto.randomUUID)
@@ -147,6 +150,16 @@ const loadStore = (): Store => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [store, setStore] = useState<Store>(loadStore);
+
+  const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => {
+    try { return localStorage.getItem(BACKUP_TS_KEY); } catch { return null; }
+  });
+
+  const recordBackup = () => {
+    const ts = new Date().toISOString();
+    try { localStorage.setItem(BACKUP_TS_KEY, ts); } catch { /* storage full */ }
+    setLastBackupAt(ts);
+  };
 
   useEffect(() => {
     localStorage.setItem(STORE_KEY, JSON.stringify(store));
@@ -349,7 +362,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: c.createdAt ?? new Date().toISOString(),
         data: normalizeAppData(c.data),
       }));
-      setStore({ calendars, activeCalendarId: calendars[0].id });
+      const aid = typeof incoming.activeCalendarId === 'string' && calendars.some(c => c.id === incoming.activeCalendarId)
+        ? incoming.activeCalendarId
+        : calendars[0].id;
+      setStore({ calendars, activeCalendarId: aid });
     } else if (incoming && (incoming.events || incoming.tasks)) {
       // A single AppData blob — import as a new calendar version
       const cal = freshCalendar('Imported Calendar', normalizeAppData(incoming));
@@ -384,6 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPerson, updatePerson, deletePerson,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar,
+        lastBackupAt, recordBackup,
         deleteEventGroup, deleteTaskGroup, deletePersonEventGroup,
       }}
     >

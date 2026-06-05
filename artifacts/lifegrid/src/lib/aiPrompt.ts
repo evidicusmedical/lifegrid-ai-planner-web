@@ -288,7 +288,7 @@ export const generateImagePrompt = (existingData: AppData): string => {
 
   return `I am going to ATTACH one or more images to this chat — screenshots or photos of my schedule (phone calendar screenshots, a photo of a paper planner, a printed timetable, a whiteboard, an email, etc.).
 
-Carefully read EVERY image I attach. Extract every event, appointment, meeting, class, shift, trip, and task you can see — including the date, day of week, start/end times, and titles. If a time or date is partially visible or ambiguous, make your best reasonable guess and keep going.
+Carefully read EVERY image I attach. Extract every event, appointment, meeting, class, shift, trip, and task you can see — including the date, day of week, start/end times, and titles. If a time or date is partially visible or ambiguous, make your best reasonable guess and add to that item's "notes" field: "⚠️ REVIEW: [describe what was unclear]" — so the user can quickly spot and correct those entries.
 
 Then return the result in the exact JSON format specified at the end of this message so it can be imported into a scheduling app. Today is ${today()}.
 ${hasExisting ? `
@@ -326,6 +326,7 @@ export interface ParsedUpdate {
     update: Array<{ id: string } & Partial<Task>>;
     delete: string[];
   };
+  warnings?: string[];
 }
 
 // Find the closing brace that matches the opening brace at `start`.
@@ -421,14 +422,22 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
   if (parsed.events) {
     result.events = {
       add:    normalizeEvents(parsed.events.add ?? [], validCats, colorMap),
-      update: Array.isArray(parsed.events.update) ? parsed.events.update : [],
+      update: Array.isArray(parsed.events.update)
+        ? parsed.events.update
+            .filter((u: any) => u && typeof u.id === 'string')
+            .map((u: any) => normalizeEventUpdate(u, validCats, colorMap))
+        : [],
       delete: normalizeIds(parsed.events.delete ?? []),
     };
   }
   if (parsed.tasks) {
     result.tasks = {
       add:    normalizeTasks(parsed.tasks.add ?? [], validCats),
-      update: Array.isArray(parsed.tasks.update) ? parsed.tasks.update : [],
+      update: Array.isArray(parsed.tasks.update)
+        ? parsed.tasks.update
+            .filter((u: any) => u && typeof u.id === 'string')
+            .map((u: any) => normalizeTaskUpdate(u, validCats))
+        : [],
       delete: normalizeIds(parsed.tasks.delete ?? []),
     };
   }
@@ -464,8 +473,8 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         date,
         title:     String(e.title ?? 'Untitled'),
         category:  cat,
-        startTime: e.startTime ?? null,
-        endTime:   e.endTime ?? null,
+        startTime: fixTime(e.startTime),
+        endTime:   fixTime(e.endTime),
         color:     e.color ?? colorMap[cat] ?? '#6b7280',
         notes:     e.notes ?? null,
       } as Event;
@@ -493,6 +502,54 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
 
 function normalizeIds(arr: any[]): string[] {
   return Array.isArray(arr) ? arr.filter(x => typeof x === 'string' && x.trim()) : [];
+}
+
+function normalizeEventUpdate(
+  u: any, validCats: Set<string>, colorMap: Record<string, string>
+): { id: string } & Partial<Event> {
+  const out: any = { id: String(u.id) };
+  if (u.date     !== undefined) { const d = fixDate(String(u.date)); if (d) out.date = d; }
+  if (u.title    !== undefined) out.title = String(u.title);
+  if (u.category !== undefined) out.category = validCats.has(u.category) ? u.category : 'other';
+  if (u.color    !== undefined) out.color = String(u.color);
+  if ('startTime' in u) out.startTime = fixTime(u.startTime);
+  if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
+  if ('notes'     in u) out.notes = u.notes ?? null;
+  // Re-color if category changed but caller supplied no explicit color
+  if (out.category && !out.color) out.color = colorMap[out.category];
+  return out;
+}
+
+function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & Partial<Task> {
+  const out: any = { id: String(u.id) };
+  if (u.name     !== undefined) out.name = String(u.name);
+  if (u.category !== undefined) out.category = validCats.has(u.category) ? u.category : 'other';
+  if (u.dueDate  !== undefined) { const d = fixDate(String(u.dueDate)); if (d) out.dueDate = d; }
+  if (u.status   !== undefined && VALID_STA.has(u.status))  out.status   = u.status;
+  if (u.priority !== undefined && VALID_PRI.has(u.priority)) out.priority = u.priority;
+  if ('notes'          in u) out.notes          = u.notes ?? null;
+  if ('nextAction'     in u) out.nextAction     = u.nextAction ?? null;
+  if ('schedulingNotes' in u) out.schedulingNotes = u.schedulingNotes ?? null;
+  return out;
+}
+
+function fixTime(raw: any): string | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const s = String(raw).trim();
+  if (/^\d{2}:\d{2}$/.test(s)) return s;
+  // "9:00" → "09:00"
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) return `${m24[1].padStart(2, '0')}:${m24[2]}`;
+  // "9:00 AM" / "9:00 PM" (12-hour) → 24-hour
+  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (m12) {
+    let h = parseInt(m12[1], 10);
+    const isPM = m12[3].toLowerCase() === 'pm';
+    if (isPM && h !== 12) h += 12;
+    if (!isPM && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${m12[2]}`;
+  }
+  return null; // unrecognized — drop rather than store garbage
 }
 
 function fixDate(raw: string): string {

@@ -1,0 +1,225 @@
+You are working on my existing LifeGrid AI Planner project.
+
+Goal:
+Create LifeGrid AI Planner v0.2 with three phases:
+
+1. Reliability and code/end-user improvements based on a focused code review
+2. Offline/installable PWA support
+3. Updated documentation, handoff files, changelog, and GitHub push
+
+Important constraints:
+
+* Minimize cost and unnecessary Agent usage.
+* Do not redesign the app.
+* Do not add authentication.
+* Do not add a backend.
+* Do not add a cloud database.
+* Do not add automatic sync.
+* Do not add external AI API calls.
+* Do not add Electron, Tauri, or native iOS packaging in this step.
+* Keep the app local-first.
+* Preserve existing localStorage-based data behavior.
+* Preserve existing JSON backup/export/import behavior.
+* Preserve the manual external LLM copy/paste workflow.
+* Do not commit private data, schedule data, JSON backups, screenshots, API keys, secrets, or archive exports.
+* Keep changes small, safe, and focused.
+
+Before editing:
+
+1. Inspect the project.
+2. Confirm the framework, package manager, app location, build commands, and deployment structure.
+3. Confirm where app data is stored.
+4. Confirm whether PWA/offline support currently exists.
+5. Review the files most relevant to:
+    * local data storage
+    * JSON backup/restore
+    * AI import/export
+    * Vite/build/deployment
+    * Settings/help UI
+6. Produce a concise implementation plan.
+7. Then proceed unless there is a major blocking issue.
+
+Phase 1 — Reliability and safety improvements:
+Implement the following small improvements if they are safe and fit the current codebase.
+
+A. Backup safety:
+
+* Add or improve “Last backup” tracking in localStorage.
+* When the user downloads/exports a JSON backup, update the last-backup timestamp.
+* Show the last-backup status in Settings.
+* If no backup has ever been created, show a clear but non-alarming reminder.
+* If the last backup is more than 7 days old, show a reminder to export a backup.
+* Do not create automatic cloud sync.
+* Do not store backup files in the repository.
+
+B. Backup restore behavior:
+
+* When importing a full store backup, preserve the incoming activeCalendarId if it exists and matches one of the imported calendars.
+* If the incoming activeCalendarId is missing or invalid, fall back to the first calendar.
+* Before replacing the current store with an imported backup, show a clear warning/confirmation if the existing UI already supports it. If not easy, document this limitation.
+
+C. AI import validation:
+
+* Strengthen validation of imported AI JSON.
+* Validate dates as real YYYY-MM-DD dates.
+* Validate startTime and endTime as HH:MM or null.
+* Normalize update objects as well as add objects when feasible.
+* Warn or surface an error if an update/delete references an unknown event or task ID.
+* Keep the parser tolerant of ChatGPT/Claude copy-paste issues such as code fences, curly quotes, and trailing commas.
+* Do not remove the existing robust parsing behavior.
+
+D. AI prompt accuracy:
+
+* Update the image/screenshot import prompt so ambiguous or partially visible dates/times are flagged for user review instead of being silently guessed.
+* Preserve the ability to parse images/screenshots via external LLM copy/paste.
+
+E. Portability:
+
+* Update vite.config.ts so PORT defaults to 3000 and BASE_PATH defaults to “/” when environment variables are not provided.
+* Preserve Replit compatibility.
+* Do not remove Replit plugins unless required.
+* Add comments explaining BASE_PATH for GitHub Pages.
+
+F. Repo hygiene:
+
+* Inspect the repository for obvious generated archive/export files such as .zip, .tar.gz, or JSON backup files.
+* Do not delete anything without confirming it is safe.
+* If a generated export/archive file is present and unnecessary, remove it from the repository and add patterns to .gitignore to prevent future accidental commits.
+* Make sure .gitignore excludes backup JSON files, ZIP/TAR archives, dist output, .env files, and OS junk files.
+
+Phase 2 — Offline/installable PWA support:
+Add minimal PWA support appropriate for this Vite/React app.
+
+Requirements:
+
+* Use vite-plugin-pwa if appropriate.
+* Add a web app manifest.
+* App name: LifeGrid AI Planner.
+* Short name: LifeGrid.
+* Add simple icons if suitable icons do not already exist.
+* Add a service worker with a conservative app-shell/static-asset caching strategy.
+* Cache only the app shell/static build assets needed to open the app.
+* Do not separately cache private user data.
+* Do not add cloud sync.
+* Do not add push notifications.
+* Do not add background sync.
+* Make sure the app can load after it has been opened once online.
+* Add an online/offline status indicator if simple.
+* Add an “Install / Offline Use” help section in Settings if simple.
+
+The install/offline help should explain:
+
+* iPhone: open the deployed URL in Safari, tap Share, then Add to Home Screen.
+* Another phone: open the deployed URL, then add to home screen if supported.
+* Computer: open in Chrome/Edge/Safari and use Install App or Add to Dock/Home Screen if available.
+* Offline use requires opening the app once while online first.
+* AI export/import with external LLMs still requires internet.
+* JSON backup/export/import is how data is moved between devices.
+* Each device has its own local copy of the data.
+
+Phase 3 — Documentation and GitHub:
+Update or create these documentation files in the repository root:
+
+1. PROJECT_HANDOFF.md
+    Update with:
+
+* Current v0.2 app overview
+* Technology stack
+* File/folder map
+* How data is stored
+* JSON backup/restore workflow
+* PWA/offline behavior
+* iPhone install instructions
+* Desktop install instructions
+* How to run locally
+* How to build
+* How to deploy
+* GitHub Pages notes, including BASE_PATH consideration
+* Known limitations
+* Safe next development steps
+
+2. EXPORT_CHECKLIST.md
+    Update with:
+
+* Code export steps
+* GitHub push/pull steps
+* JSON data backup steps
+* How to transfer JSON between devices
+* How to verify restore on another device
+* How to avoid committing private data
+
+3. OFFLINE_PWA_INSTALL_GUIDE.md
+    Create or update with:
+
+* Install on iPhone
+* Install on another phone
+* Install on desktop browser
+* Test offline mode
+* What works offline
+* What does not work offline
+* How to transfer data manually using JSON backup/import
+
+4. CODE_REVIEW_AND_END_USER_ANALYSIS.md
+    Create or update with:
+
+* Architecture assessment
+* Code organization
+* Data model review
+* Local storage and backup risks
+* AI export/import workflow review
+* End-user workflow review
+* Mobile usability review
+* Offline/PWA readiness
+* Privacy/security considerations
+* Reliability risks
+* Improvements completed in v0.2
+* Remaining top 10 recommended improvements
+* Recommended v0.3 roadmap
+* Recommended v1.0 roadmap
+
+5. CHANGELOG.md
+    Create or update with:
+
+* v0.2 entry
+* Reliability improvements
+* Backup/restore improvements
+* AI import validation improvements
+* PWA/offline additions
+* Documentation updates
+* Known limitations
+
+Testing:
+
+1. Run dependency install only if needed.
+2. Run typecheck if available.
+3. Run build if available.
+4. Report exact commands run.
+5. Report pass/fail.
+6. If typecheck/build fails, attempt one minimal fix only.
+7. If still failing after one fix, stop and report the issue clearly.
+
+Git:
+
+1. Show changed files.
+2. Ensure no private data, backup JSON, screenshots, secrets, .env files, ZIP files, or TAR files are committed.
+3. Commit with:
+    Add v0.2 reliability and offline PWA support
+4. Push to the connected GitHub repository.
+5. Report branch and commit hash if available.
+
+Final response:
+After completing, summarize:
+
+* What reliability improvements were completed
+* Whether PWA/offline support was added
+* Whether local data behavior changed
+* Whether JSON backup/import still works
+* How to install on iPhone
+* How to install on another phone
+* How to install/use on computer
+* What tests passed/failed
+* Files changed
+* GitHub push status
+* Highest-priority remaining improvements
+
+Proceed carefully and keep the implementation minimal.

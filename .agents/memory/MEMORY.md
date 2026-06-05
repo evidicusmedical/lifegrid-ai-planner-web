@@ -1,1 +1,2 @@
 - [LifeGrid build & export gotchas](lifegrid-build-config.md) — `vite build` needs PORT+BASE_PATH set; PNG export must use html-to-image (html2canvas can't parse modern hsl colors).
+- [LifeGrid PWA & reliability setup](lifegrid-pwa-reliability.md) — vite-plugin-pwa installed; backup timestamp key; fixTime normalizer; icon gen approach.

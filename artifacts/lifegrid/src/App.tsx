@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
 import { AppProvider } from './context/AppDataContext';
-import { Toaster } from '@/components/ui/toaster';
+import { ThemeProvider } from './context/ThemeContext';
+import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BottomNav } from './components/BottomNav';
-
-// Lazy load pages for simplicity, or import directly
 import { GridView } from './pages/GridView';
 import { TasksView } from './pages/TasksView';
 import { PeopleView } from './pages/PeopleView';
@@ -14,12 +13,12 @@ function AppContent() {
   const [tab, setTab] = useState('grid');
 
   return (
-    <div className="min-h-[100dvh] pb-16 bg-background text-foreground flex flex-col">
+    <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
       <main className="flex-1 flex flex-col overflow-hidden">
-        {tab === 'grid' && <GridView />}
-        {tab === 'tasks' && <TasksView />}
+        {tab === 'grid'   && <GridView />}
+        {tab === 'tasks'  && <TasksView />}
         {tab === 'people' && <PeopleView />}
-        {tab === 'ai' && <AIView />}
+        {tab === 'ai'     && <AIView />}
       </main>
       <BottomNav currentTab={tab} onChange={setTab} />
     </div>
@@ -28,12 +27,14 @@ function AppContent() {
 
 function App() {
   return (
-    <AppProvider>
-      <TooltipProvider>
-        <AppContent />
-        <Toaster />
-      </TooltipProvider>
-    </AppProvider>
+    <ThemeProvider>
+      <AppProvider>
+        <TooltipProvider>
+          <AppContent />
+          <Toaster richColors position="top-center" />
+        </TooltipProvider>
+      </AppProvider>
+    </ThemeProvider>
   );
 }
 

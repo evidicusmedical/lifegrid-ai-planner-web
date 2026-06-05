@@ -4,170 +4,226 @@ import { Event } from '../types';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
 
-const STICKY_COL_WIDTH = 40;  // w-10
-const MONTH_COL_WIDTH = 160;  // w-40
-const ROW_HEIGHT = 48;        // h-12
-const HEADER_HEIGHT = 37;
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
+  work:     { bg: '#3b82f6', text: '#fff' },
+  personal: { bg: '#8b5cf6', text: '#fff' },
+  health:   { bg: '#10b981', text: '#fff' },
+  travel:   { bg: '#f59e0b', text: '#fff' },
+  family:   { bg: '#ef4444', text: '#fff' },
+  other:    { bg: '#6b7280', text: '#fff' },
+};
+
+const DAY_COL_W = 36;
+const MONTH_COL_W = 104;
+const ROW_H = 34;
+const HEADER_H = 48;
 
 export const GridView = () => {
   const { events } = useAppData();
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
-  const [selectedCell, setSelectedCell] = useState<{ date: string, event: Event | null } | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const hasScrolledRef = useRef(false);
+  const [selectedCell, setSelectedCell] = useState<{ date: string; event: Event | null } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const didScroll = useRef(false);
 
-  const todayStr = today.toISOString().split('T')[0];
-  const currentMonth = today.getMonth();
-  const currentDay = today.getDate();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const todayMonth = today.getMonth();
+  const todayDay = today.getDate();
 
-  const getDaysForMonth = (m: number) => {
-    if (m === 1 && isLeapYear(year)) return 29;
-    return DAYS_IN_MONTH[m];
-  };
+  const getDaysForMonth = (m: number) =>
+    m === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[m];
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
     events.forEach(e => {
-      const existing = map.get(e.date) || [];
-      existing.push(e);
-      map.set(e.date, existing);
+      const arr = map.get(e.date) ?? [];
+      arr.push(e);
+      map.set(e.date, arr);
     });
     return map;
   }, [events]);
 
   useEffect(() => {
-    if (hasScrolledRef.current) return;
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
+    if (didScroll.current) return;
+    const el = scrollRef.current;
+    if (!el) return;
     const isCurrentYear = year === today.getFullYear();
-    const targetMonth = isCurrentYear ? currentMonth : 0;
-    const targetDay = isCurrentYear ? currentDay : 1;
+    const targetMonth = isCurrentYear ? todayMonth : 0;
+    const targetDay = isCurrentYear ? todayDay : 1;
+    el.scrollLeft = Math.max(0, DAY_COL_W + targetMonth * MONTH_COL_W - 20);
+    el.scrollTop = Math.max(0, (targetDay - 1) * ROW_H - 60);
+    didScroll.current = true;
+  });
 
-    const scrollLeft = Math.max(0, STICKY_COL_WIDTH + targetMonth * MONTH_COL_WIDTH - 20);
-    const scrollTop = Math.max(0, (targetDay - 1) * ROW_HEIGHT + HEADER_HEIGHT - 80);
-
-    container.scrollLeft = scrollLeft;
-    container.scrollTop = scrollTop;
-    hasScrolledRef.current = true;
-  }, [year, currentMonth, currentDay, today]);
-
-  useEffect(() => {
-    hasScrolledRef.current = false;
-  }, [year]);
-
-  const handleCellClick = (dateStr: string, existingEvents: Event[]) => {
-    setSelectedCell({ date: dateStr, event: existingEvents[0] || null });
-  };
+  useEffect(() => { didScroll.current = false; }, [year]);
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="flex-none px-4 py-3 flex items-center justify-between border-b border-border bg-card">
-        <h1 className="text-xl font-bold tracking-tight">LifeGrid</h1>
+    <div className="flex flex-col h-full" style={{ background: 'hsl(var(--background))' }}>
+
+      {/* Header bar */}
+      <div className="flex-none px-4 py-2.5 flex items-center justify-between border-b border-border bg-card">
+        <h1 className="text-lg font-bold tracking-tight">LifeGrid</h1>
         <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
-          <button
-            onClick={() => setYear(y => y - 1)}
-            className="p-1.5 rounded-md hover:bg-background transition-colors"
-            data-testid="button-year-prev"
-          >
-            <ChevronLeft size={16} />
+          <button onClick={() => setYear(y => y - 1)} className="p-1.5 rounded hover:bg-background transition-colors" data-testid="button-year-prev">
+            <ChevronLeft size={15} />
           </button>
-          <span className="font-semibold text-sm px-2 min-w-[3rem] text-center">{year}</span>
-          <button
-            onClick={() => setYear(y => y + 1)}
-            className="p-1.5 rounded-md hover:bg-background transition-colors"
-            data-testid="button-year-next"
-          >
-            <ChevronRight size={16} />
+          <span className="text-sm font-semibold px-2 min-w-[3rem] text-center">{year}</span>
+          <button onClick={() => setYear(y => y + 1)} className="p-1.5 rounded hover:bg-background transition-colors" data-testid="button-year-next">
+            <ChevronRight size={15} />
           </button>
         </div>
       </div>
 
-      {/* Grid Container */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto relative">
-        <table className="border-collapse border-spacing-0" style={{ minWidth: `${STICKY_COL_WIDTH + MONTHS.length * MONTH_COL_WIDTH}px` }}>
+      {/* Scrollable grid */}
+      <div ref={scrollRef} className="flex-1 overflow-auto">
+        <table
+          className="border-collapse"
+          style={{ minWidth: DAY_COL_W + MONTHS.length * MONTH_COL_W }}
+        >
+          {/* Month header row */}
           <thead className="sticky top-0 z-20">
             <tr>
+              {/* Day-number column header (empty) */}
               <th
-                className="sticky left-0 z-30 border-b border-r border-border bg-card p-2"
-                style={{ width: STICKY_COL_WIDTH, minWidth: STICKY_COL_WIDTH }}
+                className="sticky left-0 z-30 border-b-2 border-r border-border bg-card"
+                style={{ width: DAY_COL_W, minWidth: DAY_COL_W, height: HEADER_H }}
               />
-              {MONTHS.map((m, mIdx) => (
-                <th
-                  key={m}
-                  className={`border-b border-r border-border p-2 text-left text-xs font-semibold uppercase tracking-wider bg-card ${mIdx === currentMonth && year === today.getFullYear() ? 'text-primary' : 'text-muted-foreground'}`}
-                  style={{ width: MONTH_COL_WIDTH, minWidth: MONTH_COL_WIDTH }}
-                  data-testid={`header-month-${mIdx}`}
-                >
-                  {m} {mIdx === currentMonth && year === today.getFullYear() ? '•' : ''}
-                </th>
-              ))}
+              {MONTHS.map((m, mIdx) => {
+                const isCurrent = mIdx === todayMonth && year === today.getFullYear();
+                return (
+                  <th
+                    key={m}
+                    className={`border-b-2 border-r border-border text-left align-bottom bg-card`}
+                    style={{ width: MONTH_COL_W, minWidth: MONTH_COL_W, height: HEADER_H, padding: '4px 6px' }}
+                    data-testid={`header-month-${mIdx}`}
+                  >
+                    <div className={`text-[11px] font-bold uppercase tracking-widest leading-none ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`}>
+                      {m}
+                    </div>
+                    <div className={`text-[10px] mt-0.5 ${isCurrent ? 'text-primary/70' : 'text-muted-foreground/50'}`}>
+                      {year}
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
+
           <tbody>
             {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-              <tr key={day}>
+              <tr key={day} style={{ height: ROW_H }}>
+                {/* Sticky day-number column */}
                 <td
-                  className="sticky left-0 z-10 bg-background border-b border-r border-border text-center text-[11px] font-semibold text-muted-foreground"
-                  style={{ width: STICKY_COL_WIDTH, minWidth: STICKY_COL_WIDTH, height: ROW_HEIGHT }}
+                  className="sticky left-0 z-10 border-b border-r border-border text-center font-bold bg-card text-muted-foreground"
+                  style={{ width: DAY_COL_W, minWidth: DAY_COL_W, fontSize: 11 }}
                   data-testid={`row-day-${day}`}
                 >
                   {day}
                 </td>
+
                 {MONTHS.map((_, mIdx) => {
-                  const daysThisMonth = getDaysForMonth(mIdx);
-                  const validDay = day <= daysThisMonth;
+                  const maxDay = getDaysForMonth(mIdx);
                   const dateStr = `${year}-${String(mIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                   const isToday = dateStr === todayStr;
 
-                  if (!validDay) {
+                  if (day > maxDay) {
                     return (
                       <td
                         key={`${mIdx}-${day}`}
-                        className="border-b border-r border-border bg-muted/20"
-                        style={{ width: MONTH_COL_WIDTH, height: ROW_HEIGHT }}
+                        className="border-b border-r border-border"
+                        style={{ background: 'hsl(var(--muted) / 0.25)' }}
                       />
                     );
                   }
 
-                  const dayEvents = gridData.get(dateStr) || [];
                   const dateObj = new Date(year, mIdx, day);
-                  const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
+                  const dow = DOW[dateObj.getDay()];
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                  const dayEvents = gridData.get(dateStr) ?? [];
+                  const evt = dayEvents[0] ?? null;
+
+                  let bgColor = 'transparent';
+                  let textColor = 'hsl(var(--foreground))';
+                  let label = '';
+                  let timeLabel = '';
+
+                  if (evt) {
+                    bgColor = evt.color;
+                    textColor = '#fff';
+                    label = evt.title;
+                    timeLabel = evt.startTime ?? '';
+                  }
+
+                  const hasMore = dayEvents.length > 1;
 
                   return (
                     <td
                       key={`${mIdx}-${day}`}
-                      className={`border-b border-r border-border p-1 align-top cursor-pointer transition-colors hover:bg-primary/5 ${isToday ? 'bg-primary/10 ring-1 ring-inset ring-primary/30' : isWeekend ? 'bg-muted/10' : ''}`}
-                      style={{ width: MONTH_COL_WIDTH, height: ROW_HEIGHT }}
-                      onClick={() => handleCellClick(dateStr, dayEvents)}
+                      className={`border-b border-r border-border cursor-pointer select-none transition-opacity hover:opacity-80 relative`}
+                      style={{
+                        width: MONTH_COL_W,
+                        minWidth: MONTH_COL_W,
+                        background: isToday && !evt
+                          ? 'hsl(var(--primary) / 0.12)'
+                          : isWeekend && !evt
+                          ? 'hsl(var(--muted) / 0.4)'
+                          : evt
+                          ? bgColor
+                          : 'transparent',
+                        padding: '2px 4px',
+                        verticalAlign: 'top',
+                      }}
+                      onClick={() => setSelectedCell({ date: dateStr, event: evt })}
                       data-testid={`cell-${dateStr}`}
                     >
-                      <div className="flex h-full flex-col gap-0.5 overflow-hidden">
-                        <span className={`text-[9px] font-bold leading-none ${isToday ? 'text-primary' : 'text-muted-foreground/40'}`}>
-                          {dayOfWeek}
+                      {/* Day-of-week + content */}
+                      <div className="flex items-start gap-1 h-full overflow-hidden">
+                        {/* DOW badge */}
+                        <span
+                          className="text-[9px] font-bold shrink-0 leading-tight mt-px"
+                          style={{
+                            color: evt ? 'rgba(255,255,255,0.75)' : isToday ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground) / 0.5)',
+                          }}
+                        >
+                          {dow}
                         </span>
-                        {dayEvents.map(evt => (
-                          <div
-                            key={evt.id}
-                            className="rounded px-1 py-0.5 text-[10px] font-semibold truncate flex items-center gap-0.5 leading-tight text-white"
-                            style={{ backgroundColor: evt.color }}
-                            data-testid={`event-pill-${evt.id}`}
+
+                        {/* Event label */}
+                        {evt && (
+                          <span
+                            className="text-[10px] font-semibold truncate leading-tight mt-px flex-1"
+                            style={{ color: textColor }}
                           >
-                            {evt.startTime && (
-                              <span className="opacity-80 shrink-0 text-[8px]">{evt.startTime}</span>
-                            )}
-                            <span className="truncate">{evt.title}</span>
-                          </div>
-                        ))}
+                            {timeLabel ? `${timeLabel} ` : ''}{label}
+                          </span>
+                        )}
                       </div>
+
+                      {/* "more" badge if multiple events */}
+                      {hasMore && (
+                        <span
+                          className="absolute bottom-0.5 right-1 text-[8px] font-bold opacity-70"
+                          style={{ color: textColor }}
+                        >
+                          +{dayEvents.length - 1}
+                        </span>
+                      )}
+
+                      {/* Today indicator */}
+                      {isToday && (
+                        <span
+                          className="absolute top-0 left-0 w-full h-0.5 bg-primary"
+                        />
+                      )}
                     </td>
                   );
                 })}

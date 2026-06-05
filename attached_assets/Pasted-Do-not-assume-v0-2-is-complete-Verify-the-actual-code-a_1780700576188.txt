@@ -1,0 +1,56 @@
+Do not assume v0.2 is complete. Verify the actual code against the v0.2 requirements and fix any missing implementation.
+
+I reviewed GitHub and found inconsistencies:
+
+* CHANGELOG.md claims v0.2.1 PWA/reliability work was done.
+* But package.json does not appear to include vite-plugin-pwa.
+* vite.config.ts does not appear to include VitePWA.
+* vite.config.ts still appears to throw if PORT or BASE_PATH are missing.
+* manifest.webmanifest and PWA icons do not appear to exist in artifacts/lifegrid/public.
+* CODE_REVIEW_AND_END_USER_ANALYSIS.md appears to be missing.
+* importBackup still appears to set activeCalendarId to calendars[0].id instead of preserving the backup’s activeCalendarId.
+* SettingsView does not appear to show last-backup tracking/status.
+* lifegrid-export.tar.gz may still be present in the repository even though .gitignore was updated.
+
+Task:
+
+1. Inspect the current repo state.
+2. Confirm which v0.2 items are actually implemented in code and which are only documented.
+3. Implement the missing items with minimal changes:
+    * Add vite-plugin-pwa.
+    * Add VitePWA to vite.config.ts.
+    * Add manifest and PWA icons.
+    * Add Apple PWA meta tags if not present.
+    * Add app-shell/static-asset offline caching.
+    * Make PORT default to 3000 and BASE_PATH default to “/” while preserving Replit compatibility.
+    * Preserve imported backup activeCalendarId when valid.
+    * Add last-backup tracking and status display in Settings.
+    * Add simple offline/install help in Settings if missing.
+    * Add CODE_REVIEW_AND_END_USER_ANALYSIS.md.
+    * Remove any committed archive/export files such as lifegrid-export.tar.gz if safe.
+    * Ensure .gitignore prevents future archive, backup JSON, .env, and dist commits.
+4. Run:
+    * pnpm –filter @workspace/lifegrid run typecheck
+    * pnpm –filter @workspace/lifegrid run build
+5. If either fails, attempt one minimal fix and rerun.
+6. Update:
+    * PROJECT_HANDOFF.md
+    * EXPORT_CHECKLIST.md
+    * OFFLINE_PWA_INSTALL_GUIDE.md
+    * CODE_REVIEW_AND_END_USER_ANALYSIS.md
+    * CHANGELOG.md
+7. Commit with:
+    Complete v0.2 reliability and offline PWA implementation
+8. Push to GitHub.
+
+Final response should include:
+
+* Exact files changed
+* Whether vite-plugin-pwa is installed
+* Whether VitePWA is present in vite.config.ts
+* Whether manifest/icons exist
+* Whether importBackup now preserves activeCalendarId
+* Whether last-backup tracking appears in Settings
+* Whether typecheck/build passed
+* Commit hash
+* Branch pushed

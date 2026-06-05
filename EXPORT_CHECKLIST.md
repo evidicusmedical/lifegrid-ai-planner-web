@@ -57,7 +57,7 @@ Test that the code export actually works by running it locally or in a cloud edi
 - [ ] Install pnpm if needed: `npm install -g pnpm`
 - [ ] Unzip the downloaded project and open a terminal in that folder
 - [ ] Run: `pnpm install`
-- [ ] Run: `PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run dev`
+- [ ] Run: `pnpm --filter @workspace/lifegrid run dev`  *(PORT defaults to 3000, BASE_PATH defaults to /)*
 - [ ] Open `http://localhost:3000` in your browser
 - [ ] Confirm the app loads (it will be empty — your data is in the other browser's localStorage)
 - [ ] Import your JSON backup: Settings → Data & Backup → Import JSON Backup → select the `.json` file
@@ -68,7 +68,7 @@ Test that the code export actually works by running it locally or in a cloud edi
 - [ ] Open your GitHub repo → click **Code** → **Codespaces** → **Create codespace on main**
 - [ ] Wait for the environment to build (~2 minutes)
 - [ ] In the Codespaces terminal: `pnpm install`
-- [ ] Then: `PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run dev`
+- [ ] Then: `pnpm --filter @workspace/lifegrid run dev`
 - [ ] Click the **Open in Browser** popup that appears
 - [ ] Confirm the app loads
 
@@ -112,14 +112,14 @@ Test that the code export actually works by running it locally or in a cloud edi
 # Install dependencies (run once after cloning/unzipping)
 pnpm install
 
-# Start dev server with live reload
-PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run dev
+# Start dev server with live reload (PORT defaults to 3000, BASE_PATH defaults to /)
+pnpm --filter @workspace/lifegrid run dev
 
 # Build for production
-PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run build
+pnpm --filter @workspace/lifegrid run build
 
 # Preview the production build
-PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run serve
+pnpm --filter @workspace/lifegrid run serve
 ```
 
 Production build output is in: `artifacts/lifegrid/dist/public/`

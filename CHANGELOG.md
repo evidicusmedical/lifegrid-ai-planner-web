@@ -75,3 +75,14 @@ All notable changes to this project are documented here.
 **Repo hygiene**
 - `.gitignore` updated: `*.zip`, `*.tar.gz`, backup JSON patterns, `.env*`
 - Removed stray `lifegrid-export.tar.gz` from repository root
+
+### Documentation
+- `CHANGELOG.md` — this file
+- `OFFLINE_PWA_INSTALL_GUIDE.md` — step-by-step PWA install guide for iOS, Android, and desktop
+- `CODE_REVIEW_AND_END_USER_ANALYSIS.md` — full code review, architecture assessment, end-user analysis, risks, and recommended next steps
+- `PROJECT_HANDOFF.md` — updated: PWA/offline limitation corrected, env vars noted as optional with defaults, file map updated with PWA icons and `useOnlineStatus` hook, `lifegrid_last_backup` storage key documented
+- `EXPORT_CHECKLIST.md` — updated: run commands no longer require `PORT=` / `BASE_PATH=` prefixes
+
+### Build verification (June 2026)
+- `pnpm typecheck` → **CLEAN** (zero TypeScript errors)
+- `pnpm build` → **SUCCESS** — emits `manifest.webmanifest`, `sw.js`, `workbox-*.js`; PWA precaches 16 entries (732 KB)

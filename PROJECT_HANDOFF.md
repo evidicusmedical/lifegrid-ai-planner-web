@@ -27,7 +27,7 @@ LifeGrid is a personal life-planning calendar app designed to run entirely insid
 **Current limitations:**
 - No backend — all data lives in your browser's localStorage. Clearing site data in Safari wipes everything.
 - No account/sync — data does not roam between devices or browsers automatically (use the JSON backup in Settings to move data)
-- Not a true offline/PWA app — it loads from the internet; once loaded it works without a connection, but a fresh load in airplane mode will fail because there is no service worker
+- **PWA with offline support** — a Workbox service worker precaches all assets on first visit. After that, the app loads fully offline. Install it to your home screen on iOS/Android for a native-app feel (see Settings → Install & use offline)
 - The AI features require you to manually copy/paste prompts to and from an external AI — there is no direct API connection to ChatGPT or Claude
 - No push notifications or reminders
 
@@ -66,8 +66,12 @@ artifacts/lifegrid/
 ├── package.json            Dependencies — edit only to add/remove packages
 ├── components.json         shadcn/ui component registry — leave alone
 ├── public/
-│   ├── favicon.svg         App icon shown in browser tab — safe to replace
-│   └── opengraph.jpg       Social share image — safe to replace
+│   ├── favicon.svg             App icon shown in browser tab — safe to replace
+│   ├── opengraph.jpg           Social share image — safe to replace
+│   ├── pwa-icon-192.png        PWA home-screen icon (192×192)
+│   ├── pwa-icon-512.png        PWA home-screen icon (512×512, also used as maskable)
+│   ├── pwa-icon.svg            SVG version of PWA icon
+│   └── apple-touch-icon.png   iOS home-screen icon (180×180)
 └── src/
     ├── main.tsx            App entry point — leave alone
     ├── App.tsx             Root component, tab routing — safe to read; minor edits OK
@@ -96,8 +100,9 @@ artifacts/lifegrid/
     │   ├── DayDetailSheet.tsx  Panel showing all events for a tapped day
     │   └── ui/                 shadcn/ui primitive components — DO NOT edit
     └── hooks/
-        ├── use-mobile.tsx  Detects mobile viewport
-        └── use-toast.ts    Toast notification hook
+        ├── use-mobile.tsx      Detects mobile viewport
+        ├── use-toast.ts        Toast notification hook
+        └── useOnlineStatus.ts  Returns true/false live network connectivity (drives offline banner)
 ```
 
 ### Edit safety guide
@@ -125,21 +130,19 @@ artifacts/lifegrid/
 | Install all dependencies | `pnpm install` |
 | Start dev server (hot-reload) | `pnpm --filter @workspace/lifegrid run dev` |
 | Type-check only | `pnpm --filter @workspace/lifegrid run typecheck` |
-| Build for production | `PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run build` |
-| Preview production build | `PORT=3000 BASE_PATH=/ pnpm --filter @workspace/lifegrid run serve` |
+| Build for production | `pnpm --filter @workspace/lifegrid run build` |
+| Preview production build | `pnpm --filter @workspace/lifegrid run serve` |
 
-### Required environment variables (for Vite dev server and build)
+### Environment variables (optional)
 
-| Variable | Example value | Purpose |
+| Variable | Default | Purpose |
 |---|---|---|
 | `PORT` | `3000` | Which port the dev/preview server listens on |
 | `BASE_PATH` | `/` | URL path prefix — use `/` for running at the root |
 
-**Important:** `vite.config.ts` throws an error on startup if either variable is missing. On Replit these are set automatically. When running locally, set them before running the command:
+Both variables have safe defaults and are **optional** when running locally. On Replit they are set automatically. Override only if you need a non-standard port or a sub-path deployment (e.g. GitHub Pages):
 ```bash
-export PORT=3000
-export BASE_PATH=/
-pnpm --filter @workspace/lifegrid run dev
+PORT=8080 BASE_PATH=/lifegrid/ pnpm --filter @workspace/lifegrid run dev
 ```
 
 ### Required configuration files
@@ -164,6 +167,7 @@ pnpm --filter @workspace/lifegrid run dev
 | `lifegrid_store_v5` | All calendar data — events, tasks, person-events, categories, people, calendar versions |
 | `lifegrid_theme` | Light or dark mode preference |
 | `lifegrid_ai_draft_v1` | Temporarily saved AI prompt draft (expires after 72 hours) |
+| `lifegrid_last_backup` | ISO timestamp of the last JSON backup download (used by the backup status indicator) |
 
 **Local-only:** No server, no cloud sync. Data exists only in the browser you used to create it.
 

@@ -1,0 +1,121 @@
+Do not change, refactor, delete, redeploy, or modify any application code.
+
+I want to export and preserve this generated application so I can study it, reverse engineer it, and potentially edit it elsewhere outside Replit.
+
+Please help me create a complete project handoff and export plan.
+
+First, inspect the project and produce a clear, beginner-friendly technical handoff document with the following sections:
+
+1. Project Overview
+
+* App name
+* What the app currently does
+* Main features
+* Current limitations
+
+2. Technology Stack
+
+* Framework
+* Language
+* Package manager
+* Frontend libraries
+* Backend/server framework, if any
+* Database or storage method, if any
+* Authentication method, if any
+* Deployment type currently used
+
+3. File and Folder Map
+    For each important file or folder, explain:
+
+* File/folder name
+* What it does
+* Whether it is safe for me to edit
+* What might break if I edit it incorrectly
+
+4. How the App Runs
+    Explain:
+
+* Development start command
+* Build command
+* Preview/production command
+* Required dependencies
+* What configuration files are required, including .replit, replit.nix, package.json, lock files, and any other important files
+
+5. Data Storage
+    Explain:
+
+* Where app data is currently stored
+* Whether data is local-only, database-backed, or cloud-backed
+* Whether user-entered schedule/task data would be included in a code export
+* How I can separately back up any app data if needed
+
+6. Environment Variables and Secrets
+    Identify any required secrets or environment variables by name only.
+    Do not reveal secret values.
+    Explain where these need to be recreated if I move the project elsewhere.
+7. Export / Backup Instructions
+    Create step-by-step instructions for:
+
+* Downloading the full project as a ZIP from Replit
+* Creating a ZIP manually from the Shell if the normal download fails
+* Connecting this project to GitHub
+* Creating a private GitHub repository
+* Committing the current version
+* Pushing the code to GitHub
+* Confirming the export was successful
+
+8. How to Run Elsewhere
+    Explain how I could run this project in:
+
+* VS Code
+* Cursor
+* GitHub Codespaces
+* Another Replit project
+* A generic local development environment
+
+Include likely commands such as install, build, and run commands, but only if they are accurate for this project.
+
+9. Deployment / Publishing Notes
+    Explain:
+
+* Current deployment setup
+* Whether this app can be deployed as a static site
+* Whether it requires a backend server
+* Lowest-cost hosting option based on the current architecture
+* Any risks of keeping it publicly published
+
+10. Reverse Engineering Guide
+    Explain how I should study this codebase as a beginner:
+
+* Which files to read first
+* Which files control the UI
+* Which files control data storage
+* Which files control AI export/import logic, if present
+* Which features are easiest to modify safely
+* Which areas I should avoid editing until I understand the project better
+
+11. Safe Next Experiments
+    Recommend 5 small, low-risk changes I can try after exporting the project, such as changing labels, adding a field, adjusting colors, editing the AI export prompt, or adding a backup button.
+12. Risks and Missing Pieces
+    List anything that is fragile, incomplete, not backed up, or not portable.
+
+After creating the handoff document, please create a file in the project root called:
+
+PROJECT_HANDOFF.md
+
+Put the full handoff document there.
+
+Then create a second file called:
+
+EXPORT_CHECKLIST.md
+
+This should be a concise checklist I can follow to download the ZIP, push to GitHub, back up data, preserve secrets, and verify I can run the project elsewhere.
+
+Do not make any code changes except creating these two documentation files.
+
+After creating the files, summarize:
+
+* The files you created
+* Where they are located
+* What I should do next
+* Whether the project is ready to export

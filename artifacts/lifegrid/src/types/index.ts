@@ -31,6 +31,8 @@ export interface Event {
   endTime: string | null; // HH:MM
   color: string;
   notes: string | null;
+  // Links recurring / multi-day siblings — all share the same group ID.
+  recurringGroupId?: string;
 }
 
 export interface Task {
@@ -45,6 +47,8 @@ export interface Task {
   priority: TaskPriority;
   // Scheduling parameters / dependencies — exported to AI for analysis.
   schedulingNotes?: string | null;
+  // Links recurring task siblings.
+  recurringGroupId?: string;
 }
 
 export interface PersonEvent {
@@ -56,6 +60,8 @@ export interface PersonEvent {
   color: string;
   startTime?: string | null; // HH:MM
   endTime?: string | null; // HH:MM
+  // Links multi-day / recurring person-event siblings.
+  recurringGroupId?: string;
 }
 
 export interface AppData {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,12 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
 import { Task } from '../types';
+import { X } from 'lucide-react';
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -29,6 +32,21 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+const shiftDate = (date: string, days: number): string => {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+};
+
+const shiftByFreq = (date: string, freq: string, n: number): string => {
+  if (freq === 'daily') return shiftDate(date, n);
+  if (freq === 'weekly') return shiftDate(date, n * 7);
+  if (freq === 'biweekly') return shiftDate(date, n * 14);
+  const d = new Date(date + 'T00:00:00');
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().split('T')[0];
+};
+
 interface TaskSheetProps {
   isOpen: boolean;
   onClose: () => void;
@@ -36,8 +54,15 @@ interface TaskSheetProps {
 }
 
 export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialData }) => {
-  const { addTask, updateTask, deleteTask, categories } = useAppData();
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { addTask, updateTask, deleteTask, deleteTaskGroup, tasks, categories } = useAppData();
+
+  const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
+  const [repeat, setRepeat] = useState(false);
+  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
+  const [repeatCount, setRepeatCount] = useState(4);
+
+  const groupId = initialData?.recurringGroupId;
+  const groupSize = groupId ? tasks.filter(t => t.recurringGroupId === groupId).length : 0;
 
   const defaultCat = categories.find(c => c.id === 'personal')?.id ?? categories[0]?.id ?? 'personal';
 
@@ -51,6 +76,9 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
 
   useEffect(() => {
     if (isOpen) {
+      setRepeat(false);
+      setRepeatFreq('weekly');
+      setRepeatCount(4);
       if (initialData) {
         form.reset({
           name: initialData.name,
@@ -81,199 +109,304 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
       notes: data.notes || null,
       schedulingNotes: data.schedulingNotes || null,
     };
+
     if (initialData) {
       updateTask(initialData.id, payload);
+      onClose();
+      return;
+    }
+
+    if (repeat && repeatCount > 1 && payload.dueDate) {
+      const gid = crypto.randomUUID();
+      for (let i = 0; i < repeatCount; i++) {
+        addTask({
+          id: crypto.randomUUID(),
+          ...payload,
+          dueDate: shiftByFreq(payload.dueDate, repeatFreq, i),
+          recurringGroupId: gid,
+        });
+      }
     } else {
       addTask({ id: crypto.randomUUID(), ...payload });
     }
     onClose();
   };
 
+  const saveLabel = !initialData && repeat && repeatCount > 1
+    ? `Create ${repeatCount} Tasks`
+    : initialData ? 'Save Task' : 'Add Task';
+
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="h-[90vh] overflow-y-auto rounded-t-2xl sm:max-w-md sm:mx-auto sm:right-auto sm:left-1/2 sm:-translate-x-1/2 sm:h-auto sm:max-h-[90vh]">
-        <SheetHeader>
-          <SheetTitle>{initialData ? 'Edit Task' : 'Add Task'}</SheetTitle>
-        </SheetHeader>
+    <>
+      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl overflow-hidden flex flex-col p-0"
+          style={{ height: '88dvh', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+            <h2 className="font-bold text-base">{initialData ? 'Edit Task' : 'New Task'}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 -mr-1 rounded-xl hover:bg-muted transition-colors text-muted-foreground"
+              aria-label="Close"
+              data-testid="button-sheet-close"
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4 pb-8">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Task Name</FormLabel>
-                  <FormControl><Input placeholder="What needs to be done?" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <div className="overflow-y-auto flex-1 px-4 pb-6">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="todo">To Do</SelectItem>
-                        <SelectItem value="in-progress">In Progress</SelectItem>
-                        <SelectItem value="blocked">Blocked</SelectItem>
-                        <SelectItem value="done">Done</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Task Name</FormLabel>
+                      <FormControl><Input placeholder="What needs to be done?" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="todo">To Do</SelectItem>
+                            <SelectItem value="in-progress">In Progress</SelectItem>
+                            <SelectItem value="blocked">Blocked</SelectItem>
+                            <SelectItem value="done">Done</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="priority"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Priority</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="low">Low</SelectItem>
+                            <SelectItem value="medium">Medium</SelectItem>
+                            <SelectItem value="high">High</SelectItem>
+                            <SelectItem value="urgent">Urgent</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{repeat ? 'First Due Date' : 'Due Date'}</FormLabel>
+                        <FormControl><Input type="date" {...field} value={field.value || ''} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Category</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            {categories.map(c => (
+                              <SelectItem key={c.id} value={c.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
+                                  {c.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Repeat (new tasks only) */}
+                {!initialData && (
+                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-sm font-semibold">Repeat</Label>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Create multiple occurrences at once</p>
+                      </div>
+                      <Switch checked={repeat} onCheckedChange={setRepeat} data-testid="switch-repeat-task" />
+                    </div>
+                    {repeat && (
+                      <div className="space-y-3 animate-in fade-in">
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Frequency</Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(f => (
+                              <button
+                                key={f}
+                                type="button"
+                                onClick={() => setRepeatFreq(f)}
+                                className={`py-2 rounded-lg border text-xs font-semibold transition-all ${
+                                  repeatFreq === f ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'
+                                }`}
+                              >
+                                {f === 'biweekly' ? 'Bi-weekly' : f.charAt(0).toUpperCase() + f.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">How many?</Label>
+                          <div className="flex items-center gap-3">
+                            <button type="button" onClick={() => setRepeatCount(c => Math.max(2, c - 1))} className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:bg-muted transition-colors">−</button>
+                            <span className="text-xl font-bold w-10 text-center">{repeatCount}</span>
+                            <button type="button" onClick={() => setRepeatCount(c => Math.min(52, c + 1))} className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:bg-muted transition-colors">+</button>
+                            <span className="text-xs text-muted-foreground">tasks</span>
+                          </div>
+                          <p className="text-xs text-primary font-semibold mt-1.5">Will create {repeatCount} tasks ({repeatFreq})</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
-              />
-              <FormField
-                control={form.control}
-                name="priority"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Priority</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        <SelectItem value="low">Low</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="high">High</SelectItem>
-                        <SelectItem value="urgent">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="dueDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Due Date</FormLabel>
-                    <FormControl><Input type="date" {...field} value={field.value || ''} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {categories.map(c => (
-                          <SelectItem key={c.id} value={c.id}>
-                            <span className="flex items-center gap-2">
-                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: c.color }} />
-                              {c.label}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                <FormField
+                  control={form.control}
+                  name="owner"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Owner</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="owner"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Owner</FormLabel>
-                  <FormControl><Input {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="nextAction"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Next Action</FormLabel>
+                      <FormControl><Input placeholder="Smallest next step..." {...field} value={field.value || ''} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="nextAction"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Next Action</FormLabel>
-                  <FormControl><Input placeholder="Smallest next step..." {...field} value={field.value || ''} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="schedulingNotes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Scheduling Notes &amp; Dependencies</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="e.g. needs 2 hrs focus, must be before the trip, depends on permits..."
+                          {...field}
+                          value={field.value || ''}
+                        />
+                      </FormControl>
+                      <FormDescription>Constraints the AI uses when suggesting when to schedule this.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="schedulingNotes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Scheduling Notes &amp; Dependencies</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="e.g. needs 2 hrs focus, must be before the trip, depends on permits, can only be done on a day off..."
-                      {...field}
-                      value={field.value || ''}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    Constraints &amp; dependencies the AI uses when suggesting when to schedule this.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl><Textarea placeholder="Context..." {...field} value={field.value || ''} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Notes</FormLabel>
-                  <FormControl><Textarea placeholder="Context..." {...field} value={field.value || ''} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <div className="flex flex-col gap-2 pt-2 pb-2">
+                  <Button type="submit" className="w-full h-11">{saveLabel}</Button>
 
-            <div className="flex flex-col gap-2 pt-4">
-              <Button type="submit" className="w-full">Save Task</Button>
-              {initialData && (
-                <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-                  <AlertDialogTrigger asChild>
-                    <Button type="button" variant="destructive">Delete Task</Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete "{initialData.name}"?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This permanently removes the task from this calendar. This can't be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => { deleteTask(initialData.id); setConfirmDelete(false); onClose(); }}
-                      >
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          </form>
-        </Form>
-      </SheetContent>
-    </Sheet>
+                  {initialData && (
+                    groupId && groupSize > 1 ? (
+                      <>
+                        <Button type="button" variant="outline" className="w-full h-10 text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => setConfirmDelete('single')}>
+                          Delete this task only
+                        </Button>
+                        <Button type="button" variant="destructive" className="w-full h-10" onClick={() => setConfirmDelete('group')}>
+                          Delete all {groupSize} in series
+                        </Button>
+                      </>
+                    ) : (
+                      <Button type="button" variant="destructive" className="w-full h-10" onClick={() => setConfirmDelete('single')}>
+                        Delete Task
+                      </Button>
+                    )
+                  )}
+                </div>
+              </form>
+            </Form>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={confirmDelete !== 'none'} onOpenChange={open => !open && setConfirmDelete('none')}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmDelete === 'group' ? `Delete all ${groupSize} tasks in this series?` : `Delete "${initialData?.name}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete === 'group'
+                ? `This removes all ${groupSize} recurring tasks in this series. This can't be undone.`
+                : "This permanently removes the task. This can't be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDelete('none')}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDelete === 'group' && groupId) {
+                  deleteTaskGroup(groupId);
+                } else if (initialData) {
+                  deleteTask(initialData.id);
+                }
+                setConfirmDelete('none');
+                onClose();
+              }}
+            >
+              {confirmDelete === 'group' ? 'Delete All' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };

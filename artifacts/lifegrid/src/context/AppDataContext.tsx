@@ -45,6 +45,11 @@ interface AppContextType extends AppData {
   exportBackup: () => string;
   importBackup: (json: string) => void;
   clearActiveCalendar: () => void;
+
+  // Recurring / multi-day group deletes
+  deleteEventGroup: (groupId: string) => void;
+  deleteTaskGroup: (groupId: string) => void;
+  deletePersonEventGroup: (groupId: string) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -357,6 +362,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const clearActiveCalendar = () =>
     mutate(d => ({ ...d, events: [], tasks: [], personEvents: [] }));
 
+  // ── Recurring / multi-day group deletes ──
+  const deleteEventGroup = (groupId: string) =>
+    mutate(d => ({ ...d, events: d.events.filter(e => e.recurringGroupId !== groupId) }));
+  const deleteTaskGroup = (groupId: string) =>
+    mutate(d => ({ ...d, tasks: d.tasks.filter(t => t.recurringGroupId !== groupId) }));
+  const deletePersonEventGroup = (groupId: string) =>
+    mutate(d => ({ ...d, personEvents: d.personEvents.filter(pe => pe.recurringGroupId !== groupId) }));
+
   return (
     <AppContext.Provider
       value={{
@@ -371,6 +384,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPerson, updatePerson, deletePerson,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar,
+        deleteEventGroup, deleteTaskGroup, deletePersonEventGroup,
       }}
     >
       {children}

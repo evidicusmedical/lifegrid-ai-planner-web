@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -8,12 +8,15 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
 import { PersonEvent, PersonType } from '../types';
+import { X } from 'lucide-react';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -27,6 +30,15 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+const shiftDate = (date: string, days: number): string => {
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+};
+
+const daySpan = (start: string, end: string) =>
+  Math.max(1, Math.round((new Date(end + 'T00:00:00').getTime() - new Date(start + 'T00:00:00').getTime()) / 86400000) + 1);
+
 interface PersonEventSheetProps {
   isOpen: boolean;
   onClose: () => void;
@@ -35,8 +47,14 @@ interface PersonEventSheetProps {
 }
 
 export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onClose, initialData, defaultPerson }) => {
-  const { addPersonEvent, updatePersonEvent, deletePersonEvent, people } = useAppData();
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { addPersonEvent, updatePersonEvent, deletePersonEvent, deletePersonEventGroup, personEvents, people } = useAppData();
+
+  const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
+  const [multiDay, setMultiDay] = useState(false);
+  const [endDate, setEndDate] = useState('');
+
+  const groupId = initialData?.recurringGroupId;
+  const groupSize = groupId ? personEvents.filter(pe => pe.recurringGroupId === groupId).length : 0;
 
   const resolvePerson = (id?: string) => people.find(p => p.id === id) ?? people[0];
   const initialPerson = resolvePerson(defaultPerson);
@@ -46,7 +64,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
     defaultValues: {
       title: '',
       date: new Date().toISOString().split('T')[0],
-      person: initialPerson?.id ?? 'wife',
+      person: initialPerson?.id ?? '',
       startTime: '',
       endTime: '',
       color: initialPerson?.color ?? '#8b5cf6',
@@ -56,6 +74,8 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
 
   useEffect(() => {
     if (isOpen) {
+      setMultiDay(false);
+      setEndDate('');
       if (initialData) {
         form.reset({
           title: initialData.title,
@@ -71,7 +91,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
         form.reset({
           title: '',
           date: new Date().toISOString().split('T')[0],
-          person: p?.id ?? 'wife',
+          person: p?.id ?? '',
           startTime: '',
           endTime: '',
           color: p?.color ?? '#8b5cf6',
@@ -82,164 +102,280 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialData, defaultPerson]);
 
+  const startDateVal = form.watch('date');
+  const multiDayCount = multiDay && endDate && endDate >= startDateVal ? daySpan(startDateVal, endDate) : 0;
+
   const onSubmit = (data: FormData) => {
-    const payload = {
+    const base = {
       ...data,
       startTime: data.startTime || null,
       endTime: data.endTime || null,
       notes: data.notes || null,
     };
+
     if (initialData) {
-      updatePersonEvent(initialData.id, payload);
+      updatePersonEvent(initialData.id, base);
+      onClose();
+      return;
+    }
+
+    if (multiDay && endDate && endDate >= data.date) {
+      const gid = crypto.randomUUID();
+      const days = daySpan(data.date, endDate);
+      for (let i = 0; i < days; i++) {
+        addPersonEvent({ id: crypto.randomUUID(), ...base, date: shiftDate(data.date, i), startTime: null, endTime: null, recurringGroupId: gid });
+      }
     } else {
-      addPersonEvent({ id: crypto.randomUUID(), ...payload });
+      addPersonEvent({ id: crypto.randomUUID(), ...base });
     }
     onClose();
   };
 
+  const saveLabel = !initialData && multiDayCount > 1
+    ? `Create ${multiDayCount} Entries`
+    : initialData ? 'Save Entry' : 'Add Entry';
+
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="h-[90vh] overflow-y-auto rounded-t-2xl sm:max-w-md sm:mx-auto sm:right-auto sm:left-1/2 sm:-translate-x-1/2 sm:h-auto sm:max-h-[90vh]">
-        <SheetHeader>
-          <SheetTitle>{initialData ? 'Edit Entry' : 'Add Entry'}</SheetTitle>
-        </SheetHeader>
+    <>
+      <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
+        <SheetContent
+          side="bottom"
+          className="rounded-t-2xl overflow-hidden flex flex-col p-0"
+          style={{ height: '88dvh', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
+            <h2 className="font-bold text-base">{initialData ? 'Edit Entry' : 'New Entry'}</h2>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 -mr-1 rounded-xl hover:bg-muted transition-colors text-muted-foreground"
+              aria-label="Close"
+              data-testid="button-sheet-close"
+            >
+              <X size={20} />
+            </button>
+          </div>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4 pb-8">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Title</FormLabel>
-                  <FormControl><Input placeholder="Event title" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+          <div className="overflow-y-auto flex-1 px-4 pb-6">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date</FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Title</FormLabel>
+                      <FormControl><Input placeholder="Event title" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{multiDay ? 'Start Date' : 'Date'}</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="person"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Person</FormLabel>
+                        <Select
+                          onValueChange={(val) => {
+                            field.onChange(val);
+                            const matched = people.find(p => p.id === val);
+                            if (matched) form.setValue('color', matched.color);
+                          }}
+                          value={field.value}
+                        >
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            {people.map(p => (
+                              <SelectItem key={p.id} value={p.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                                  {p.label}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Multi-day (new entries only) */}
+                {!initialData && (
+                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-sm font-semibold">Multi-day event</Label>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Conference, trip, away period…</p>
+                      </div>
+                      <Switch checked={multiDay} onCheckedChange={setMultiDay} data-testid="switch-multiday-person" />
+                    </div>
+                    {multiDay && (
+                      <div className="space-y-2 animate-in fade-in">
+                        <div>
+                          <Label className="text-xs text-muted-foreground">End Date</Label>
+                          <Input
+                            type="date"
+                            value={endDate}
+                            onChange={e => setEndDate(e.target.value)}
+                            min={startDateVal}
+                            className="h-9 text-sm mt-1"
+                            data-testid="input-end-date-person"
+                          />
+                        </div>
+                        {multiDayCount > 0 && (
+                          <p className="text-xs text-primary font-semibold">
+                            Will create {multiDayCount} entr{multiDayCount !== 1 ? 'ies' : 'y'} — one per day
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-              />
-              <FormField
-                control={form.control}
-                name="person"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Section</FormLabel>
-                    <Select
-                      onValueChange={(val) => {
-                        field.onChange(val);
-                        const matched = people.find(p => p.id === val);
-                        if (matched) form.setValue('color', matched.color);
-                      }}
-                      value={field.value}
-                    >
-                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                      <SelectContent>
-                        {people.map(p => (
-                          <SelectItem key={p.id} value={p.id}>
-                            <span className="flex items-center gap-2">
-                              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                              {p.label}
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
+
+                {/* Times with clear X (hidden when multi-day) */}
+                {!multiDay && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="startTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Start Time</FormLabel>
+                          <div className="flex items-center gap-1">
+                            <FormControl className="flex-1">
+                              <Input type="time" {...field} value={field.value || ''} />
+                            </FormControl>
+                            {field.value && (
+                              <button type="button" onClick={() => field.onChange('')} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground shrink-0" aria-label="Clear start time">
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="endTime"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>End Time</FormLabel>
+                          <div className="flex items-center gap-1">
+                            <FormControl className="flex-1">
+                              <Input type="time" {...field} value={field.value || ''} />
+                            </FormControl>
+                            {field.value && (
+                              <button type="button" onClick={() => field.onChange('')} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground shrink-0" aria-label="Clear end time">
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 )}
-              />
-            </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="startTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Start Time</FormLabel>
-                    <FormControl><Input type="time" {...field} value={field.value || ''} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="endTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>End Time</FormLabel>
-                    <FormControl><Input type="time" {...field} value={field.value || ''} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+                <FormField
+                  control={form.control}
+                  name="color"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Color</FormLabel>
+                      <FormControl><Input type="color" className="w-full h-10 p-1" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="color"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Color</FormLabel>
-                  <FormControl><Input type="color" className="w-full h-10 p-1" {...field} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl><Textarea placeholder="Context..." {...field} value={field.value || ''} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Notes</FormLabel>
-                  <FormControl><Textarea placeholder="Context..." {...field} value={field.value || ''} /></FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <div className="flex flex-col gap-2 pt-2 pb-2">
+                  <Button type="submit" className="w-full h-11">{saveLabel}</Button>
 
-            <div className="flex flex-col gap-2 pt-4">
-              <Button type="submit" className="w-full">Save Entry</Button>
-              {initialData && (
-                <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-                  <AlertDialogTrigger asChild>
-                    <Button type="button" variant="destructive">Delete Entry</Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Delete "{initialData.title}"?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This permanently removes the entry. This can't be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => { deletePersonEvent(initialData.id); setConfirmDelete(false); onClose(); }}
-                      >
-                        Delete
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
-            </div>
-          </form>
-        </Form>
-      </SheetContent>
-    </Sheet>
+                  {initialData && (
+                    groupId && groupSize > 1 ? (
+                      <>
+                        <Button type="button" variant="outline" className="w-full h-10 text-destructive border-destructive/30 hover:bg-destructive/5" onClick={() => setConfirmDelete('single')}>
+                          Delete this entry only
+                        </Button>
+                        <Button type="button" variant="destructive" className="w-full h-10" onClick={() => setConfirmDelete('group')}>
+                          Delete all {groupSize} in series
+                        </Button>
+                      </>
+                    ) : (
+                      <Button type="button" variant="destructive" className="w-full h-10" onClick={() => setConfirmDelete('single')}>
+                        Delete Entry
+                      </Button>
+                    )
+                  )}
+                </div>
+              </form>
+            </Form>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={confirmDelete !== 'none'} onOpenChange={open => !open && setConfirmDelete('none')}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmDelete === 'group' ? `Delete all ${groupSize} entries in this series?` : `Delete "${initialData?.title}"?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete === 'group'
+                ? `This removes all ${groupSize} entries in this series. This can't be undone.`
+                : "This permanently removes the entry. This can't be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmDelete('none')}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDelete === 'group' && groupId) {
+                  deletePersonEventGroup(groupId);
+                } else if (initialData) {
+                  deletePersonEvent(initialData.id);
+                }
+                setConfirmDelete('none');
+                onClose();
+              }}
+            >
+              {confirmDelete === 'group' ? 'Delete All' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 };

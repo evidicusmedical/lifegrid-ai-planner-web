@@ -124,3 +124,16 @@ pnpm --filter @workspace/lifegrid run serve
 
 Production build output is in: `artifacts/lifegrid/dist/public/`
 This folder is what you upload to Netlify, Vercel, Cloudflare Pages, or GitHub Pages.
+
+---
+
+## v0.3.1 Patch-Generation Checklist
+
+- Run `pnpm --filter @workspace/lifegrid run typecheck`.
+- Run `pnpm --filter @workspace/lifegrid run build`.
+- Confirm grid cell sorting: no-time/all-day first, timed events by start time, category order as secondary sort.
+- Confirm PNG export disables controls, shows progress, and expands rows to include all events.
+- Confirm the AI Planner defaults to AI Admin Assistant / compact context mode for routine planning.
+- Confirm JSON patch mode prompts for minimal raw JSON with `completed_task_ids`, project/category assignments, and notes.
+- Confirm Settings separates restorable JSON backup from readable `.txt` and calendar-only `.ics` exports.
+- Final GitHub push and deployment should be performed from Replit, not from this workspace.

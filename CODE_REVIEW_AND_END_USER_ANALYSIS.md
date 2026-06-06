@@ -141,3 +141,21 @@ pnpm --filter @workspace/lifegrid run build       → SUCCESS
 ```
 
 The chunk-size warning (>500 KB) is informational — it does not affect correctness. See §7 item 4 for the recommended fix.
+
+---
+
+## v0.3.1 Review Addendum — Usability and AI Admin Assistant Workflow
+
+The v0.3.1 pass keeps the app local-first and avoids backend/API scope expansion. The main usability improvements are denser grid cells, clearer task/project guidance, yearly task repeats, safer backup/export wording, and a clearer AI Admin Assistant workflow that can support planning, coordination, drafting, and minimal JSON updates.
+
+End-user impact:
+- Grid days are easier to scan and exported PNGs include all events for each day.
+- Routine AI planning should require smaller prompts and shorter AI responses.
+- Simple task completions can be returned as `completed_task_ids` instead of full task rewrites.
+- Users see AI notes and unknown-ID warnings before applying changes.
+- JSON backup is distinguished from readable `.txt` and calendar-only `.ics` exports.
+
+Remaining risks:
+- AI output is still probabilistic; preview warnings should be reviewed carefully.
+- Large full-context exports can still be slow or token-heavy; compact or JSON patch mode remains recommended for day-to-day use.
+- Full external calendar import remains deferred because bulk ICS/CSV imports can create many records and should be versioned/tagged carefully.

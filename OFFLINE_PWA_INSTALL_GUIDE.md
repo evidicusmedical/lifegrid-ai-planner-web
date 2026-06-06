@@ -72,3 +72,8 @@ The backup status indicator in Settings turns amber if you haven't backed up in 
 | Old version showing | Pull-to-refresh or force-refresh; the service worker auto-updates |
 | Install option missing | Make sure you're using Safari on iOS or Chrome/Edge on Android/desktop |
 | Data missing after reinstall | Data lives in the browser's localStorage — reinstalling clears it. Always keep a backup. |
+---
+
+## v0.3.1 note
+
+The Settings screen now uses a shorter "Install & use offline" explanation. Offline/PWA behavior is unchanged: LifeGrid remains local-first, and JSON backup is still the main protection against browser/site-data deletion.

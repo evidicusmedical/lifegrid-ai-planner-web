@@ -126,6 +126,20 @@ function applySort(tasks: Task[], sort: SortMode): Task[] {
   }
 }
 
+const STATUS_LABELS: Record<Task['status'], string> = {
+  todo: 'To do',
+  'in-progress': 'In progress',
+  blocked: 'Blocked',
+  done: 'Done',
+};
+
+const STATUS_BADGE_CLASS: Record<Task['status'], string> = {
+  todo: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
+  'in-progress': 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+  blocked: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  done: 'bg-green-500/10 text-green-700 dark:text-green-400',
+};
+
 const PriorityIcon = ({ priority }: { priority: TaskPriority }) => {
   switch (priority) {
     case 'urgent': return <AlertTriangle size={14} className="text-red-500" />;
@@ -187,7 +201,10 @@ export const TasksView = () => {
       {/* ── Header ── */}
       <div className="flex-none p-4 pb-2 border-b border-border bg-card">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-xl font-bold tracking-tight">Tasks</h1>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Tasks</h1>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Use tasks for small next actions; group larger efforts with projects and tags.</p>
+          </div>
           {/* Sort dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -359,7 +376,9 @@ export const TasksView = () => {
                         {task.name}
                       </h3>
                       <div className="shrink-0 flex items-center gap-1">
-                        {blocked && <span className="text-[9px] font-bold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded-full">BLOCKED</span>}
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE_CLASS[task.status]}`}>
+                          {STATUS_LABELS[task.status]}
+                        </span>
                         <PriorityIcon priority={task.priority} />
                       </div>
                     </div>
@@ -394,9 +413,10 @@ export const TasksView = () => {
                           {cat.label}
                         </Badge>
                       )}
+                      <span className="text-[10px] font-semibold uppercase text-muted-foreground/80">{task.priority}</span>
                       {task.schedulingNotes && (
-                        <span className="flex items-center gap-1 text-[10px] text-primary/80">
-                          <Link2 size={11} /> has constraints
+                        <span className="flex items-center gap-1 text-[10px] text-primary/80 font-semibold">
+                          <Link2 size={11} /> constraints
                         </span>
                       )}
                     </div>

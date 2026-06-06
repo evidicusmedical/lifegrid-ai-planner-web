@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   Plus, Trash2, Check, X, Pencil, Copy, Download, Upload,
   CalendarDays, Tag, Users, Database, Eraser, Smartphone,
-  FolderOpen, ChevronUp, ChevronDown,
+  FolderOpen, ChevronUp, ChevronDown, FileText,
 } from 'lucide-react';
 import { Category, Person, Project } from '../types';
 import { formatDate } from '../lib/format';
@@ -39,6 +39,7 @@ export const SettingsView = () => {
         <PeopleManager />
         <InstallSection />
         <DataManager />
+        <ExportManager />
       </div>
     </div>
   );
@@ -318,9 +319,9 @@ function ProjectManager() {
   };
 
   return (
-    <Section icon={<FolderOpen size={16} />} title="Projects" subtitle="Group related tasks under a project or major initiative.">
+    <Section icon={<FolderOpen size={16} />} title="Projects" subtitle="Use projects for large efforts; keep tasks small and actionable.">
       {projects.length === 0 && !adding && (
-        <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group tasks together.</p>
+        <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group related subtasks for focus mode.</p>
       )}
       {projects.map(proj => (
         <ProjectRow
@@ -553,34 +554,99 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
 // ─── Install & offline section ────────────────────────────────────────────────
 function InstallSection() {
   return (
-    <Section icon={<Smartphone size={16} />} title="Install & use offline" subtitle="Works without Wi-Fi once installed.">
-      <div className="space-y-3 text-[11px] text-muted-foreground leading-relaxed">
-        <div>
-          <p className="font-semibold text-foreground mb-1">📱 iPhone / iPad (Safari)</p>
-          <ol className="list-decimal list-inside space-y-0.5">
-            <li>Tap the <strong className="text-foreground">Share</strong> button (box with arrow ↑)</li>
-            <li>Scroll down → tap <strong className="text-foreground">Add to Home Screen</strong></li>
-            <li>Tap <strong className="text-foreground">Add</strong> — opens like a native app</li>
-          </ol>
-        </div>
-        <div>
-          <p className="font-semibold text-foreground mb-1">🤖 Android (Chrome)</p>
-          <ol className="list-decimal list-inside space-y-0.5">
-            <li>Tap the <strong className="text-foreground">⋮ menu</strong> in Chrome</li>
-            <li>Tap <strong className="text-foreground">Add to Home screen</strong> or <strong className="text-foreground">Install app</strong></li>
-          </ol>
-        </div>
-        <div>
-          <p className="font-semibold text-foreground mb-1">💻 Desktop (Chrome / Edge)</p>
-          <ol className="list-decimal list-inside space-y-0.5">
-            <li>Look for the <strong className="text-foreground">install ⊕ icon</strong> in the address bar</li>
-            <li>Click <strong className="text-foreground">Install</strong></li>
-          </ol>
-        </div>
-        <p className="text-[10px] text-muted-foreground/80 pt-1 border-t border-border">
-          Once installed the app loads instantly and works fully offline. All your data stays on this device — nothing is sent to any server.
+    <Section icon={<Smartphone size={16} />} title="Install & use offline" subtitle="Optional shortcut; the app remains local-first.">
+      <div className="space-y-2 text-[11px] text-muted-foreground leading-relaxed">
+        <p>
+          Install LifeGrid from your browser menu for a home-screen app experience. Once loaded, the PWA works offline and keeps data on this device/browser.
         </p>
+        <ul className="list-disc list-inside space-y-0.5">
+          <li><strong className="text-foreground">iPhone/iPad:</strong> Safari Share → Add to Home Screen.</li>
+          <li><strong className="text-foreground">Android:</strong> Chrome ⋮ menu → Add to Home screen / Install app.</li>
+          <li><strong className="text-foreground">Desktop:</strong> use the browser install icon when available.</li>
+        </ul>
       </div>
+    </Section>
+  );
+}
+
+
+function escapeIcsText(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
+}
+
+function buildIcsExport(app: ReturnType<typeof useAppData>): string {
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//LifeGrid AI Planner//EN',
+    'CALSCALE:GREGORIAN',
+  ];
+  [...app.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
+    const start = e.startTime ? `${e.date.replace(/-/g, '')}T${e.startTime.replace(':', '')}00` : e.date.replace(/-/g, '');
+    const end = e.endTime ? `${e.date.replace(/-/g, '')}T${e.endTime.replace(':', '')}00` : undefined;
+    lines.push('BEGIN:VEVENT');
+    lines.push(`UID:${e.id}@lifegrid`);
+    lines.push(`DTSTAMP:${stamp}`);
+    lines.push(e.startTime ? `DTSTART:${start}` : `DTSTART;VALUE=DATE:${start}`);
+    if (end) lines.push(`DTEND:${end}`);
+    lines.push(`SUMMARY:${escapeIcsText(e.title)}`);
+    const cat = app.categories.find(c => c.id === e.category)?.label ?? e.category;
+    lines.push(`CATEGORIES:${escapeIcsText(cat)}`);
+    if (e.notes) lines.push(`DESCRIPTION:${escapeIcsText(e.notes)}`);
+    lines.push('END:VEVENT');
+  });
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+function ExportManager() {
+  const app = useAppData();
+
+  const download = (contents: string, filename: string, type: string) => {
+    const blob = new Blob([contents], { type });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Section icon={<FileText size={16} />} title="Readable & calendar exports" subtitle="For sharing; these files are not restorable backups.">
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
+        These exports are separate from JSON backup/restore. Use them for printing, sharing, or importing grid events into an external calendar app.
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            download(buildTextExport(app), `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`, 'text/plain');
+            toast.success('Text export downloaded', { description: 'Readable only — not restorable.' });
+          }}
+          className="gap-1.5 h-9 text-xs"
+          data-testid="button-export-text"
+        >
+          <Download size={14} /> Export .txt
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            download(buildIcsExport(app), `lifegrid-events-${new Date().toISOString().slice(0, 10)}.ics`, 'text/calendar');
+            toast.success('ICS exported', { description: 'Calendar/grid events only — tasks and people entries are not included.' });
+          }}
+          className="gap-1.5 h-9 text-xs"
+          data-testid="button-export-ics"
+        >
+          <Download size={14} /> Events .ics
+        </Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        ICS export includes calendar/grid events only and can be imported into external calendar apps. Tasks, projects, and People tab schedules stay in LifeGrid backups.
+      </p>
     </Section>
   );
 }
@@ -609,18 +675,6 @@ function DataManager() {
     recordBackup();
   };
 
-  const handleTextExport = () => {
-    const text = buildTextExport(app);
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Text export downloaded', { description: 'Open the .txt file to read or share your schedule.' });
-  };
-
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -644,23 +698,23 @@ function DataManager() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
-        <Button size="sm" variant="secondary" onClick={handleExport} className="gap-1.5 h-9 text-xs" data-testid="button-export-backup">
-          <Download size={14} /> JSON backup
-        </Button>
-        <Button size="sm" variant="secondary" onClick={handleTextExport} className="gap-1.5 h-9 text-xs" data-testid="button-export-text">
-          <Download size={14} /> Export .txt
+      <div className="space-y-2">
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your data is stored only in this browser. Clearing site/browser data can remove it. A JSON backup is the main save point; download one after meaningful changes and restore by uploading your latest JSON backup.
+        </p>
+        <Button size="sm" variant="secondary" onClick={handleExport} className="w-full gap-1.5 h-9 text-xs" data-testid="button-export-backup">
+          <Download size={14} /> Download restorable JSON backup
         </Button>
       </div>
 
       <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} className="w-full gap-1.5 h-9 text-xs" data-testid="button-import-backup">
-        <Upload size={14} /> Restore from backup
+        <Upload size={14} /> Restore latest JSON backup
       </Button>
       <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
 
       <div className="pt-1 border-t border-border">
         <p className="text-[10px] text-muted-foreground mb-2">
-          Active calendar: <strong className="text-foreground">{activeCalendar.name}</strong> · {activeCalendar.data.events.length} events · {activeCalendar.data.tasks.length} tasks
+          Selected calendar: <strong className="text-foreground">{activeCalendar.name}</strong> · {activeCalendar.data.events.length} events · {activeCalendar.data.tasks.length} tasks
         </p>
         <AlertDialog>
           <AlertDialogTrigger asChild>

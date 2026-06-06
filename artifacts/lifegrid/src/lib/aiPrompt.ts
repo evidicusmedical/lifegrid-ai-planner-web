@@ -15,6 +15,33 @@ const catColorMap = (categories: Category[]): Record<string, string> => {
   return m;
 };
 
+const encodeCategoryOrder = (data: AppData): string =>
+  data.categories.map((c, i) => `  ${i + 1}. ${c.id} (${c.label}, ${c.color})`).join('\n') || '  (none)';
+
+const encodeProjects = (data: AppData): string => {
+  if (data.projects.length === 0) return '  (none)';
+  return data.projects.map(p => {
+    const linked = data.tasks.filter(t => t.projectId === p.id);
+    const done = linked.filter(t => t.status === 'done').length;
+    return `  ${p.id}  ${p.name}  color:${p.color}  tasks:${done}/${linked.length} done`;
+  }).join('\n');
+};
+
+const adminAssistantIntro = (data: AppData, requestLabel: string): string => `You are acting as my LifeGrid AI Admin Assistant. LifeGrid is local-first; I will paste context here and later paste raw JSON back into the app if I accept changes.
+
+First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for specific analysis yet, wait for my next instruction after acknowledging.
+
+You can help with schedule analysis, free-time finding, meeting coordination, task prioritization, project breakdown, drafting messages/emails, and bulk schedule/task changes.
+
+When final changes are ready, I will ask you to output raw JSON for LifeGrid import. Final import output must be raw JSON only, with no markdown fences or explanation, and must include only changed/new/deleted items rather than the unchanged dataset. Flag ambiguity in notes instead of guessing. Large calendars/task lists may take longer for external AI models to process.
+
+CATEGORY / TAG ORDER (use these ids and order)
+${encodeCategoryOrder(data)}
+
+PROJECT STRUCTURE
+${encodeProjects(data)}
+`;
+
 // ─── Concrete schema + example the AI can mirror exactly ─────────────────────
 const schemaReference = (categories: Category[]): string => {
   const ids = categories.map(c => c.id);
@@ -55,7 +82,8 @@ OUTPUT FORMAT — return ONLY this JSON, nothing else
         "nextAction": "First step",
         "notes": null,
         "schedulingNotes": null,
-        "priority": "medium"
+        "priority": "medium",
+        "projectId": null
       }
     ],
     "update": [],
@@ -73,6 +101,7 @@ FIELD RULES — follow exactly:
   color          : hex that matches category — ${colorLines}
   owner          : "Me" (default) or another person's name
   schedulingNotes: optional constraints/dependencies text, or null
+  projectId      : optional project id from PROJECT STRUCTURE, or null
 
 EXTRA RULES:
   - Use ONLY the category ids listed above. If nothing fits, use "other".
@@ -85,6 +114,40 @@ EXTRA RULES:
   - If no tasks are present in the source, omit the "tasks" key entirely
   - Do NOT wrap the JSON in markdown code fences
   - Do NOT include any text before or after the JSON
+==================================================
+`;
+};
+
+const patchSchemaReference = (categories: Category[]): string => {
+  const ids = categories.map(c => c.id);
+  const catUnion = ids.map(i => `"${i}"`).join(' | ') || '"other"';
+  return `
+==================================================
+OUTPUT FORMAT — return ONLY this minimal JSON patch
+==================================================
+
+{
+  "new_events": [],
+  "updated_events": [
+    { "id": "existing-event-id", "date": "YYYY-MM-DD", "startTime": "09:00", "endTime": "10:00", "notes": "only changed fields" }
+  ],
+  "deleted_event_ids": [],
+  "new_tasks": [],
+  "updated_tasks": [
+    { "id": "existing-task-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
+  ],
+  "completed_task_ids": [],
+  "deleted_task_ids": [],
+  "notes": []
+}
+
+RULES:
+  - Return raw JSON only. No markdown fences and no explanation.
+  - Do not repeat unchanged events or tasks.
+  - For simple task completion, use completed_task_ids instead of updated_tasks.
+  - Category/tag must be one of: ${catUnion}. Use "other" if needed.
+  - Use projectId when assigning work to a known project; otherwise use null or omit it.
+  - If something is ambiguous, add a short string to notes instead of guessing.
 ==================================================
 `;
 };
@@ -148,19 +211,22 @@ const encodeTasks = (tasks: Task[]): string => {
 
 // ─── Prompt types & their objective blocks ───────────────────────────────────
 export type PromptType =
-  | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
-  | 'compact' | 'tasks-only' | 'availability';
+  | 'compact' | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
+  | 'tasks-only' | 'availability' | 'projects' | 'messages' | 'patch';
 
 export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; description: string; badge?: string }[] = [
-  { id: 'analyze',      emoji: '🔍', title: 'Full analysis',        description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
-  { id: 'conflicts',    emoji: '⚠️', title: 'Find conflicts',        description: 'Double-bookings and overlapping commitments only.' },
-  { id: 'freetime',     emoji: '🟢', title: 'Find free time',        description: 'Open slots and gaps where new things could be scheduled.' },
-  { id: 'balance',      emoji: '⚖️', title: 'Work–life balance',     description: 'Rest days, overwork streaks, and category balance.' },
-  { id: 'prep',         emoji: '🧰', title: 'Add prep & buffers',    description: 'Suggest prep/buffer events before big items and deadlines.' },
+  { id: 'compact',      emoji: '🧭', title: 'Admin planning',        description: 'Default: share compact LifeGrid context and ask the AI admin assistant to help.', badge: 'Fast' },
+  { id: 'availability', emoji: '📅', title: 'Free time / meetings',  description: 'Find open slots, coordinate meetings, and schedule focus blocks.', badge: 'Focused' },
+  { id: 'tasks-only',   emoji: '✅', title: 'Task prioritization',   description: 'Sort tasks, clarify next actions, and identify urgent work.', badge: 'Focused' },
+  { id: 'projects',     emoji: '🧱', title: 'Project breakdown',     description: 'Break large projects into small actionable subtasks.' },
+  { id: 'messages',     emoji: '✉️', title: 'Draft messages',        description: 'Draft emails/texts based on your schedule and tasks.' },
+  { id: 'patch',        emoji: '🧩', title: 'Bulk updates / JSON',   description: 'Minimal raw JSON only: changed fields, completions, and deletes.', badge: 'Fast' },
+  { id: 'analyze',      emoji: '🔍', title: 'Full schedule review',  description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
+  { id: 'freetime',     emoji: '🟢', title: 'Free-time scan',        description: 'Open slots and gaps where new things could be scheduled.' },
+  { id: 'conflicts',    emoji: '⚠️', title: 'Conflict check',        description: 'Double-bookings and overlapping commitments only.' },
+  { id: 'prep',         emoji: '🧰', title: 'Prep & buffers',        description: 'Suggest prep/buffer events before big items and deadlines.' },
+  { id: 'balance',      emoji: '⚖️', title: 'Balance review',        description: 'Rest days, overwork streaks, and category balance.' },
   { id: 'digest',       emoji: '📋', title: 'Summary digest',        description: 'A readable rundown of the focus period (few or no changes).' },
-  { id: 'compact',      emoji: '⚡', title: 'Quick update',          description: 'Next 14 days + overdue/high-priority tasks only — smallest prompt.', badge: 'Fast' },
-  { id: 'tasks-only',   emoji: '✅', title: 'Tasks only',            description: 'Focuses entirely on your task list — scheduling, priorities, next actions.', badge: 'Focused' },
-  { id: 'availability', emoji: '📅', title: 'Availability planner',  description: 'Shows your schedule; asks AI to find free slots for you to use.', badge: 'Focused' },
 ];
 
 const OBJECTIVE: Record<PromptType, string> = {
@@ -195,6 +261,19 @@ List each conflict clearly, then propose "update"/"delete"/"add" fixes.`,
 1. Flag any obvious conflicts or critical gaps
 2. Suggest prep for any upcoming deadlines
 3. Keep your response SHORT — bullet points, then the JSON`,
+  projects: `Focus on project breakdown:
+1. Identify large goals that should become projects/tags
+2. Break each project into small, discrete, actionable tasks
+3. Assign projectId/category where obvious and flag ambiguity instead of guessing`,
+  messages: `Help draft concise messages/emails:
+1. Use the schedule/task context to draft reminders, coordination notes, or planning messages
+2. Do not invent unavailable details
+3. Only propose LifeGrid JSON changes if explicitly useful`,
+  patch: `Create the smallest possible machine-importable update:
+1. Return raw JSON only — no prose, no markdown, no unchanged data
+2. Include only fields that must change
+3. Prefer completed_task_ids for tasks that are simply done
+4. Flag ambiguity in notes instead of guessing`,
   'tasks-only': `Focus entirely on the task list:
 1. Which tasks are overdue or at risk of becoming overdue?
 2. Are priorities correctly set? Suggest changes where needed
@@ -228,7 +307,8 @@ export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}
       t.status !== 'done' &&
       (t.priority === 'urgent' || t.priority === 'high' || (t.dueDate && t.dueDate <= end14Str))
     );
-    return `Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
+    return `${adminAssistantIntro(data, 'administrative planning for the next 14 days')}
+Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
 
 ${OBJECTIVE['compact']}
 
@@ -244,10 +324,50 @@ ${encodeTasks(urgentTasks)}
 ${schemaReference(data.categories)}`;
   }
 
+  // ── JSON patch mode: same compact data window, minimal raw output only ──
+  if (promptType === 'patch') {
+    const t = today();
+    const end14 = new Date(); end14.setDate(end14.getDate() + 14);
+    const end14Str = end14.toISOString().split('T')[0];
+    const windowEvents = data.events.filter(e => e.date >= t && e.date <= end14Str);
+    const relevantTasks = data.tasks.filter(task =>
+      task.status !== 'done' &&
+      (task.priority === 'urgent' || task.priority === 'high' || (task.dueDate && task.dueDate <= end14Str))
+    );
+    const peopleLines = data.personEvents
+      .filter(p => p.date >= t && p.date <= end14Str)
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(p => `  ${p.date}  [${p.person}]  ${p.title}`)
+      .join('\n');
+
+    return `${adminAssistantIntro(data, 'bulk updates using minimal JSON patch output')}
+Create a minimal JSON patch for my LifeGrid calendar for the next 14 days (${t} → ${end14Str}). Today is ${t}.
+
+${OBJECTIVE.patch}
+
+==================================================
+EVENTS — next 14 days (${windowEvents.length})
+==================================================
+${encodeEventsDetailed(windowEvents)}
+
+==================================================
+TASKS — overdue, high-priority, or due within 14 days (${relevantTasks.length})
+==================================================
+${encodeTasks(relevantTasks)}
+
+==================================================
+OTHER PEOPLE'S SCHEDULE — next 14 days
+==================================================
+${peopleLines || '  (none)'}
+${patchSchemaReference(data.categories)}`;
+  }
+
   // ── Tasks-only mode ──
   if (promptType === 'tasks-only') {
     const incompleteTasks = data.tasks.filter(t => t.status !== 'done');
-    return `Analyze my task list and help me prioritize and schedule them. Today is ${today()}.
+    return `${adminAssistantIntro(data, 'task prioritization and next-action planning')}
+Analyze my task list and help me prioritize and schedule them. Today is ${today()}.
 
 ${OBJECTIVE['tasks-only']}
 
@@ -267,7 +387,8 @@ ${schemaReference(data.categories)}`;
     const inFocus = (date: string) => scoped ? (date >= focusStart! && date <= focusEnd!) : true;
     const windowEvents = data.events.filter(e => inFocus(e.date));
     const pendingTasks = data.tasks.filter(t => t.status !== 'done');
-    return `Here is my calendar${scoped ? ` for ${focusStart} → ${focusEnd}` : ''}. Today is ${today()}.
+    return `${adminAssistantIntro(data, 'free-time finding and meeting coordination')}
+Here is my calendar${scoped ? ` for ${focusStart} → ${focusEnd}` : ''}. Today is ${today()}.
 
 ${OBJECTIVE['availability']}
 
@@ -310,7 +431,8 @@ Analyze and propose changes ONLY within this period. The rest of the calendar is
 `
     : '';
 
-  return `Analyze the schedule below and return a JSON object of proposed changes I can import into my scheduling app. Today is ${today()}.
+  return `${adminAssistantIntro(data, OBJECTIVE[promptType].split('\n')[0])}
+Analyze the schedule below and return a JSON object of proposed changes I can import into my scheduling app. Today is ${today()}.
 
 ${rangeHeader}${OBJECTIVE[promptType]}
 
@@ -412,6 +534,8 @@ export interface ParsedUpdate {
     update: Array<{ id: string } & Partial<Task>>;
     delete: string[];
   };
+  completedTaskIds?: string[];
+  patchNotes?: string[];
   warnings?: string[];
 }
 
@@ -443,7 +567,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     .replace(/```\s*/g, '')
     .trim();
 
-  const dataKeyMatch = s.match(/\{\s*"(?:events|tasks)"/);
+  const dataKeyMatch = s.match(/\{\s*"(?:events|tasks|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
   if (start < 0) {
@@ -499,6 +623,34 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   const warnings: string[] = [];
 
   const result: ParsedUpdate = {};
+
+  // Accept the v0.3.1 minimal patch shape and translate it into the
+  // existing importer shape so applyImportUpdate remains backwards-compatible.
+  const hasPatchKeys = [
+    'new_events', 'updated_events', 'deleted_event_ids',
+    'new_tasks', 'updated_tasks', 'completed_task_ids', 'deleted_task_ids', 'notes',
+  ].some(key => key in parsed);
+  if (hasPatchKeys) {
+    const completedTaskIds = normalizeIds(parsed.completed_task_ids ?? []);
+    parsed = {
+      events: {
+        add: parsed.new_events ?? [],
+        update: parsed.updated_events ?? [],
+        delete: parsed.deleted_event_ids ?? [],
+      },
+      tasks: {
+        add: parsed.new_tasks ?? [],
+        update: [
+          ...(Array.isArray(parsed.updated_tasks) ? parsed.updated_tasks : []),
+          ...completedTaskIds.map(id => ({ id, status: 'done' })),
+        ],
+        delete: parsed.deleted_task_ids ?? [],
+      },
+      notes: parsed.notes,
+    };
+    result.completedTaskIds = completedTaskIds;
+    if (Array.isArray(parsed.notes)) result.patchNotes = parsed.notes.filter((n: any) => typeof n === 'string');
+  }
 
   if (parsed.events) {
     const updateArr = Array.isArray(parsed.events.update) ? parsed.events.update : [];
@@ -604,6 +756,7 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
       notes:           t.notes ?? null,
       schedulingNotes: t.schedulingNotes ?? null,
       priority:        VALID_PRI.has(t.priority) ? t.priority : 'medium',
+      projectId:       typeof t.projectId === 'string' ? t.projectId : null,
     } as Task));
 }
 
@@ -637,6 +790,7 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
   if ('nextAction'     in u) out.nextAction     = u.nextAction ?? null;
   if ('schedulingNotes' in u) out.schedulingNotes = u.schedulingNotes ?? null;
   if ('owner'          in u) out.owner          = String(u.owner ?? 'Me');
+  if ('projectId'      in u) out.projectId      = u.projectId ? String(u.projectId) : null;
   return out;
 }
 

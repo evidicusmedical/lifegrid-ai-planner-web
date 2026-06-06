@@ -439,3 +439,27 @@ These are low-risk changes to try on a copy of the project after you've exported
 ---
 
 *Document generated from code inspection of the live Replit project. No code was modified.*
+
+---
+
+## v0.3.1 Patch Notes — Local Workspace
+
+### Usability and AI Admin Assistant workflow
+- Grid cells use compact density, deterministic event sorting, and expanded PNG export rows so exported images include all visible-day events.
+- Tasks remain intentionally flat: use small, discrete actions for tasks and projects/tags for large efforts. Project focus mode helps work through related subtasks.
+- Task repeat creation supports yearly recurrence for quickly creating annual reminders.
+- The AI Planner entry point is now framed as an AI Admin Assistant prompt: select LifeGrid context, copy to any AI/LLM, ask for planning/drafting help, then request raw JSON only when ready to import.
+
+### Data model and backups
+- No new storage key or breaking migration is required for v0.3.1.
+- Tasks may continue to carry optional `projectId` values; AI-imported tasks and task updates preserve `projectId` when supplied.
+- JSON backup/restore continues to include calendar versions, categories, people, projects, events, tasks, and person events.
+- Clearing browser/site data can remove LifeGrid data; JSON backup is the primary restorable save point.
+
+### Exports and import planning
+- `.txt` export is readable/shareable but not restorable.
+- `.ics` export includes calendar/grid events only for external calendar apps; tasks, projects, and People tab schedules are not included.
+- Full external calendar import is deferred. Future imports should use a generic Imported category/tag by default, preferably import into a separate calendar version, and allow AI-assisted retagging/merging. People schedules can later import into the People tab.
+
+### Replit deployment note
+- This workspace is patch-generation only. Replit should be used for the final GitHub push and deployment.

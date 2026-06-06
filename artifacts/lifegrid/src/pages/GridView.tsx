@@ -24,7 +24,9 @@ const DAY_COL_W = 32;
 const MONTH_COL_W = 110;
 const ROW_H = 52;
 const HEADER_H = 44;
-const MAX_VISIBLE_EVENTS = 3;
+const MAX_VISIBLE_EVENTS = 4;
+const EVENT_PILL_H = 10;
+const EXPORT_ROW_BASE_H = 16;
 
 export const GridView = () => {
   const { events, categories, calendars, activeCalendarId, switchCalendar } = useAppData();
@@ -38,7 +40,7 @@ export const GridView = () => {
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
-  const [exportPixelRatio, setExportPixelRatio] = useState(2);
+  const [exportPixelRatio, setExportPixelRatio] = useState(1);
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -53,6 +55,21 @@ export const GridView = () => {
 
   const activeCalendar = calendars.find(c => c.id === activeCalendarId);
 
+  const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
+
+  const sortEventsForCell = useCallback((a: Event, b: Event) => {
+    const aAllDay = !a.startTime;
+    const bAllDay = !b.startTime;
+    if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
+    if (!aAllDay && !bAllDay) {
+      const byTime = (a.startTime ?? '').localeCompare(b.startTime ?? '');
+      if (byTime !== 0) return byTime;
+    }
+    const byCat = (categoryRank.get(a.category) ?? 999) - (categoryRank.get(b.category) ?? 999);
+    if (byCat !== 0) return byCat;
+    return a.title.localeCompare(b.title);
+  }, [categoryRank]);
+
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
     events.forEach(e => {
@@ -60,8 +77,9 @@ export const GridView = () => {
       arr.push(e);
       map.set(e.date, arr);
     });
+    map.forEach(arr => arr.sort(sortEventsForCell));
     return map;
-  }, [events]);
+  }, [events, sortEventsForCell]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>
@@ -97,7 +115,7 @@ export const GridView = () => {
     const container = scrollRef.current;
     if (!table || !container) return;
     setExporting(true);
-    toast.loading('Generating grid image…', { id: 'export' });
+    toast.loading(`Generating ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
@@ -105,6 +123,8 @@ export const GridView = () => {
     container.style.overflow = 'visible';
     container.style.width  = table.scrollWidth + 'px';
     container.style.height = table.scrollHeight + 'px';
+
+    await new Promise(requestAnimationFrame);
 
     const opts = {
       pixelRatio: exportPixelRatio,
@@ -151,7 +171,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [year, theme, activeCalendar, exportFileName]);
+  }, [theme, exportFileName, exportPixelRatio]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -233,39 +253,45 @@ export const GridView = () => {
 
         <div className="flex-1" />
 
-        {/* Export button + quality dropdown */}
-        <div className="flex items-center">
+        {/* Mobile-friendly export controls */}
+        <div className="flex items-center gap-1">
+          <div className="hidden sm:flex items-center rounded-lg bg-muted p-0.5">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportPixelRatio(1)}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 1 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+            >
+              Fast
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportPixelRatio(2)}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 2 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+            >
+              Sharp
+            </button>
+          </div>
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-l-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50 border-r border-border/50"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
             data-testid="button-export"
             title="Export grid as PNG"
           >
             <Image size={12} />
-            {exporting ? 'Exporting…' : 'Export'}
+            {exporting ? 'Working…' : `Export ${exportPixelRatio === 1 ? 'Fast' : 'Sharp'}`}
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                disabled={exporting}
-                className="flex items-center px-1 py-1.5 rounded-r-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
-                title="Export quality"
-              >
-                <ChevronDown size={11} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-40">
-              <DropdownMenuLabel className="text-[10px]">Export quality</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setExportPixelRatio(2)} className={`text-xs ${exportPixelRatio === 2 ? 'font-semibold text-primary' : ''}`}>
-                Standard (2× — sharp)
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setExportPixelRatio(1)} className={`text-xs ${exportPixelRatio === 1 ? 'font-semibold text-primary' : ''}`}>
-                Compact (1× — faster)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => setExportPixelRatio(exportPixelRatio === 1 ? 2 : 1)}
+            className="sm:hidden px-2 py-1.5 rounded-lg text-[10px] font-bold bg-muted text-muted-foreground disabled:opacity-50"
+            title="Toggle export quality"
+          >
+            {exportPixelRatio === 1 ? 'Fast' : 'Sharp'}
+          </button>
         </div>
 
         <button
@@ -343,8 +369,16 @@ export const GridView = () => {
           </thead>
 
           <tbody>
-            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-              <tr key={day} style={{ height: ROW_H }}>
+            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+              const rowEventMax = MONTHS.reduce((max, _, mIdx) => {
+                const maxDay = getDaysForMonth(mIdx);
+                if (day > maxDay) return max;
+                const dateStr = `${year}-${String(mIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                return Math.max(max, gridData.get(dateStr)?.length ?? 0);
+              }, 0);
+              const rowHeight = exporting ? Math.max(ROW_H, EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1)) : ROW_H;
+              return (
+              <tr key={day} style={{ height: rowHeight }}>
                 <td
                   className="sticky left-0 z-10 border-b border-r border-border bg-card text-center font-bold text-muted-foreground select-none"
                   style={{ width: DAY_COL_W, minWidth: DAY_COL_W, fontSize: 10 }}
@@ -375,8 +409,8 @@ export const GridView = () => {
                   const dow      = DOW_SHORT[dateObj.getDay()];
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                   const dayEvents = gridData.get(dateStr) ?? [];
-                  const visEvents = dayEvents.slice(0, MAX_VISIBLE_EVENTS);
-                  const overflow  = dayEvents.length - MAX_VISIBLE_EVENTS;
+                  const visEvents = exporting ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
+                  const overflow  = exporting ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
 
                   let cellBg: string;
                   if (isToday) {
@@ -394,7 +428,7 @@ export const GridView = () => {
                       style={{
                         width: MONTH_COL_W,
                         minWidth: MONTH_COL_W,
-                        height: ROW_H,
+                        height: rowHeight,
                         background: cellBg,
                         padding: '2px 3px',
                       }}
@@ -416,14 +450,14 @@ export const GridView = () => {
                         {dow}
                       </div>
 
-                      <div className="flex flex-col gap-px overflow-hidden">
+                      <div className={exporting ? 'flex flex-col gap-px' : 'flex flex-col gap-px overflow-hidden'}>
                         {visEvents.map(evt => (
                           <div
                             key={evt.id}
                             className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity"
                             style={{
                               backgroundColor: evt.color,
-                              height: 14,
+                              height: exporting ? EVENT_PILL_H : 10,
                               opacity: dim(evt.category) ? 0.18 : 1,
                             }}
                             data-testid={`event-pill-${evt.id}`}
@@ -433,7 +467,7 @@ export const GridView = () => {
                                 {evt.startTime}
                               </span>
                             )}
-                            <span className="text-white font-semibold truncate" style={{ fontSize: 8.5, lineHeight: 1 }}>
+                            <span className="text-white font-semibold truncate" style={{ fontSize: 8, lineHeight: 1 }}>
                               {evt.title}
                             </span>
                           </div>
@@ -452,7 +486,7 @@ export const GridView = () => {
                   );
                 })}
               </tr>
-            ))}
+            );})}
           </tbody>
         </table>
       </div>

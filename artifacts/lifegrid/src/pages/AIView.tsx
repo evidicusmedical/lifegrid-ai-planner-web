@@ -73,7 +73,7 @@ export const AIView = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Analyze options
-  const [promptType, setPromptType] = useState<PromptType>(draft.promptType ?? 'analyze');
+  const [promptType, setPromptType] = useState<PromptType>(draft.promptType ?? 'compact');
   const [useRange, setUseRange] = useState(draft.useRange ?? false);
   const [rangeStart, setRangeStart] = useState(draft.rangeStart ?? toISODate(new Date()));
   const [rangeEnd, setRangeEnd] = useState(draft.rangeEnd ?? toISODate(addDays(new Date(), 30)));
@@ -231,16 +231,17 @@ export const AIView = () => {
             </div>
             <div className="flex items-start p-3 gap-0">
               {[
-                { n: '1', label: 'Copy or download the prompt' },
-                { n: '2', label: 'Paste into any AI + your schedule' },
-                { n: '3', label: 'Paste or upload the AI response' },
+                { n: '1', label: 'Select LifeGrid context to share' },
+                { n: '2', label: 'Copy the prompt to your preferred AI/LLM' },
+                { n: '3', label: 'Ask it to analyze, plan, draft, or propose changes' },
+                { n: '4', label: 'Ask for raw JSON and paste it back' },
               ].map((step, i) => (
                 <React.Fragment key={i}>
                   <div className="flex flex-col items-center text-center flex-1 px-1">
                     <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mb-1.5">{step.n}</div>
                     <p className="text-[10px] text-muted-foreground leading-tight">{step.label}</p>
                   </div>
-                  {i < 2 && <ArrowRight size={12} className="text-muted-foreground/40 mt-3 shrink-0" />}
+                  {i < 3 && <ArrowRight size={12} className="text-muted-foreground/40 mt-3 shrink-0" />}
                 </React.Fragment>
               ))}
             </div>
@@ -250,9 +251,9 @@ export const AIView = () => {
 
           {hasData && (
             <ModeCard
-              emoji="🔍"
-              title="Analyze my schedule"
-              description="Spot conflicts, free time, balance issues, missing prep — your pick. Optionally scope it to a date range."
+              emoji="🧭"
+              title="Copy AI Admin Assistant Prompt"
+              description="Share selected LifeGrid context so your preferred AI can analyze, coordinate, prioritize, draft messages, or prepare JSON changes."
               tag="Has existing data"
               tagColor="text-primary bg-primary/10"
               onClick={() => setMode('optimize')}
@@ -315,7 +316,7 @@ export const AIView = () => {
 
   // ─── SHARED FLOW ────────────────────────────────────────────────────────────
   const modeConfig = {
-    optimize: { title: 'Analyze my schedule', emoji: '🔍', promptLabel: 'Generate planning prompt' },
+    optimize: { title: 'Copy AI Admin Assistant Prompt', emoji: '🧭', promptLabel: 'Generate admin assistant prompt' },
     import: { title: 'Import a calendar', emoji: '📥', promptLabel: 'Generate import prompt' },
     onboard: { title: 'Build starter schedule', emoji: '✨', promptLabel: 'Generate starter prompt' },
   }[mode as 'optimize' | 'import' | 'onboard'];
@@ -337,7 +338,7 @@ export const AIView = () => {
 
         {/* ── ANALYZE: prompt-type picker + range ── */}
         {mode === 'optimize' && (
-          <StepBlock number={1} title="What should the AI focus on?">
+          <StepBlock number={1} title="What LifeGrid context should the AI use?">
             <div className="grid grid-cols-2 gap-2">
               {PROMPT_TYPES.map(pt => {
                 const on = promptType === pt.id;
@@ -451,7 +452,7 @@ export const AIView = () => {
         >
           {mode === 'optimize' && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              Generates a prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your entire schedule (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Paste it into any AI.
+              Generates an AI Admin Assistant prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your selected calendar context (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Large calendars can take external AI models longer to process.
             </p>
           )}
           {mode === 'import' && importSource === 'text' && (
@@ -514,7 +515,7 @@ export const AIView = () => {
                 ))}
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Paste the prompt, let the AI respond, then paste/upload the response in Step {responseStep} below.
+                Paste the prompt, ask for planning/drafting help, and when ready ask the AI for raw LifeGrid JSON. Paste/upload that response in Step {responseStep} below.
               </p>
 
               <details className="group">
@@ -662,6 +663,8 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
   const tskAdd = preview.tasks?.add ?? [];
   const tskUpdate = preview.tasks?.update ?? [];
   const tskDelete = preview.tasks?.delete ?? [];
+  const completed = preview.completedTaskIds ?? [];
+  const notes = preview.patchNotes ?? [];
   const total = evtAdd.length + evtUpdate.length + evtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
   const warnings = preview.warnings ?? [];
@@ -669,6 +672,7 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
   const summaryParts = [
     (evtAdd.length + tskAdd.length) > 0 && `+${evtAdd.length + tskAdd.length} added`,
     (evtUpdate.length + tskUpdate.length) > 0 && `~${evtUpdate.length + tskUpdate.length} updated`,
+    completed.length > 0 && `✓${completed.length} completed`,
     (evtDelete.length + tskDelete.length) > 0 && `−${evtDelete.length + tskDelete.length} removed`,
   ].filter(Boolean);
 
@@ -685,6 +689,14 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
           ))}
         </div>
       )}
+      {notes.length > 0 && (
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 space-y-1">
+          <p className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">AI notes</p>
+          {notes.map((n, i) => (
+            <p key={i} className="text-[10px] text-blue-700 dark:text-blue-400">{n}</p>
+          ))}
+        </div>
+      )}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="px-3 py-2 bg-muted/20 border-b border-border flex items-center gap-2 flex-wrap">
           <CheckCircle2 size={13} className="text-green-500" />
@@ -698,7 +710,14 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
           {evtUpdate.map((e, i) => <DiffRow key={`eu${i}`} op="update" label={`Update: ${(e as any).title ?? e.id}`} />)}
           {evtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0, 20)}`} />)}
           {tskAdd.map((t, i) => <DiffRow key={`ta${i}`} op="add" label={`Task: ${t.name}`} cat={t.category} isTask />)}
-          {tskUpdate.map((t, i) => <DiffRow key={`tu${i}`} op="update" label={`Update task: ${(t as any).name ?? t.id}`} isTask />)}
+          {tskUpdate.map((t, i) => (
+            <DiffRow
+              key={`tu${i}`}
+              op="update"
+              label={completed.includes(t.id) ? `Complete task: ${t.id}` : `Update task: ${(t as any).name ?? t.id}`}
+              isTask
+            />
+          ))}
           {tskDelete.map((id, i) => <DiffRow key={`td${i}`} op="delete" label={`Remove task: ${String(id).slice(0, 20)}`} isTask />)}
           {total === 0 && <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>}
         </div>

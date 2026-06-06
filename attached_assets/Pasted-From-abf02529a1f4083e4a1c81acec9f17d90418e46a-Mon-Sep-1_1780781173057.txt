@@ -1,0 +1,1193 @@
+From abf02529a1f4083e4a1c81acec9f17d90418e46a Mon Sep 17 00:00:00 2001
+From: Codex codex@openai.com
+Date: Sat, 6 Jun 2026 21:15:45 +0000
+Subject: [PATCH] =?UTF-8?q?v0.3.1=20=E2=80=94=20Usability=20&=20AI=20Admin?=
+=?UTF-8?q?=20Assistant=20workflow,=20exports,=20and=20yearly=20task=20rep?=
+=?UTF-8?q?eats?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Motivation
+
+    Improve calendar readability and export fidelity by increasing grid density, deterministic event ordering, and ensuring exported PNGs include all events for each day.
+
+    Make the AI integration more explicit and safer by framing a copy/paste “AI Admin Assistant” workflow that supports planning, drafting, and minimal machine-importable JSON patches.
+
+    Clarify backup/export semantics and add convenient readable/calendar exports while keeping LifeGrid local-first.
+
+    Surface common task UX improvements including clearer guidance and support for yearly repeating tasks.
+
+Description
+
+    Tasks/UI: added yearly repeat support, extended repeatFreq types and shiftByFreq handling, updated task form copy to encourage small actionable tasks, added project helper text, and expanded repeat frequency buttons.
+
+    Grid & export: increased visible events per cell from 3→4, added deterministic sorting (all-day/no-time first, timed by start time, then category order), made PNG export default to a faster compact quality (pixelRatio 1), added mobile-friendly Fast/Sharp toggle, show progress text, disable controls while exporting, and expand rows during PNG export so exported images include all events.
+
+    AI prompts/imports: new Admin Assistant framing and helper text in prompts, added compact/patch/projects/messages prompt types, included category order and project structure in prompt text, extended schema to include projectId for tasks, and added a minimal JSON patch schema supporting new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, and notes.
+
+    Parser/importer: parseAIUpdate now recognizes the new minimal patch keys and normalizes them into the existing importer shape (including mapping completed_task_ids to task updates), and task/event normalization now preserves/accepts projectId.
+
+    Settings & exports: simplified install wording, separated readable .txt export and added .ics export for calendar/grid events via a new ExportManager, and clarified that JSON backups are the restorable save point.
+
+    Misc docs: updated CHANGELOG.md, CODE_REVIEW_AND_END_USER_ANALYSIS.md, EXPORT_CHECKLIST.md, OFFLINE_PWA_INSTALL_GUIDE.md, and PROJECT_HANDOFF.md with v0.3.1 notes and checklists.
+
+Testing
+
+    Ran type checking with pnpm --filter @workspace/lifegrid run typecheck and it completed cleanly (no type errors).
+
+    Ran production build with pnpm --filter @workspace/lifegrid run build and the build succeeded.
+
+CHANGELOG.md | 41 ++++
+CODE_REVIEW_AND_END_USER_ANALYSIS.md | 18 ++
+EXPORT_CHECKLIST.md | 13 ++
+OFFLINE_PWA_INSTALL_GUIDE.md | 5 +
+PROJECT_HANDOFF.md | 24 +++
+.../lifegrid/src/components/TaskSheet.tsx | 16 +-
+artifacts/lifegrid/src/lib/aiPrompt.ts | 186 ++++++++++++++++--
+artifacts/lifegrid/src/pages/AIView.tsx | 43 ++--
+artifacts/lifegrid/src/pages/GridView.tsx | 112 +++++++----
+artifacts/lifegrid/src/pages/SettingsView.tsx | 151 +++++++++-----
+artifacts/lifegrid/src/pages/TasksView.tsx | 29 ++-
+11 files changed, 514 insertions(+), 124 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a99cc13..542f150 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,47 @@ All notable changes to this project are documented here.
+
++## v0.3.1 — Usability and AI Admin Assistant Workflow
++
++### Improvements
++
++Grid density, ordering, and export
++- Grid cells now show up to four compact events interactively where space allows.
++- Events inside each grid cell are sorted by all-day/no-time first, timed events by start time, then saved category/tag order.
++- Overflow remains visible as a +N more indicator, while PNG export expands rows to include all events.
++- Image export now defaults to faster compact quality, shows progress text, disables export controls while generating, and exposes a mobile-friendly Fast/Sharp quality toggle.
++
++Tasks and projects
++- Task repeat creation now supports yearly frequency in addition to daily, weekly, bi-weekly, and monthly.
++- Task cards show status prominently alongside due date, tag/category, priority, and constraints.
++- Task and project helper text clarifies that tasks should be small actionable items and projects/tags should group larger efforts for focus mode.
++
++AI Admin Assistant workflow
++- Renamed the schedule analysis entry point to “Copy AI Admin Assistant Prompt.”
++- Rewrote the AI Planner “How it works” flow around selecting context, copying a prompt to any AI/LLM, asking for planning/drafting help, and pasting raw JSON back when ready.
++- Reworked AI focus options around administrative planning, free-time/meeting coordination, task prioritization, project breakdown, message/email drafting, and bulk JSON updates.
++- Exported prompts now include category/tag order, project structure, selected schedule/task/person context, robust cross-LLM instructions, ambiguity handling, and raw-JSON-only import rules.
++- The JSON patch schema supports new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, project/category/tag assignments, and notes.
++
++Settings and exports
++- Simplified “Install & use offline.”
++- Clarified that LifeGrid data is stored locally in the current device/browser and that JSON backup is the primary restorable save point.
++- Moved readable .txt export out of backup/restore into a separate non-restorable exports section.
++- Added .ics export for calendar/grid events only, for import into external calendar apps.
++
++### Calendar import planning
++- Full ICS/Google CSV/Outlook import is deferred. Future imports should default to an Imported tag/category, prefer separate calendar versions for safety, and allow AI-assisted retagging/merging afterward. People schedules can later import into the People tab.
++
++### Migration notes
++- No storage-key migration is required for v0.3.1.
++- Existing calendar data, category order, projects, backups, and offline/PWA behavior remain compatible.
++
++### Known limitations
++- AI integration is still copy/paste or file-upload based; there is no external AI API call, account login, cloud sync, or backend.
++- Large calendars/task lists may still take external AI models longer to process.
++- ICS export includes grid/calendar events only; tasks, projects, and People tab entries remain available through JSON backup and text export.
++- The app accepts minimal AI patches, but unknown IDs are still warnings that should be reviewed before applying.
++
+v0.2 — June 2026
+Features Added (T001–T008)
+
+diff --git a/CODE_REVIEW_AND_END_USER_ANALYSIS.md b/CODE_REVIEW_AND_END_USER_ANALYSIS.md
+index 9457be4..42d5b88 100644
+--- a/CODE_REVIEW_AND_END_USER_ANALYSIS.md
++++ b/CODE_REVIEW_AND_END_USER_ANALYSIS.md
+@@ -141,3 +141,21 @@ pnpm --filter @workspace/lifegrid run build → SUCCESS
+
+
+The chunk-size warning (>500 KB) is informational — it does not affect correctness. See §7 item 4 for the recommended fix.
++
++---
++
++## v0.3.1 Review Addendum — Usability and AI Admin Assistant Workflow
++
++The v0.3.1 pass keeps the app local-first and avoids backend/API scope expansion. The main usability improvements are denser grid cells, clearer task/project guidance, yearly task repeats, safer backup/export wording, and a clearer AI Admin Assistant workflow that can support planning, coordination, drafting, and minimal JSON updates.
++
++End-user impact:
++- Grid days are easier to scan and exported PNGs include all events for each day.
++- Routine AI planning should require smaller prompts and shorter AI responses.
++- Simple task completions can be returned as `completed_task_ids` instead of full task rewrites.
++- Users see AI notes and unknown-ID warnings before applying changes.
++- JSON backup is distinguished from readable `.txt` and calendar-only `.ics` exports.
++
++Remaining risks:
++- AI output is still probabilistic; preview warnings should be reviewed carefully.
++- Large full-context exports can still be slow or token-heavy; compact or JSON patch mode remains recommended for day-to-day use.
++- Full external calendar import remains deferred because bulk ICS/CSV imports can create many records and should be versioned/tagged carefully.
+diff --git a/EXPORT_CHECKLIST.md b/EXPORT_CHECKLIST.md
+index 59c7bab..1ceb97d 100644
+--- a/EXPORT_CHECKLIST.md
++++ b/EXPORT_CHECKLIST.md
+@@ -124,3 +124,16 @@ pnpm --filter @workspace/lifegrid run serve
+
+Production build output is in: `artifacts/lifegrid/dist/public/`
+This folder is what you upload to Netlify, Vercel, Cloudflare Pages, or GitHub Pages.
++
++---
++
++## v0.3.1 Patch-Generation Checklist
++
++- Run `pnpm --filter @workspace/lifegrid run typecheck`.
++- Run `pnpm --filter @workspace/lifegrid run build`.
++- Confirm grid cell sorting: no-time/all-day first, timed events by start time, category order as secondary sort.
++- Confirm PNG export disables controls, shows progress, and expands rows to include all events.
++- Confirm the AI Planner defaults to AI Admin Assistant / compact context mode for routine planning.
++- Confirm JSON patch mode prompts for minimal raw JSON with `completed_task_ids`, project/category assignments, and notes.
++- Confirm Settings separates restorable JSON backup from readable `.txt` and calendar-only `.ics` exports.
++- Final GitHub push and deployment should be performed from Replit, not from this workspace.
+diff --git a/OFFLINE_PWA_INSTALL_GUIDE.md b/OFFLINE_PWA_INSTALL_GUIDE.md
+index f5a1484..b1907af 100644
+--- a/OFFLINE_PWA_INSTALL_GUIDE.md
++++ b/OFFLINE_PWA_INSTALL_GUIDE.md
+@@ -72,3 +72,8 @@ The backup status indicator in Settings turns amber if you haven't backed up in
+| Old version showing | Pull-to-refresh or force-refresh; the service worker auto-updates |
+| Install option missing | Make sure you're using Safari on iOS or Chrome/Edge on Android/desktop |
+| Data missing after reinstall | Data lives in the browser's localStorage — reinstalling clears it. Always keep a backup. |
++---
++
++## v0.3.1 note
++
++The Settings screen now uses a shorter “Install & use offline” explanation. Offline/PWA behavior is unchanged: LifeGrid remains local-first, and JSON backup is still the main protection against browser/site-data deletion.
+diff --git a/PROJECT_HANDOFF.md b/PROJECT_HANDOFF.md
+index 26a5c53..a9685d0 100644
+--- a/PROJECT_HANDOFF.md
++++ b/PROJECT_HANDOFF.md
+@@ -439,3 +439,27 @@ These are low-risk changes to try on a copy of the project after you've exported
+---
+
+*Document generated from code inspection of the live Replit project. No code was modified.*
++
++---
++
++## v0.3.1 Patch Notes — Local Workspace
++
++### Usability and AI Admin Assistant workflow
++- Grid cells use compact density, deterministic event sorting, and expanded PNG export rows so exported images include all visible-day events.
++- Tasks remain intentionally flat: use small, discrete actions for tasks and projects/tags for large efforts. Project focus mode helps work through related subtasks.
++- Task repeat creation supports yearly recurrence for quickly creating annual reminders.
++- The AI Planner entry point is now framed as an AI Admin Assistant prompt: select LifeGrid context, copy to any AI/LLM, ask for planning/drafting help, then request raw JSON only when ready to import.
++
++### Data model and backups
++- No new storage key or breaking migration is required for v0.3.1.
++- Tasks may continue to carry optional `projectId` values; AI-imported tasks and task updates preserve `projectId` when supplied.
++- JSON backup/restore continues to include calendar versions, categories, people, projects, events, tasks, and person events.
++- Clearing browser/site data can remove LifeGrid data; JSON backup is the primary restorable save point.
++
++### Exports and import planning
++- `.txt` export is readable/shareable but not restorable.
++- `.ics` export includes calendar/grid events only for external calendar apps; tasks, projects, and People tab schedules are not included.
++- Full external calendar import is deferred. Future imports should use a generic Imported category/tag by default, preferably import into a separate calendar version, and allow AI-assisted retagging/merging. People schedules can later import into the People tab.
++
++### Replit deployment note
++- This workspace is patch-generation only. Replit should be used for the final GitHub push and deployment.
+diff --git a/artifacts/lifegrid/src/components/TaskSheet.tsx b/artifacts/lifegrid/src/components/TaskSheet.tsx
+index 0e6a655..6cd0f24 100644
+--- a/artifacts/lifegrid/src/components/TaskSheet.tsx
++++ b/artifacts/lifegrid/src/components/TaskSheet.tsx
+@@ -44,6 +44,10 @@ const shiftByFreq = (date: string, freq: string, n: number): string => {
+  if (freq === 'weekly') return shiftDate(date, n * 7);
+  if (freq === 'biweekly') return shiftDate(date, n * 14);
+  const d = new Date(date + 'T00:00:00');
++  if (freq === 'yearly') {
++    d.setFullYear(d.getFullYear() + n);
++    return d.toISOString().split('T')[0];
++  }
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().split('T')[0];
+};
+@@ -59,7 +63,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
+
+  const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
+  const [repeat, setRepeat] = useState(false);
+-  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
++  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'>('weekly');
+  const [repeatCount, setRepeatCount] = useState(4);
+
+  const groupId = initialData?.recurringGroupId;
+@@ -172,7 +176,8 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Task Name</FormLabel>
+-                      <FormControl><Input placeholder="What needs to be done?" {...field} /></FormControl>
++                      <FormControl><Input placeholder="Small, concrete action (e.g. Call dentist)" {...field} /></FormControl>
++                      <FormDescription>Keep tasks small and actionable. Use Projects/Tags for large efforts.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+@@ -263,7 +268,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
+                    name="projectId"
+                    render={({ field }) => (
+                      <FormItem>
+-                        <FormLabel>Project (optional)</FormLabel>
++                        <FormLabel>Project / major event (optional)</FormLabel>
+                        <Select
+                          onValueChange={v => field.onChange(v === '__none__' ? null : v)}
+                          value={field.value ?? '__none__'}
+@@ -281,6 +286,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
+                            ))}
+                          </SelectContent>
+                        </Select>
++                        <FormDescription>Group related subtasks under a project; focus mode in Tasks helps work through them.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+@@ -301,8 +307,8 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
+                      <div className="space-y-3 animate-in fade-in">
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-1 block">Frequency</Label>
+-                          <div className="grid grid-cols-2 gap-2">
+-                            {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(f => (
++                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
++                            {(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const).map(f => (
+                              <button
+                                key={f}
+                                type="button"
+diff --git a/artifacts/lifegrid/src/lib/aiPrompt.ts b/artifacts/lifegrid/src/lib/aiPrompt.ts
+index d7bb4c3..432ea91 100644
+--- a/artifacts/lifegrid/src/lib/aiPrompt.ts
++++ b/artifacts/lifegrid/src/lib/aiPrompt.ts
+@@ -15,6 +15,33 @@ const catColorMap = (categories: Category[]): Record<string, string> => {
+  return m;
+};
+
++const encodeCategoryOrder = (data: AppData): string =>
++  data.categories.map((c, i) => `  ${i + 1}. ${c.id} (${c.label}, ${c.color})`).join('\n') || '  (none)';
++
++const encodeProjects = (data: AppData): string => {
++  if (data.projects.length === 0) return '  (none)';
++  return data.projects.map(p => {
++    const linked = data.tasks.filter(t => t.projectId === p.id);
++    const done = linked.filter(t => t.status === 'done').length;
++    return `  ${p.id}  ${p.name}  color:${p.color}  tasks:${done}/${linked.length} done`;
++  }).join('\n');
++};
++
++const adminAssistantIntro = (data: AppData, requestLabel: string): string => `You are acting as my LifeGrid AI Admin Assistant. LifeGrid is local-first; I will paste context here and later paste raw JSON back into the app if I accept changes.
++
++First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for specific analysis yet, wait for my next instruction after acknowledging.
++
++You can help with schedule analysis, free-time finding, meeting coordination, task prioritization, project breakdown, drafting messages/emails, and bulk schedule/task changes.
++
++When final changes are ready, I will ask you to output raw JSON for LifeGrid import. Final import output must be raw JSON only, with no markdown fences or explanation, and must include only changed/new/deleted items rather than the unchanged dataset. Flag ambiguity in notes instead of guessing. Large calendars/task lists may take longer for external AI models to process.
++
++CATEGORY / TAG ORDER (use these ids and order)
++${encodeCategoryOrder(data)}
++
++PROJECT STRUCTURE
++${encodeProjects(data)}
++`;
++
+// ─── Concrete schema + example the AI can mirror exactly ─────────────────────
+const schemaReference = (categories: Category[]): string => {
+  const ids = categories.map(c => c.id);
+@@ -55,7 +82,8 @@ OUTPUT FORMAT — return ONLY this JSON, nothing else
+        "nextAction": "First step",
+        "notes": null,
+        "schedulingNotes": null,
+-        "priority": "medium"
++        "priority": "medium",
++        "projectId": null
+      }
+    ],
+    "update": [],
+@@ -73,6 +101,7 @@ FIELD RULES — follow exactly:
+  color          : hex that matches category — ${colorLines}
+  owner          : "Me" (default) or another person's name
+  schedulingNotes: optional constraints/dependencies text, or null
++  projectId      : optional project id from PROJECT STRUCTURE, or null
+
+EXTRA RULES:
+  - Use ONLY the category ids listed above. If nothing fits, use "other".
+@@ -89,6 +118,40 @@ EXTRA RULES:
+`;
+};
+
++const patchSchemaReference = (categories: Category[]): string => {
++  const ids = categories.map(c => c.id);
++  const catUnion = ids.map(i => `"${i}"`).join(' | ') || '"other"';
++  return `
++==================================================
++OUTPUT FORMAT — return ONLY this minimal JSON patch
++==================================================
++
++{
++  "new_events": [],
++  "updated_events": [
++    { "id": "existing-event-id", "date": "YYYY-MM-DD", "startTime": "09:00", "endTime": "10:00", "notes": "only changed fields" }
++  ],
++  "deleted_event_ids": [],
++  "new_tasks": [],
++  "updated_tasks": [
++    { "id": "existing-task-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
++  ],
++  "completed_task_ids": [],
++  "deleted_task_ids": [],
++  "notes": []
++}
++
++RULES:
++  - Return raw JSON only. No markdown fences and no explanation.
++  - Do not repeat unchanged events or tasks.
++  - For simple task completion, use completed_task_ids instead of updated_tasks.
++  - Category/tag must be one of: ${catUnion}. Use "other" if needed.
++  - Use projectId when assigning work to a known project; otherwise use null or omit it.
++  - If something is ambiguous, add a short string to notes instead of guessing.
++==================================================
++`;
++};
++
+// ─── Compact event encoding (collapses repeated titles to cut prompt size) ────
+const encodeEventsCompact = (events: Event[]): string => {
+  if (events.length === 0) return '  (none)';
+@@ -148,19 +211,22 @@ const encodeTasks = (tasks: Task[]): string => {
+
+// ─── Prompt types & their objective blocks ───────────────────────────────────
+export type PromptType =
+-  | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
+-  | 'compact' | 'tasks-only' | 'availability';
++  | 'compact' | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
++  | 'tasks-only' | 'availability' | 'projects' | 'messages' | 'patch';
+
+export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; description: string; badge?: string }[] = [
+-  { id: 'analyze',      emoji: '🔍', title: 'Full analysis',        description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
+-  { id: 'conflicts',    emoji: '⚠️', title: 'Find conflicts',        description: 'Double-bookings and overlapping commitments only.' },
+-  { id: 'freetime',     emoji: '🟢', title: 'Find free time',        description: 'Open slots and gaps where new things could be scheduled.' },
+-  { id: 'balance',      emoji: '⚖️', title: 'Work–life balance',     description: 'Rest days, overwork streaks, and category balance.' },
+-  { id: 'prep',         emoji: '🧰', title: 'Add prep & buffers',    description: 'Suggest prep/buffer events before big items and deadlines.' },
++  { id: 'compact',      emoji: '🧭', title: 'Admin planning',        description: 'Default: share compact LifeGrid context and ask the AI admin assistant to help.', badge: 'Fast' },
++  { id: 'availability', emoji: '📅', title: 'Free time / meetings',  description: 'Find open slots, coordinate meetings, and schedule focus blocks.', badge: 'Focused' },
++  { id: 'tasks-only',   emoji: '✅', title: 'Task prioritization',   description: 'Sort tasks, clarify next actions, and identify urgent work.', badge: 'Focused' },
++  { id: 'projects',     emoji: '🧱', title: 'Project breakdown',     description: 'Break large projects into small actionable subtasks.' },
++  { id: 'messages',     emoji: '✉️', title: 'Draft messages',        description: 'Draft emails/texts based on your schedule and tasks.' },
++  { id: 'patch',        emoji: '🧩', title: 'Bulk updates / JSON',   description: 'Minimal raw JSON only: changed fields, completions, and deletes.', badge: 'Fast' },
++  { id: 'analyze',      emoji: '🔍', title: 'Full schedule review',  description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
++  { id: 'freetime',     emoji: '🟢', title: 'Free-time scan',        description: 'Open slots and gaps where new things could be scheduled.' },
++  { id: 'conflicts',    emoji: '⚠️', title: 'Conflict check',        description: 'Double-bookings and overlapping commitments only.' },
++  { id: 'prep',         emoji: '🧰', title: 'Prep & buffers',        description: 'Suggest prep/buffer events before big items and deadlines.' },
++  { id: 'balance',      emoji: '⚖️', title: 'Balance review',       description: 'Rest days, overwork streaks, and category balance.' },
+  { id: 'digest',       emoji: '📋', title: 'Summary digest',        description: 'A readable rundown of the focus period (few or no changes).' },
+-  { id: 'compact',      emoji: '⚡', title: 'Quick update',          description: 'Next 14 days + overdue/high-priority tasks only — smallest prompt.', badge: 'Fast' },
+-  { id: 'tasks-only',   emoji: '✅', title: 'Tasks only',            description: 'Focuses entirely on your task list — scheduling, priorities, next actions.', badge: 'Focused' },
+-  { id: 'availability', emoji: '📅', title: 'Availability planner',  description: 'Shows your schedule; asks AI to find free slots for you to use.', badge: 'Focused' },
+];
+
+const OBJECTIVE: Record<PromptType, string> = {
+@@ -195,6 +261,19 @@ List each conflict clearly, then propose "update"/"delete"/"add" fixes.`,
+1. Flag any obvious conflicts or critical gaps
+2. Suggest prep for any upcoming deadlines
+3. Keep your response SHORT — bullet points, then the JSON`,
++  projects: `Focus on project breakdown:
++1. Identify large goals that should become projects/tags
++2. Break each project into small, discrete, actionable tasks
++3. Assign projectId/category where obvious and flag ambiguity instead of guessing`,
++  messages: `Help draft concise messages/emails:
++1. Use the schedule/task context to draft reminders, coordination notes, or planning messages
++2. Do not invent unavailable details
++3. Only propose LifeGrid JSON changes if explicitly useful`,
++  patch: `Create the smallest possible machine-importable update:
++1. Return raw JSON only — no prose, no markdown, no unchanged data
++2. Include only fields that must change
++3. Prefer completed_task_ids for tasks that are simply done
++4. Flag ambiguity in notes instead of guessing`,
+  'tasks-only': `Focus entirely on the task list:
+1. Which tasks are overdue or at risk of becoming overdue?
+2. Are priorities correctly set? Suggest changes where needed
+@@ -228,7 +307,8 @@ export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}
+      t.status !== 'done' &&
+      (t.priority === 'urgent' || t.priority === 'high' || (t.dueDate && t.dueDate <= end14Str))
+    );
+-    return `Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
++    return `${adminAssistantIntro(data, 'administrative planning for the next 14 days')}
++Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
+
+${OBJECTIVE['compact']}
+
+@@ -244,10 +324,50 @@ ${encodeTasks(urgentTasks)}
+${schemaReference(data.categories)}`;
+  }
+
++  // ── JSON patch mode: same compact data window, minimal raw output only ──
++  if (promptType === 'patch') {
++    const t = today();
++    const end14 = new Date(); end14.setDate(end14.getDate() + 14);
++    const end14Str = end14.toISOString().split('T')[0];
++    const windowEvents = data.events.filter(e => e.date >= t && e.date <= end14Str);
++    const relevantTasks = data.tasks.filter(task =>
++      task.status !== 'done' &&
++      (task.priority === 'urgent' || task.priority === 'high' || (task.dueDate && task.dueDate <= end14Str))
++    );
++    const peopleLines = data.personEvents
++      .filter(p => p.date >= t && p.date <= end14Str)
++      .slice()
++      .sort((a, b) => a.date.localeCompare(b.date))
++      .map(p => `  ${p.date}  [${p.person}]  ${p.title}`)
++      .join('\n');
++
++    return `${adminAssistantIntro(data, 'bulk updates using minimal JSON patch output')}
++Create a minimal JSON patch for my LifeGrid calendar for the next 14 days (${t} → ${end14Str}). Today is ${t}.
++
++${OBJECTIVE.patch}
++
++==================================================
++EVENTS — next 14 days (${windowEvents.length})
++==================================================
++${encodeEventsDetailed(windowEvents)}
++
++==================================================
++TASKS — overdue, high-priority, or due within 14 days (${relevantTasks.length})
++==================================================
++${encodeTasks(relevantTasks)}
++
++==================================================
++OTHER PEOPLE'S SCHEDULE — next 14 days
++==================================================
++${peopleLines || '  (none)'}
++${patchSchemaReference(data.categories)}`;
++  }
++
+  // ── Tasks-only mode ──
+  if (promptType === 'tasks-only') {
+    const incompleteTasks = data.tasks.filter(t => t.status !== 'done');
+-    return `Analyze my task list and help me prioritize and schedule them. Today is ${today()}.
++    return `${adminAssistantIntro(data, 'task prioritization and next-action planning')}
++Analyze my task list and help me prioritize and schedule them. Today is ${today()}.
+
+${OBJECTIVE['tasks-only']}
+
+@@ -267,7 +387,8 @@ ${schemaReference(data.categories)}`;
+    const inFocus = (date: string) => scoped ? (date >= focusStart! && date <= focusEnd!) : true;
+    const windowEvents = data.events.filter(e => inFocus(e.date));
+    const pendingTasks = data.tasks.filter(t => t.status !== 'done');
+-    return `Here is my calendar${scoped ? ` for ${focusStart} → ${focusEnd}` : ''}. Today is ${today()}.
++    return `${adminAssistantIntro(data, 'free-time finding and meeting coordination')}
++Here is my calendar${scoped ? ` for ${focusStart} → ${focusEnd}` : ''}. Today is ${today()}.
+
+${OBJECTIVE['availability']}
+
+@@ -310,7 +431,8 @@ Analyze and propose changes ONLY within this period. The rest of the calendar is
+`
+    : '';
+
+-  return `Analyze the schedule below and return a JSON object of proposed changes I can import into my scheduling app. Today is ${today()}.
++  return `${adminAssistantIntro(data, OBJECTIVE[promptType].split('\n')[0])}
++Analyze the schedule below and return a JSON object of proposed changes I can import into my scheduling app. Today is ${today()}.
+
+${rangeHeader}${OBJECTIVE[promptType]}
+
+@@ -412,6 +534,8 @@ export interface ParsedUpdate {
+    update: Array<{ id: string } & Partial<Task>>;
+    delete: string[];
+  };
++  completedTaskIds?: string[];
++  patchNotes?: string[];
+  warnings?: string[];
+}
+
+@@ -443,7 +567,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
+    .replace(/```\s*/g, '')
+    .trim();
+
+-  const dataKeyMatch = s.match(/\{\s*"(?:events|tasks)"/);
++  const dataKeyMatch = s.match(/\{\s*"(?:events|tasks|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
+  const start = dataKeyMatch?.index ?? s.indexOf('{');
+
+  if (start < 0) {
+@@ -500,6 +624,34 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
+
+  const result: ParsedUpdate = {};
+
++  // Accept the v0.3.1 minimal patch shape and translate it into the
++  // existing importer shape so applyImportUpdate remains backwards-compatible.
++  const hasPatchKeys = [
++    'new_events', 'updated_events', 'deleted_event_ids',
++    'new_tasks', 'updated_tasks', 'completed_task_ids', 'deleted_task_ids', 'notes',
++  ].some(key => key in parsed);
++  if (hasPatchKeys) {
++    const completedTaskIds = normalizeIds(parsed.completed_task_ids ?? []);
++    parsed = {
++      events: {
++        add: parsed.new_events ?? [],
++        update: parsed.updated_events ?? [],
++        delete: parsed.deleted_event_ids ?? [],
++      },
++      tasks: {
++        add: parsed.new_tasks ?? [],
++        update: [
++          ...(Array.isArray(parsed.updated_tasks) ? parsed.updated_tasks : []),
++          ...completedTaskIds.map(id => ({ id, status: 'done' })),
++        ],
++        delete: parsed.deleted_task_ids ?? [],
++      },
++      notes: parsed.notes,
++    };
++    result.completedTaskIds = completedTaskIds;
++    if (Array.isArray(parsed.notes)) result.patchNotes = parsed.notes.filter((n: any) => typeof n === 'string');
++  }
++
+  if (parsed.events) {
+    const updateArr = Array.isArray(parsed.events.update) ? parsed.events.update : [];
+    const deleteArr = normalizeIds(parsed.events.delete ?? []);
+@@ -604,6 +756,7 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
+      notes:           t.notes ?? null,
+      schedulingNotes: t.schedulingNotes ?? null,
+      priority:        VALID_PRI.has(t.priority) ? t.priority : 'medium',
++      projectId:       typeof t.projectId === 'string' ? t.projectId : null,
+    } as Task));
+}
+
+@@ -637,6 +790,7 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
+  if ('nextAction'     in u) out.nextAction     = u.nextAction ?? null;
+  if ('schedulingNotes' in u) out.schedulingNotes = u.schedulingNotes ?? null;
+  if ('owner'          in u) out.owner          = String(u.owner ?? 'Me');
++  if ('projectId'      in u) out.projectId      = u.projectId ? String(u.projectId) : null;
+  return out;
+}
+
+diff --git a/artifacts/lifegrid/src/pages/AIView.tsx b/artifacts/lifegrid/src/pages/AIView.tsx
+index 2432dda..a384433 100644
+--- a/artifacts/lifegrid/src/pages/AIView.tsx
++++ b/artifacts/lifegrid/src/pages/AIView.tsx
+@@ -73,7 +73,7 @@ export const AIView = () => {
+  const [error, setError] = useState<string | null>(null);
+
+  // Analyze options
+-  const [promptType, setPromptType] = useState<PromptType>(draft.promptType ?? 'analyze');
++  const [promptType, setPromptType] = useState<PromptType>(draft.promptType ?? 'compact');
+  const [useRange, setUseRange] = useState(draft.useRange ?? false);
+  const [rangeStart, setRangeStart] = useState(draft.rangeStart ?? toISODate(new Date()));
+  const [rangeEnd, setRangeEnd] = useState(draft.rangeEnd ?? toISODate(addDays(new Date(), 30)));
+@@ -231,16 +231,17 @@ export const AIView = () => {
+            </div>
+            <div className="flex items-start p-3 gap-0">
+              {[
+-                { n: '1', label: 'Copy or download the prompt' },
+-                { n: '2', label: 'Paste into any AI + your schedule' },
+-                { n: '3', label: 'Paste or upload the AI response' },
++                { n: '1', label: 'Select LifeGrid context to share' },
++                { n: '2', label: 'Copy the prompt to your preferred AI/LLM' },
++                { n: '3', label: 'Ask it to analyze, plan, draft, or propose changes' },
++                { n: '4', label: 'Ask for raw JSON and paste it back' },
+              ].map((step, i) => (
+                <React.Fragment key={i}>
+                  <div className="flex flex-col items-center text-center flex-1 px-1">
+                    <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center mb-1.5">{step.n}</div>
+                    <p className="text-[10px] text-muted-foreground leading-tight">{step.label}</p>
+                  </div>
+-                  {i < 2 && <ArrowRight size={12} className="text-muted-foreground/40 mt-3 shrink-0" />}
++                  {i < 3 && <ArrowRight size={12} className="text-muted-foreground/40 mt-3 shrink-0" />}
+                </React.Fragment>
+              ))}
+            </div>
+@@ -251,8 +252,8 @@ export const AIView = () => {
+          {hasData && (
+            <ModeCard
+              emoji="🔍"
+-              title="Analyze my schedule"
+-              description="Spot conflicts, free time, balance issues, missing prep — your pick. Optionally scope it to a date range."
++              title="Copy AI Admin Assistant Prompt"
++              description="Share selected LifeGrid context so your preferred AI can analyze, coordinate, prioritize, draft messages, or prepare JSON changes."
+              tag="Has existing data"
+              tagColor="text-primary bg-primary/10"
+              onClick={() => setMode('optimize')}
+@@ -315,7 +316,7 @@ export const AIView = () => {
+
+  // ─── SHARED FLOW ────────────────────────────────────────────────────────────
+  const modeConfig = {
+-    optimize: { title: 'Analyze my schedule', emoji: '🔍', promptLabel: 'Generate planning prompt' },
++    optimize: { title: 'Copy AI Admin Assistant Prompt', emoji: '🧭', promptLabel: 'Generate admin assistant prompt' },
+    import: { title: 'Import a calendar', emoji: '📥', promptLabel: 'Generate import prompt' },
+    onboard: { title: 'Build starter schedule', emoji: '✨', promptLabel: 'Generate starter prompt' },
+  }[mode as 'optimize' | 'import' | 'onboard'];
+@@ -337,7 +338,7 @@ export const AIView = () => {
+
+        {/* ── ANALYZE: prompt-type picker + range ── */}
+        {mode === 'optimize' && (
+-          <StepBlock number={1} title="What should the AI focus on?">
++          <StepBlock number={1} title="What LifeGrid context should the AI use?">
+            <div className="grid grid-cols-2 gap-2">
+              {PROMPT_TYPES.map(pt => {
+                const on = promptType === pt.id;
+@@ -451,7 +452,7 @@ export const AIView = () => {
+        >
+          {mode === 'optimize' && (
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+-              Generates a prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your entire schedule (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Paste it into any AI.
++              Generates an AI Admin Assistant prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your selected calendar context (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Large calendars can take external AI models longer to process.
+            </p>
+          )}
+          {mode === 'import' && importSource === 'text' && (
+@@ -514,7 +515,7 @@ export const AIView = () => {
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+-                Paste the prompt, let the AI respond, then paste/upload the response in Step {responseStep} below.
++                Paste the prompt, ask for planning/drafting help, and when ready ask the AI for raw LifeGrid JSON. Paste/upload that response in Step {responseStep} below.
+              </p>
+
+              <details className="group">
+@@ -662,6 +663,8 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
+  const tskAdd = preview.tasks?.add ?? [];
+  const tskUpdate = preview.tasks?.update ?? [];
+  const tskDelete = preview.tasks?.delete ?? [];
++  const completed = preview.completedTaskIds ?? [];
++  const notes = preview.patchNotes ?? [];
+  const total = evtAdd.length + evtUpdate.length + evtDelete.length +
+    tskAdd.length + tskUpdate.length + tskDelete.length;
+  const warnings = preview.warnings ?? [];
+@@ -669,6 +672,7 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
+  const summaryParts = [
+    (evtAdd.length + tskAdd.length) > 0 && `+${evtAdd.length + tskAdd.length} added`,
+    (evtUpdate.length + tskUpdate.length) > 0 && `~${evtUpdate.length + tskUpdate.length} updated`,
++    completed.length > 0 && `✓${completed.length} completed`,
+    (evtDelete.length + tskDelete.length) > 0 && `−${evtDelete.length + tskDelete.length} removed`,
+  ].filter(Boolean);
+
+@@ -685,6 +689,14 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
+          ))}
+        </div>
+      )}
++      {notes.length > 0 && (
++        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 space-y-1">
++          <p className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">AI notes</p>
++          {notes.map((n, i) => (
++            <p key={i} className="text-[10px] text-blue-700 dark:text-blue-400">{n}</p>
++          ))}
++        </div>
++      )}
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-3 py-2 bg-muted/20 border-b border-border flex items-center gap-2 flex-wrap">
+          <CheckCircle2 size={13} className="text-green-500" />
+@@ -698,7 +710,14 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
+          {evtUpdate.map((e, i) => <DiffRow key={`eu${i}`} op="update" label={`Update: ${(e as any).title ?? e.id}`} />)}
+          {evtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0, 20)}`} />)}
+          {tskAdd.map((t, i) => <DiffRow key={`ta${i}`} op="add" label={`Task: ${t.name}`} cat={t.category} isTask />)}
+-          {tskUpdate.map((t, i) => <DiffRow key={`tu${i}`} op="update" label={`Update task: ${(t as any).name ?? t.id}`} isTask />)}
++          {tskUpdate.map((t, i) => (
++            <DiffRow
++              key={`tu${i}`}
++              op="update"
++              label={completed.includes(t.id) ? `Complete task: ${t.id}` : `Update task: ${(t as any).name ?? t.id}`}
++              isTask
++            />
++          ))}
+          {tskDelete.map((id, i) => <DiffRow key={`td${i}`} op="delete" label={`Remove task: ${String(id).slice(0, 20)}`} isTask />)}
+          {total === 0 && <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>}
+        </div>
+diff --git a/artifacts/lifegrid/src/pages/GridView.tsx b/artifacts/lifegrid/src/pages/GridView.tsx
+index 36589a6..bc4d31e 100644
+--- a/artifacts/lifegrid/src/pages/GridView.tsx
++++ b/artifacts/lifegrid/src/pages/GridView.tsx
+@@ -24,7 +24,9 @@ const DAY_COL_W = 32;
+const MONTH_COL_W = 110;
+const ROW_H = 52;
+const HEADER_H = 44;
+-const MAX_VISIBLE_EVENTS = 3;
++const MAX_VISIBLE_EVENTS = 4;
++const EVENT_PILL_H = 10;
++const EXPORT_ROW_BASE_H = 16;
+
+export const GridView = () => {
+  const { events, categories, calendars, activeCalendarId, switchCalendar } = useAppData();
+@@ -38,7 +40,7 @@ export const GridView = () => {
+  const [eventSheetOpen, setEventSheetOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportUrl, setExportUrl] = useState<string | null>(null);
+-  const [exportPixelRatio, setExportPixelRatio] = useState(2);
++  const [exportPixelRatio, setExportPixelRatio] = useState(1);
+  const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
+
+  const scrollRef    = useRef<HTMLDivElement>(null);
+@@ -53,6 +55,21 @@ export const GridView = () => {
+
+  const activeCalendar = calendars.find(c => c.id === activeCalendarId);
+
++  const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
++
++  const sortEventsForCell = useCallback((a: Event, b: Event) => {
++    const aAllDay = !a.startTime;
++    const bAllDay = !b.startTime;
++    if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
++    if (!aAllDay && !bAllDay) {
++      const byTime = (a.startTime ?? '').localeCompare(b.startTime ?? '');
++      if (byTime !== 0) return byTime;
++    }
++    const byCat = (categoryRank.get(a.category) ?? 999) - (categoryRank.get(b.category) ?? 999);
++    if (byCat !== 0) return byCat;
++    return a.title.localeCompare(b.title);
++  }, [categoryRank]);
++
+  const gridData = useMemo(() => {
+    const map = new Map<string, Event[]>();
+    events.forEach(e => {
+@@ -60,8 +77,9 @@ export const GridView = () => {
+      arr.push(e);
+      map.set(e.date, arr);
+    });
++    map.forEach(arr => arr.sort(sortEventsForCell));
+    return map;
+-  }, [events]);
++  }, [events, sortEventsForCell]);
+
+  const isFocusActive = focusedCats.size > 0;
+  const toggleCat = (id: string) =>
+@@ -97,7 +115,7 @@ export const GridView = () => {
+    const container = scrollRef.current;
+    if (!table || !container) return;
+    setExporting(true);
+-    toast.loading('Generating grid image…', { id: 'export' });
++    toast.loading(`Generating ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
+
+    const prevOverflow = container.style.overflow;
+    const prevW = container.style.width;
+@@ -106,6 +124,8 @@ export const GridView = () => {
+    container.style.width  = table.scrollWidth + 'px';
+    container.style.height = table.scrollHeight + 'px';
+
++    await new Promise(requestAnimationFrame);
++
+    const opts = {
+      pixelRatio: exportPixelRatio,
+      backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
+@@ -151,7 +171,7 @@ export const GridView = () => {
+      container.style.height   = prevH;
+      setExporting(false);
+    }
+-  }, [year, theme, activeCalendar, exportFileName]);
++  }, [theme, exportFileName, exportPixelRatio]);
+
+  const downloadExport = () => {
+    if (!exportUrl) return;
+@@ -233,39 +253,45 @@ export const GridView = () => {
+
+        <div className="flex-1" />
+
+-        {/* Export button + quality dropdown */}
+-        <div className="flex items-center">
++        {/* Mobile-friendly export controls */}
++        <div className="flex items-center gap-1">
++          <div className="hidden sm:flex items-center rounded-lg bg-muted p-0.5">
++            <button
++              type="button"
++              disabled={exporting}
++              onClick={() => setExportPixelRatio(1)}
++              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 1 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
++            >
++              Fast
++            </button>
++            <button
++              type="button"
++              disabled={exporting}
++              onClick={() => setExportPixelRatio(2)}
++              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 2 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
++            >
++              Sharp
++            </button>
++          </div>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+-            className="flex items-center gap-1 px-2 py-1.5 rounded-l-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50 border-r border-border/50"
++            className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
+            data-testid="button-export"
+            title="Export grid as PNG"
+          >
+            <Image size={12} />
+-            {exporting ? 'Exporting…' : 'Export'}
++            {exporting ? 'Working…' : `Export ${exportPixelRatio === 1 ? 'Fast' : 'Sharp'}`}
++          </button>
++          <button
++            type="button"
++            disabled={exporting}
++            onClick={() => setExportPixelRatio(exportPixelRatio === 1 ? 2 : 1)}
++            className="sm:hidden px-2 py-1.5 rounded-lg text-[10px] font-bold bg-muted text-muted-foreground disabled:opacity-50"
++            title="Toggle export quality"
++          >
++            {exportPixelRatio === 1 ? 'Fast' : 'Sharp'}
+          </button>
+-          <DropdownMenu>
+-            <DropdownMenuTrigger asChild>
+-              <button
+-                disabled={exporting}
+-                className="flex items-center px-1 py-1.5 rounded-r-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
+-                title="Export quality"
+-              >
+-                <ChevronDown size={11} />
+-              </button>
+-            </DropdownMenuTrigger>
+-            <DropdownMenuContent align="end" className="w-40">
+-              <DropdownMenuLabel className="text-[10px]">Export quality</DropdownMenuLabel>
+-              <DropdownMenuSeparator />
+-              <DropdownMenuItem onClick={() => setExportPixelRatio(2)} className={`text-xs ${exportPixelRatio === 2 ? 'font-semibold text-primary' : ''}`}>
+-                Standard (2× — sharp)
+-              </DropdownMenuItem>
+-              <DropdownMenuItem onClick={() => setExportPixelRatio(1)} className={`text-xs ${exportPixelRatio === 1 ? 'font-semibold text-primary' : ''}`}>
+-                Compact (1× — faster)
+-              </DropdownMenuItem>
+-            </DropdownMenuContent>
+-          </DropdownMenu>
+        </div>
+
+        <button
+@@ -343,8 +369,16 @@ export const GridView = () => {
+          </thead>
+
+          <tbody>
+-            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+-              <tr key={day} style={{ height: ROW_H }}>
++            {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
++              const rowEventMax = MONTHS.reduce((max, _, mIdx) => {
++                const maxDay = getDaysForMonth(mIdx);
++                if (day > maxDay) return max;
++                const dateStr = `${year}-${String(mIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
++                return Math.max(max, gridData.get(dateStr)?.length ?? 0);
++              }, 0);
++              const rowHeight = exporting ? Math.max(ROW_H, EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1)) : ROW_H;
++              return (
++              <tr key={day} style={{ height: rowHeight }}>
+                <td
+                  className="sticky left-0 z-10 border-b border-r border-border bg-card text-center font-bold text-muted-foreground select-none"
+                  style={{ width: DAY_COL_W, minWidth: DAY_COL_W, fontSize: 10 }}
+@@ -375,8 +409,8 @@ export const GridView = () => {
+                  const dow      = DOW_SHORT[dateObj.getDay()];
+                  const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
+                  const dayEvents = gridData.get(dateStr) ?? [];
+-                  const visEvents = dayEvents.slice(0, MAX_VISIBLE_EVENTS);
+-                  const overflow  = dayEvents.length - MAX_VISIBLE_EVENTS;
++                  const visEvents = exporting ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
++                  const overflow  = exporting ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
+
+                  let cellBg: string;
+                  if (isToday) {
+@@ -394,7 +428,7 @@ export const GridView = () => {
+                      style={{
+                        width: MONTH_COL_W,
+                        minWidth: MONTH_COL_W,
+-                        height: ROW_H,
++                        height: rowHeight,
+                        background: cellBg,
+                        padding: '2px 3px',
+                      }}
+@@ -416,14 +450,14 @@ export const GridView = () => {
+                        {dow}
+                      </div>
+
+-                      <div className="flex flex-col gap-px overflow-hidden">
++                      <div className={exporting ? 'flex flex-col gap-px' : 'flex flex-col gap-px overflow-hidden'}>
+                        {visEvents.map(evt => (
+                          <div
+                            key={evt.id}
+                            className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity"
+                            style={{
+                              backgroundColor: evt.color,
+-                              height: 14,
++                              height: exporting ? EVENT_PILL_H : 10,
+                              opacity: dim(evt.category) ? 0.18 : 1,
+                            }}
+                            data-testid={`event-pill-${evt.id}`}
+@@ -433,7 +467,7 @@ export const GridView = () => {
+                                {evt.startTime}
+                              </span>
+                            )}
+-                            <span className="text-white font-semibold truncate" style={{ fontSize: 8.5, lineHeight: 1 }}>
++                            <span className="text-white font-semibold truncate" style={{ fontSize: 8, lineHeight: 1 }}>
+                              {evt.title}
+                            </span>
+                          </div>
+@@ -452,7 +486,7 @@ export const GridView = () => {
+                  );
+                })}
+              </tr>
+-            ))}
++            );})}
+          </tbody>
+        </table>
+      </div>
+diff --git a/artifacts/lifegrid/src/pages/SettingsView.tsx b/artifacts/lifegrid/src/pages/SettingsView.tsx
+index 422a099..aed50ea 100644
+--- a/artifacts/lifegrid/src/pages/SettingsView.tsx
++++ b/artifacts/lifegrid/src/pages/SettingsView.tsx
+@@ -11,7 +11,7 @@ import { toast } from 'sonner';
+import {
+  Plus, Trash2, Check, X, Pencil, Copy, Download, Upload,
+  CalendarDays, Tag, Users, Database, Eraser, Smartphone,
+-  FolderOpen, ChevronUp, ChevronDown,
++  FolderOpen, ChevronUp, ChevronDown, FileText,
+} from 'lucide-react';
+import { Category, Person, Project } from '../types';
+import { formatDate } from '../lib/format';
+@@ -39,6 +39,7 @@ export const SettingsView = () => {
+        <PeopleManager />
+        <InstallSection />
+        <DataManager />
++        <ExportManager />
+      </div>
+    </div>
+  );
+@@ -318,9 +319,9 @@ function ProjectManager() {
+  };
+
+  return (
+-    <Section icon={<FolderOpen size={16} />} title="Projects" subtitle="Group related tasks under a project or major initiative.">
++    <Section icon={<FolderOpen size={16} />} title="Projects" subtitle="Use projects for large efforts; keep tasks small and actionable.">
+      {projects.length === 0 && !adding && (
+-        <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group tasks together.</p>
++        <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group related subtasks for focus mode.</p>
+      )}
+      {projects.map(proj => (
+        <ProjectRow
+@@ -553,38 +554,103 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
+// ─── Install & offline section ────────────────────────────────────────────────
+function InstallSection() {
+  return (
+-    <Section icon={<Smartphone size={16} />} title="Install & use offline" subtitle="Works without Wi-Fi once installed.">
+-      <div className="space-y-3 text-[11px] text-muted-foreground leading-relaxed">
+-        <div>
+-          <p className="font-semibold text-foreground mb-1">📱 iPhone / iPad (Safari)</p>
+-          <ol className="list-decimal list-inside space-y-0.5">
+-            <li>Tap the <strong className="text-foreground">Share</strong> button (box with arrow ↑)</li>
+-            <li>Scroll down → tap <strong className="text-foreground">Add to Home Screen</strong></li>
+-            <li>Tap <strong className="text-foreground">Add</strong> — opens like a native app</li>
+-          </ol>
+-        </div>
+-        <div>
+-          <p className="font-semibold text-foreground mb-1">🤖 Android (Chrome)</p>
+-          <ol className="list-decimal list-inside space-y-0.5">
+-            <li>Tap the <strong className="text-foreground">⋮ menu</strong> in Chrome</li>
+-            <li>Tap <strong className="text-foreground">Add to Home screen</strong> or <strong className="text-foreground">Install app</strong></li>
+-          </ol>
+-        </div>
+-        <div>
+-          <p className="font-semibold text-foreground mb-1">💻 Desktop (Chrome / Edge)</p>
+-          <ol className="list-decimal list-inside space-y-0.5">
+-            <li>Look for the <strong className="text-foreground">install ⊕ icon</strong> in the address bar</li>
+-            <li>Click <strong className="text-foreground">Install</strong></li>
+-          </ol>
+-        </div>
+-        <p className="text-[10px] text-muted-foreground/80 pt-1 border-t border-border">
+-          Once installed the app loads instantly and works fully offline. All your data stays on this device — nothing is sent to any server.
++    <Section icon={<Smartphone size={16} />} title="Install & use offline" subtitle="Optional shortcut; the app remains local-first.">
++      <div className="space-y-2 text-[11px] text-muted-foreground leading-relaxed">
++        <p>
++          Install LifeGrid from your browser menu for a home-screen app experience. Once loaded, the PWA works offline and keeps data on this device/browser.
+        </p>
++        <ul className="list-disc list-inside space-y-0.5">
++          <li><strong className="text-foreground">iPhone/iPad:</strong> Safari Share → Add to Home Screen.</li>
++          <li><strong className="text-foreground">Android:</strong> Chrome ⋮ menu → Add to Home screen / Install app.</li>
++          <li><strong className="text-foreground">Desktop:</strong> use the browser install icon when available.</li>
++        </ul>
+      </div>
+    </Section>
+  );
+}
+
++
++function escapeIcsText(value: string): string {
++  return value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
++}
++
++function buildIcsExport(app: ReturnType<typeof useAppData>): string {
++  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
++  const lines = [
++    'BEGIN:VCALENDAR',
++    'VERSION:2.0',
++    'PRODID:-//LifeGrid AI Planner//EN',
++    'CALSCALE:GREGORIAN',
++  ];
++  [...app.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
++    const start = e.startTime ? `${e.date.replace(/-/g, '')}T${e.startTime.replace(':', '')}00` : e.date.replace(/-/g, '');
++    const end = e.endTime ? `${e.date.replace(/-/g, '')}T${e.endTime.replace(':', '')}00` : undefined;
++    lines.push('BEGIN:VEVENT');
++    lines.push(`UID:${e.id}@lifegrid`);
++    lines.push(`DTSTAMP:${stamp}`);
++    lines.push(e.startTime ? `DTSTART:${start}` : `DTSTART;VALUE=DATE:${start}`);
++    if (end) lines.push(`DTEND:${end}`);
++    lines.push(`SUMMARY:${escapeIcsText(e.title)}`);
++    const cat = app.categories.find(c => c.id === e.category)?.label ?? e.category;
++    lines.push(`CATEGORIES:${escapeIcsText(cat)}`);
++    if (e.notes) lines.push(`DESCRIPTION:${escapeIcsText(e.notes)}`);
++    lines.push('END:VEVENT');
++  });
++  lines.push('END:VCALENDAR');
++  return lines.join('\r\n');
++}
++
++function ExportManager() {
++  const app = useAppData();
++
++  const download = (contents: string, filename: string, type: string) => {
++    const blob = new Blob([contents], { type });
++    const url = URL.createObjectURL(blob);
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = filename;
++    a.click();
++    URL.revokeObjectURL(url);
++  };
++
++  return (
++    <Section icon={<FileText size={16} />} title="Readable & calendar exports" subtitle="For sharing; these files are not restorable backups.">
++      <p className="text-[11px] text-muted-foreground leading-relaxed">
++        These exports are separate from JSON backup/restore. Use them for printing, sharing, or importing grid events into an external calendar app.
++      </p>
++      <div className="grid grid-cols-2 gap-2">
++        <Button
++          size="sm"
++          variant="secondary"
++          onClick={() => {
++            download(buildTextExport(app), `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`, 'text/plain');
++            toast.success('Text export downloaded', { description: 'Readable only — not restorable.' });
++          }}
++          className="gap-1.5 h-9 text-xs"
++          data-testid="button-export-text"
++        >
++          <Download size={14} /> Export .txt
++        </Button>
++        <Button
++          size="sm"
++          variant="secondary"
++          onClick={() => {
++            download(buildIcsExport(app), `lifegrid-events-${new Date().toISOString().slice(0, 10)}.ics`, 'text/calendar');
++            toast.success('ICS exported', { description: 'Calendar/grid events only — tasks and people entries are not included.' });
++          }}
++          className="gap-1.5 h-9 text-xs"
++          data-testid="button-export-ics"
++        >
++          <Download size={14} /> Events .ics
++        </Button>
++      </div>
++      <p className="text-[10px] text-muted-foreground">
++        ICS export includes calendar/grid events only and can be imported into external calendar apps. Tasks, projects, and People tab schedules stay in LifeGrid backups.
++      </p>
++    </Section>
++  );
++}
++
+// ─── Data backup / restore / clear ────────────────────────────────────────────
+function DataManager() {
+  const app = useAppData();
+@@ -609,17 +675,6 @@ function DataManager() {
+    recordBackup();
+  };
+
+-  const handleTextExport = () => {
+-    const text = buildTextExport(app);
+-    const blob = new Blob([text], { type: 'text/plain' });
+-    const url = URL.createObjectURL(blob);
+-    const a = document.createElement('a');
+-    a.href = url;
+-    a.download = `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`;
+-    a.click();
+-    URL.revokeObjectURL(url);
+-    toast.success('Text export downloaded', { description: 'Open the .txt file to read or share your schedule.' });
+-  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+@@ -644,23 +699,23 @@ function DataManager() {
+        </div>
+      )}
+
+-      <div className="grid grid-cols-2 gap-2">
+-        <Button size="sm" variant="secondary" onClick={handleExport} className="gap-1.5 h-9 text-xs" data-testid="button-export-backup">
+-          <Download size={14} /> JSON backup
+-        </Button>
+-        <Button size="sm" variant="secondary" onClick={handleTextExport} className="gap-1.5 h-9 text-xs" data-testid="button-export-text">
+-          <Download size={14} /> Export .txt
++      <div className="space-y-2">
++        <p className="text-[11px] text-muted-foreground leading-relaxed">
++          Your data is stored only in this browser. Clearing site/browser data can remove it. A JSON backup is the main save point; download one after meaningful changes and restore by uploading your latest JSON backup.
++        </p>
++        <Button size="sm" variant="secondary" onClick={handleExport} className="w-full gap-1.5 h-9 text-xs" data-testid="button-export-backup">
++          <Download size={14} /> Download restorable JSON backup
+        </Button>
+      </div>
+
+      <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} className="w-full gap-1.5 h-9 text-xs" data-testid="button-import-backup">
+-        <Upload size={14} /> Restore from backup
++        <Upload size={14} /> Restore latest JSON backup
+      </Button>
+      <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
+
+      <div className="pt-1 border-t border-border">
+        <p className="text-[10px] text-muted-foreground mb-2">
+-          Active calendar: <strong className="text-foreground">{activeCalendar.name}</strong> · {activeCalendar.data.events.length} events · {activeCalendar.data.tasks.length} tasks
++          Selected calendar: <strong className="text-foreground">{activeCalendar.name}</strong> · {activeCalendar.data.events.length} events · {activeCalendar.data.tasks.length} tasks
+        </p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+diff --git a/artifacts/lifegrid/src/pages/TasksView.tsx b/artifacts/lifegrid/src/pages/TasksView.tsx
+index aa2e8e2..760c2fe 100644
+--- a/artifacts/lifegrid/src/pages/TasksView.tsx
++++ b/artifacts/lifegrid/src/pages/TasksView.tsx
+@@ -126,6 +126,21 @@ function applySort(tasks: Task[], sort: SortMode): Task[] {
+  }
+}
+
++
++const STATUS_LABELS: Record<Task['status'], string> = {
++  todo: 'To do',
++  'in-progress': 'In progress',
++  blocked: 'Blocked',
++  done: 'Done',
++};
++
++const STATUS_BADGE_CLASS: Record<Task['status'], string> = {
++  todo: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
++  'in-progress': 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
++  blocked: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
++  done: 'bg-green-500/10 text-green-700 dark:text-green-400',
++};
++
+const PriorityIcon = ({ priority }: { priority: TaskPriority }) => {
+  switch (priority) {
+    case 'urgent': return <AlertTriangle size={14} className="text-red-500" />;
+@@ -187,7 +202,10 @@ export const TasksView = () => {
+      {/* ── Header ── */}
+      <div className="flex-none p-4 pb-2 border-b border-border bg-card">
+        <div className="flex items-center justify-between mb-3">
+-          <h1 className="text-xl font-bold tracking-tight">Tasks</h1>
++          <div>
++            <h1 className="text-xl font-bold tracking-tight">Tasks</h1>
++            <p className="text-[10px] text-muted-foreground mt-0.5">Use tasks for small next actions; group larger efforts with projects and tags.</p>
++          </div>
+          {/* Sort dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+@@ -359,7 +377,9 @@ export const TasksView = () => {
+                        {task.name}
+                      </h3>
+                      <div className="shrink-0 flex items-center gap-1">
+-                        {blocked && <span className="text-[9px] font-bold text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded-full">BLOCKED</span>}
++                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${STATUS_BADGE_CLASS[task.status]}`}>
++                          {STATUS_LABELS[task.status]}
++                        </span>
+                        <PriorityIcon priority={task.priority} />
+                      </div>
+                    </div>
+@@ -394,9 +414,10 @@ export const TasksView = () => {
+                          {cat.label}
+                        </Badge>
+                      )}
++                      <span className="text-[10px] font-semibold uppercase text-muted-foreground/80">{task.priority}</span>
+                      {task.schedulingNotes && (
+-                        <span className="flex items-center gap-1 text-[10px] text-primary/80">
+-                          <Link2 size={11} /> has constraints
++                        <span className="flex items-center gap-1 text-[10px] text-primary/80 font-semibold">
++                          <Link2 size={11} /> constraints
+                        </span>
+                      )}
+                    </div>
+-- 
+2.43.0

@@ -86,3 +86,44 @@ All notable changes to this project are documented here.
 ### Build verification (June 2026)
 - `pnpm typecheck` → **CLEAN** (zero TypeScript errors)
 - `pnpm build` → **SUCCESS** — emits `manifest.webmanifest`, `sw.js`, `workbox-*.js`; PWA precaches 16 entries (732 KB)
+
+## v0.3.1 — Usability and AI Admin Assistant Workflow
+
+### Improvements
+
+Grid density, ordering, and export
+- Grid cells now show up to four compact events interactively where space allows.
+- Events inside each grid cell are sorted by all-day/no-time first, timed events by start time, then saved category/tag order.
+- Overflow remains visible as a +N more indicator, while PNG export expands rows to include all events.
+- Image export now defaults to faster compact quality, shows progress text, disables export controls while generating, and exposes a mobile-friendly Fast/Sharp quality toggle.
+
+Tasks and projects
+- Task repeat creation now supports yearly frequency in addition to daily, weekly, bi-weekly, and monthly.
+- Task cards show status prominently alongside due date, tag/category, priority, and constraints.
+- Task and project helper text clarifies that tasks should be small actionable items and projects/tags should group larger efforts for focus mode.
+
+AI Admin Assistant workflow
+- Renamed the schedule analysis entry point to "Copy AI Admin Assistant Prompt."
+- Rewrote the AI Planner "How it works" flow around selecting context, copying a prompt to any AI/LLM, asking for planning/drafting help, and pasting raw JSON back when ready.
+- Reworked AI focus options around administrative planning, free-time/meeting coordination, task prioritization, project breakdown, message/email drafting, and bulk JSON updates.
+- Exported prompts now include category/tag order, project structure, selected schedule/task/person context, robust cross-LLM instructions, ambiguity handling, and raw-JSON-only import rules.
+- The JSON patch schema supports new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, project/category/tag assignments, and notes.
+
+Settings and exports
+- Simplified "Install & use offline."
+- Clarified that LifeGrid data is stored locally in the current device/browser and that JSON backup is the primary restorable save point.
+- Moved readable .txt export out of backup/restore into a separate non-restorable exports section.
+- Added .ics export for calendar/grid events only, for import into external calendar apps.
+
+### Calendar import planning
+- Full ICS/Google CSV/Outlook import is deferred. Future imports should default to an Imported tag/category, prefer separate calendar versions for safety, and allow AI-assisted retagging/merging afterward. People schedules can later import into the People tab.
+
+### Migration notes
+- No storage-key migration is required for v0.3.1.
+- Existing calendar data, category order, projects, backups, and offline/PWA behavior remain compatible.
+
+### Known limitations
+- AI integration is still copy/paste or file-upload based; there is no external AI API call, account login, cloud sync, or backend.
+- Large calendars/task lists may still take external AI models longer to process.
+- ICS export includes grid/calendar events only; tasks, projects, and People tab entries remain available through JSON backup and text export.
+- The app accepts minimal AI patches, but unknown IDs are still warnings that should be reviewed before applying.

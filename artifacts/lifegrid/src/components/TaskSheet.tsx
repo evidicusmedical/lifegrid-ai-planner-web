@@ -44,6 +44,10 @@ const shiftByFreq = (date: string, freq: string, n: number): string => {
   if (freq === 'weekly') return shiftDate(date, n * 7);
   if (freq === 'biweekly') return shiftDate(date, n * 14);
   const d = new Date(date + 'T00:00:00');
+  if (freq === 'yearly') {
+    d.setFullYear(d.getFullYear() + n);
+    return d.toISOString().split('T')[0];
+  }
   d.setMonth(d.getMonth() + n);
   return d.toISOString().split('T')[0];
 };
@@ -59,7 +63,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
 
   const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
   const [repeat, setRepeat] = useState(false);
-  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
+  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'>('weekly');
   const [repeatCount, setRepeatCount] = useState(4);
 
   const groupId = initialData?.recurringGroupId;
@@ -172,7 +176,8 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Task Name</FormLabel>
-                      <FormControl><Input placeholder="What needs to be done?" {...field} /></FormControl>
+                      <FormControl><Input placeholder="Small, concrete action (e.g. Call dentist)" {...field} /></FormControl>
+                      <FormDescription>Keep tasks small and actionable. Use Projects/Tags for large efforts.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -263,7 +268,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                     name="projectId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Project (optional)</FormLabel>
+                        <FormLabel>Project / major event (optional)</FormLabel>
                         <Select
                           onValueChange={v => field.onChange(v === '__none__' ? null : v)}
                           value={field.value ?? '__none__'}
@@ -281,6 +286,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                             ))}
                           </SelectContent>
                         </Select>
+                        <FormDescription>Group related subtasks under a project; focus mode in Tasks helps work through them.</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -301,8 +307,8 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                       <div className="space-y-3 animate-in fade-in">
                         <div>
                           <Label className="text-xs text-muted-foreground mb-1 block">Frequency</Label>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(f => (
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const).map(f => (
                               <button
                                 key={f}
                                 type="button"

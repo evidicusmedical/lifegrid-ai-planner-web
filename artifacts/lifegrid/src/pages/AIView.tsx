@@ -28,6 +28,7 @@ import {
 
 type Mode = 'choose' | 'optimize' | 'import' | 'onboard';
 type ImportSource = 'text' | 'image';
+type DateRangePreset = 'next14' | 'next30' | 'next90' | 'full' | 'custom';
 
 // Persist the in-progress AI exchange so switching to ChatGPT/Claude and back
 // (which reloads the Safari tab on iPhone) does not wipe the prompt or the
@@ -37,6 +38,7 @@ const DRAFT_TTL_MS = 72 * 60 * 60 * 1000; // forget half-finished exchanges afte
 interface Draft {
   mode: Mode; rawInput: string; prompt: string; importJson: string;
   promptType: PromptType; useRange: boolean; rangeStart: string; rangeEnd: string;
+  rangePreset: DateRangePreset; includeTasks: boolean; includePeople: boolean; includeCompletedTasks: boolean; includeProjectsTags: boolean;
   importSource: ImportSource; savedAt: number;
 }
 const loadDraft = (): Partial<Draft> => {
@@ -72,11 +74,16 @@ export const AIView = () => {
   const [preview, setPreview] = useState<ParsedUpdate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Analyze options
+  // LifeGrid Admin prompt options
   const [promptType, setPromptType] = useState<PromptType>(draft.promptType ?? 'compact');
-  const [useRange, setUseRange] = useState(draft.useRange ?? false);
+  const [rangePreset, setRangePreset] = useState<DateRangePreset>(draft.rangePreset ?? 'next30');
+  const [useRange, setUseRange] = useState(draft.useRange ?? true);
   const [rangeStart, setRangeStart] = useState(draft.rangeStart ?? toISODate(new Date()));
   const [rangeEnd, setRangeEnd] = useState(draft.rangeEnd ?? toISODate(addDays(new Date(), 30)));
+  const [includeTasks, setIncludeTasks] = useState(draft.includeTasks ?? true);
+  const [includePeople, setIncludePeople] = useState(draft.includePeople ?? true);
+  const [includeCompletedTasks, setIncludeCompletedTasks] = useState(draft.includeCompletedTasks ?? false);
+  const [includeProjectsTags, setIncludeProjectsTags] = useState(draft.includeProjectsTags ?? true);
 
   // Import: text paste vs. photo/screenshot upload to the AI
   const [importSource, setImportSource] = useState<ImportSource>(draft.importSource ?? 'text');
@@ -95,10 +102,10 @@ export const AIView = () => {
     const hasWork = mode !== 'choose' || rawInput.trim() || prompt || importJson.trim();
     try {
       if (!hasWork) { localStorage.removeItem(DRAFT_KEY); return; }
-      const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, importSource, savedAt: Date.now() };
+      const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, importSource, savedAt: Date.now() };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
     } catch { /* quota */ }
-  }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, importSource]);
+  }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, importSource]);
 
   const buildPrompt = () => {
     if (mode === 'optimize')
@@ -106,6 +113,10 @@ export const AIView = () => {
         promptType,
         focusStart: useRange ? rangeStart : null,
         focusEnd: useRange ? rangeEnd : null,
+        includeTasks,
+        includePeople,
+        includeCompletedTasks,
+        includeProjectsTags,
       });
     if (mode === 'import')
       return importSource === 'image' ? generateImagePrompt(appData) : generateImportPrompt(rawInput, appData);
@@ -198,7 +209,27 @@ export const AIView = () => {
     setMode('choose'); setRawInput(''); setPrompt(''); setImportJson('');
     setPreview(null); setError(null); setCopied(false);
     setApplyAsVersion(false); setVersionName(''); setImportSource('text');
+    setPromptType('compact'); setRangePreset('next30'); setUseRange(true); setRangeStart(toISODate(new Date())); setRangeEnd(toISODate(addDays(new Date(), 30)));
+    setIncludeTasks(true); setIncludePeople(true); setIncludeCompletedTasks(false); setIncludeProjectsTags(true);
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
+  };
+
+  const applyDatePreset = (preset: DateRangePreset) => {
+    const start = toISODate(new Date());
+    const setWindow = (days: number) => {
+      setUseRange(true);
+      setRangeStart(start);
+      setRangeEnd(toISODate(addDays(new Date(), days)));
+    };
+    setRangePreset(preset);
+    setPrompt('');
+    setCopied(false);
+    setPromptTokens(null);
+    if (preset === 'next14') setWindow(14);
+    if (preset === 'next30') setWindow(30);
+    if (preset === 'next90') setWindow(90);
+    if (preset === 'full') setUseRange(false);
+    if (preset === 'custom') setUseRange(true);
   };
 
   // ── Reusable apply-as-version control + diff ──
@@ -252,7 +283,7 @@ export const AIView = () => {
           {hasData && (
             <ModeCard
               emoji="🧭"
-              title="Copy AI Admin Assistant Prompt"
+              title="Copy LifeGrid Admin Prompt"
               description="Share selected LifeGrid context so your preferred AI can analyze, coordinate, prioritize, draft messages, or prepare JSON changes."
               tag="Has existing data"
               tagColor="text-primary bg-primary/10"
@@ -269,16 +300,14 @@ export const AIView = () => {
             onClick={() => setMode('import')}
           />
 
-          {!hasData && (
-            <ModeCard
-              emoji="✨"
-              title="Build a starter schedule"
-              description="Starting fresh? Get a realistic example schedule to kickstart your planner."
-              tag="New to LifeGrid"
-              tagColor="text-violet-600 dark:text-violet-400 bg-violet-500/10"
-              onClick={() => setMode('onboard')}
-            />
-          )}
+          <ModeCard
+            emoji="✨"
+            title="Build a starter schedule"
+            description={hasData ? "Generate a sample schedule as a new calendar version to explore or reset your planner." : "Starting fresh? Get a realistic example schedule to kickstart your planner."}
+            tag={hasData ? "Creates new version" : "New to LifeGrid"}
+            tagColor={hasData ? "text-violet-600 dark:text-violet-400 bg-violet-500/10" : "text-violet-600 dark:text-violet-400 bg-violet-500/10"}
+            onClick={() => setMode('onboard')}
+          />
 
           {/* Quick paste / upload shortcut */}
           <div className="pt-2">
@@ -316,7 +345,7 @@ export const AIView = () => {
 
   // ─── SHARED FLOW ────────────────────────────────────────────────────────────
   const modeConfig = {
-    optimize: { title: 'Copy AI Admin Assistant Prompt', emoji: '🧭', promptLabel: 'Generate admin assistant prompt' },
+    optimize: { title: 'Copy LifeGrid Admin Prompt', emoji: '🧭', promptLabel: 'Copy LifeGrid Admin Prompt' },
     import: { title: 'Import a calendar', emoji: '📥', promptLabel: 'Generate import prompt' },
     onboard: { title: 'Build starter schedule', emoji: '✨', promptLabel: 'Generate starter prompt' },
   }[mode as 'optimize' | 'import' | 'onboard'];
@@ -336,57 +365,83 @@ export const AIView = () => {
 
       <div className="p-4 pb-24 space-y-4">
 
-        {/* ── ANALYZE: prompt-type picker + range ── */}
+        {/* ── ADMIN PROMPT: range, inclusions, then tucked-away focused modes ── */}
         {mode === 'optimize' && (
-          <StepBlock number={1} title="What LifeGrid context should the AI use?">
-            <div className="grid grid-cols-2 gap-2">
-              {PROMPT_TYPES.map(pt => {
-                const on = promptType === pt.id;
-                return (
-                  <button
-                    key={pt.id}
-                    onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); setPromptTokens(null); }}
-                    className={`text-left p-2.5 rounded-lg border transition-all ${
-                      on ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
-                    }`}
-                    data-testid={`prompt-type-${pt.id}`}
-                  >
-                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-                      <span className="text-sm">{pt.emoji}</span>
-                      <span className="text-xs font-semibold">{pt.title}</span>
-                      {pt.badge && (
-                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                          pt.badge === 'Fast' ? 'bg-green-500/15 text-green-600 dark:text-green-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
-                        }`}>{pt.badge}</span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground leading-tight">{pt.description}</p>
-                  </button>
-                );
-              })}
+          <StepBlock number={1} title="Choose date range and context">
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+              Choose what LifeGrid context to include, copy the prompt into any AI, then ask it to plan, analyze, prioritize, coordinate, or draft messages. When ready, ask the AI: <strong className="text-foreground">Output the final LifeGrid raw JSON patch only.</strong>
+            </p>
+
+            <Label className="text-xs font-semibold">Date range</Label>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {[
+                ['next14', 'Next 14 days'],
+                ['next30', 'Next 30 days'],
+                ['next90', 'Next 90 days'],
+                ['full', 'Full selected calendar'],
+                ['custom', 'Custom range'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => applyDatePreset(id as DateRangePreset)}
+                  className={`text-left p-2.5 rounded-lg border text-xs font-semibold transition-all ${
+                    rangePreset === id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+                  }`}
+                  data-testid={`range-${id}`}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
-            <div className="mt-3 pt-3 border-t border-border/50">
-              <div className="flex items-center justify-between">
+            {useRange && (
+              <div className="grid grid-cols-2 gap-2 mt-2 animate-in fade-in">
                 <div>
-                  <Label className="text-xs font-semibold">Limit to a date range</Label>
-                  <p className="text-[10px] text-muted-foreground">Analyze just this window; the rest is sent as context.</p>
+                  <Label className="text-[10px] text-muted-foreground">From</Label>
+                  <Input type="date" value={rangeStart} onChange={e => { setRangePreset('custom'); setRangeStart(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-start" />
                 </div>
-                <Switch checked={useRange} onCheckedChange={(v) => { setUseRange(v); setPrompt(''); setCopied(false); }} data-testid="switch-range" />
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">To</Label>
+                  <Input type="date" value={rangeEnd} onChange={e => { setRangePreset('custom'); setRangeEnd(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-end" />
+                </div>
               </div>
-              {useRange && (
-                <div className="grid grid-cols-2 gap-2 mt-2 animate-in fade-in">
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">From</Label>
-                    <Input type="date" value={rangeStart} onChange={e => { setRangeStart(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-start" />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">To</Label>
-                    <Input type="date" value={rangeEnd} onChange={e => { setRangeEnd(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-end" />
-                  </div>
-                </div>
-              )}
+            )}
+
+            <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
+              <Label className="text-xs font-semibold">Include</Label>
+              <ToggleRow label="Tasks" description="Incomplete tasks are included by default." checked={includeTasks} onChange={setIncludeTasks} />
+              <ToggleRow label="People availability" description="Shared person schedules for the selected range." checked={includePeople} onChange={setIncludePeople} />
+              <ToggleRow label="Completed tasks" description="Off by default to keep prompts smaller." checked={includeCompletedTasks} onChange={setIncludeCompletedTasks} disabled={!includeTasks} />
+              <ToggleRow label="Projects / tags" description="Include tag/category list, saved order, and project structure." checked={includeProjectsTags} onChange={setIncludeProjectsTags} />
             </div>
+
+            <details className="group mt-4 pt-3 border-t border-border/50">
+              <summary className="text-xs font-semibold text-primary cursor-pointer list-none flex items-center gap-1">
+                <ChevronRight size={12} className="group-open:rotate-90 transition-transform" />
+                Advanced options: focused prompt modes
+              </summary>
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                {PROMPT_TYPES.map(pt => {
+                  const on = promptType === pt.id;
+                  return (
+                    <button
+                      key={pt.id}
+                      onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); setPromptTokens(null); }}
+                      className={`text-left p-2.5 rounded-lg border transition-all ${
+                        on ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+                      }`}
+                      data-testid={`prompt-type-${pt.id}`}
+                    >
+                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                        <span className="text-sm">{pt.emoji}</span>
+                        <span className="text-xs font-semibold">{pt.title}</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground leading-tight">{pt.description}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </details>
           </StepBlock>
         )}
 
@@ -452,7 +507,7 @@ export const AIView = () => {
         >
           {mode === 'optimize' && (
             <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              Generates an AI Admin Assistant prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your selected calendar context (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Large calendars can take external AI models longer to process.
+              Copies one comprehensive LifeGrid Admin prompt with your selected date range and data controls. Large calendars can take external AI models longer to process.
             </p>
           )}
           {mode === 'import' && importSource === 'text' && (
@@ -484,7 +539,7 @@ export const AIView = () => {
               </span>
               {promptTokens > COMPACT_THRESHOLD_TOKENS && (
                 <span className="text-[9px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
-                  Large — try ⚡ Quick update for a smaller prompt
+                  Large — narrow the range or turn off extra context
                 </span>
               )}
             </div>
@@ -515,7 +570,7 @@ export const AIView = () => {
                 ))}
               </div>
               <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Paste the prompt, ask for planning/drafting help, and when ready ask the AI for raw LifeGrid JSON. Paste/upload that response in Step {responseStep} below.
+                Paste the prompt, ask for planning/drafting help, and when ready ask: "Output the final LifeGrid raw JSON patch only." Paste/upload that response in Step {responseStep} below.
               </p>
 
               <details className="group">
@@ -579,6 +634,20 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
     <div className="flex-none px-4 py-3 border-b border-border bg-card sticky top-0 z-10">
       <h1 className="text-lg font-bold">{title}</h1>
       <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+    </div>
+  );
+}
+
+function ToggleRow({ label, description, checked, onChange, disabled = false }: {
+  label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean;
+}) {
+  return (
+    <div className={`flex items-center justify-between gap-3 ${disabled ? 'opacity-50' : ''}`}>
+      <div className="min-w-0">
+        <p className="text-xs font-semibold text-foreground">{label}</p>
+        <p className="text-[10px] text-muted-foreground leading-tight">{description}</p>
+      </div>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} />
     </div>
   );
 }

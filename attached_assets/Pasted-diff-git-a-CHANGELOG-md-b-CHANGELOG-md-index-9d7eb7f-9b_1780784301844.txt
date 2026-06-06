@@ -1,0 +1,676 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 9d7eb7f..9b767d9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,0 +7,19 @@ All notable changes to this project are documented here.
++## v0.3.2 — Yearly Grid Recurrence + Simplified AI Admin Prompt
++
++### Improvements
++
++- Added yearly repeat support for grid/calendar events, using the existing recurring-group/event-instance behavior so generated occurrences remain normal event records for grid display, JSON backup, PNG export, and ICS export.
++- Simplified the AI Planner primary workflow around one Copy LifeGrid Admin Prompt action.
++- Added date-range controls for Next 14 days, Next 30 days, Next 90 days, Full selected calendar, and Custom range.
++- Added LifeGrid Admin prompt data-inclusion controls for tasks, people availability, completed tasks, and projects/tags. Defaults are Next 30 days, incomplete tasks, people availability, projects/tags, and no completed tasks.
++- Rewrote the primary exported prompt to explain the LifeGrid Admin Assistant role, local-first context, cross-LLM usage, ambiguity handling, preserving commitments, conversational planning, and the final raw JSON patch workflow.
++- Clarified that tags and categories are the same shared LifeGrid organizing concept; prompts now include tag/category order and task category/project fields, and parser normalization accepts tag/category aliases.
++- Improved raw JSON patch instructions for new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, and notes, including projectId and category/tag assignment guidance.
++
++### Known limitations
++
++- AI remains copy/paste or file-upload based; there are no external AI API calls, auth, backend, or cloud sync.
++- Repeating grid events are generated as individual normal event records at creation time; there is still no rule-based recurring-event engine or “edit this and future” workflow.
++- Large full-calendar prompts may still exceed or slow some external AI model contexts; users should narrow the range or disable optional context when needed.
++- Offline/PWA behavior and JSON backup/import/export behavior are unchanged.
++
+diff --git a/CODE_REVIEW_AND_END_USER_ANALYSIS.md b/CODE_REVIEW_AND_END_USER_ANALYSIS.md
+index 42d5b88..f28b27a 100644
+--- a/CODE_REVIEW_AND_END_USER_ANALYSIS.md
++++ b/CODE_REVIEW_AND_END_USER_ANALYSIS.md
+@@ -57,0 +58,17 @@ The production bundle is a single JS chunk of **621 KB minified (185 KB gzipped)
++## v0.3.2 Focused Review Addendum
++
++### What changed
++- Grid/calendar event repeats now include a yearly frequency and continue to create normal event instances in the existing recurring group model.
++- The AI Planner now presents one primary LifeGrid Admin prompt flow first, with advanced focused modes hidden behind Advanced options.
++- The exported prompt is broader and more forgiving for ChatGPT, Claude, Gemini, and other LLMs, with explicit instructions to acknowledge context, ask/flag ambiguity, preserve commitments, and wait for the user to request final raw JSON.
++- Prompt terminology now treats tags and categories as one shared organizing concept and encourages consistent IDs across events and tasks.
++
++### End-user impact
++- Annual appointments, birthdays, renewals, and yearly planning events can be created from the event sheet without manual duplication.
++- First-time AI Planner users have a clearer path: choose date range/context, copy one prompt, ask for planning help, then request raw JSON only when ready.
++- Users with larger calendars can reduce prompt size using the range presets and inclusion toggles.
++
++### Remaining risks
++- Recurrence is still instance-generation, not a recurring-rule engine. Editing a yearly series still requires per-instance edits or deleting/recreating the series.
++- Full selected calendar prompts can be large and may be slow in external AI tools.
++
+diff --git a/EXPORT_CHECKLIST.md b/EXPORT_CHECKLIST.md
+index 1ceb97d..ed20a23 100644
+--- a/EXPORT_CHECKLIST.md
++++ b/EXPORT_CHECKLIST.md
+@@ -139,0 +140,16 @@ This folder is what you upload to Netlify, Vercel, Cloudflare Pages, or GitHub P
++
++---
++
++## v0.3.2 Patch-Generation Checklist
++
++- [ ] Run pnpm --filter @workspace/lifegrid run typecheck.
++- [ ] Run pnpm --filter @workspace/lifegrid run build.
++- [ ] Confirm event repeat frequency options include Daily, Weekly, Bi-weekly, Monthly, and Yearly.
++- [ ] Confirm yearly repeating grid events appear as normal event records in Grid view after creation.
++- [ ] Confirm JSON backup/export, PNG export, and ICS export continue to work because generated yearly occurrences are normal events.
++- [ ] Confirm AI Planner primary action is Copy LifeGrid Admin Prompt.
++- [ ] Confirm date range options include Next 14 days, Next 30 days, Next 90 days, Full selected calendar, and Custom range.
++- [ ] Confirm include toggles cover tasks, people availability, completed tasks, and projects/tags with v0.3.2 defaults.
++- [ ] Confirm final AI import instructions use Output the final LifeGrid raw JSON patch only. and support minimal patch keys.
++- [ ] Final GitHub push and deployment should be performed from Replit, not from this workspace.
++
+diff --git a/OFFLINE_PWA_INSTALL_GUIDE.md b/OFFLINE_PWA_INSTALL_GUIDE.md
+index eda8326..3c6bfdb 100644
+--- a/OFFLINE_PWA_INSTALL_GUIDE.md
++++ b/OFFLINE_PWA_INSTALL_GUIDE.md
+@@ -79,0 +80,7 @@ The Settings screen now uses a shorter "Install & use offline" explanation. Offl
++
++---
++
++## v0.3.2 note
++
++Offline/PWA behavior is unchanged. Yearly grid repeats are saved as normal local event records, and the simplified AI Planner remains copy/paste based with no backend or external AI API calls. JSON backup remains the primary restorable safety copy.
++
+diff --git a/PROJECT_HANDOFF.md b/PROJECT_HANDOFF.md
+index a9685d0..f60ebc0 100644
+--- a/PROJECT_HANDOFF.md
++++ b/PROJECT_HANDOFF.md
+@@ -6,0 +7,9 @@
++## v0.3.2 Handoff Notes
++
++- Version focus: yearly repeat support for grid/calendar events plus a simplified, primary Copy LifeGrid Admin Prompt workflow.
++- Data model/storage: no migration and no new fields. Yearly event repeats use the existing generated event instances and recurringGroupId, matching task yearly behavior where appropriate.
++- AI Planner: default range is Next 30 days with incomplete tasks, people availability, and projects/tags included; completed tasks are excluded unless selected. Advanced focused prompt modes remain tucked behind an Advanced options details panel.
++- Tags/categories: prompt language treats tags and categories as one shared classification system, includes saved category/tag order, and exports task category/project details for AI reasoning.
++- Raw JSON import: parser remains robust for pasted AI output and now tolerates category-equivalent tag/tags fields when normalizing event/task additions and updates.
++- Deployment: no backend, auth, cloud sync, external AI API calls, native wrapper, or offline/PWA behavior changes were introduced. Replit should apply, test, commit, push, and deploy later.
++
+diff --git a/artifacts/lifegrid/src/components/EventSheet.tsx b/artifacts/lifegrid/src/components/EventSheet.tsx
+index 1179381..783634a 100644
+--- a/artifacts/lifegrid/src/components/EventSheet.tsx
++++ b/artifacts/lifegrid/src/components/EventSheet.tsx
+@@ -43,0 +44,4 @@ const shiftByFreq = (date: string, freq: string, n: number): string => {
+
+    if (freq === 'yearly') {
+
+    d.setFullYear(d.getFullYear() + n);
+
+    return d.toISOString().split('T')[0];
+
+    }
+    @@ -65 +69 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
+
+    const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
+
+    const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'>('weekly');
+    @@ -331 +335 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
+
+                       <p className="text-[11px] text-muted-foreground mt-0.5">Create multiple occurrences at once</p>
+
+                       <p className="text-[11px] text-muted-foreground mt-0.5">Create normal event records for each occurrence</p>
+
+@@ -340 +344 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
+
+                           {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(f => (
+
+                           {(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const).map(f => (
+
+diff --git a/artifacts/lifegrid/src/lib/aiPrompt.ts b/artifacts/lifegrid/src/lib/aiPrompt.ts
+index 731c89c..50e3c19 100644
+--- a/artifacts/lifegrid/src/lib/aiPrompt.ts
++++ b/artifacts/lifegrid/src/lib/aiPrompt.ts
+@@ -30 +30 @@ const encodeProjects = (data: AppData): string => {
+-const adminAssistantIntro = (data: AppData, requestLabel: string): string => You are acting as my LifeGrid AI Admin Assistant. LifeGrid is local-first; I will paste context here and later paste raw JSON back into the app if I accept changes. +const adminAssistantIntro = (data: AppData, requestLabel: string, includeProjectsTags = true): string => You are acting as my LifeGrid Admin Assistant. LifeGrid is a local-first personal planning app. I am pasting structured context exported from LifeGrid; if I accept proposed changes, I may later paste raw JSON back into the app.
+@@ -32 +32 @@ const adminAssistantIntro = (data: AppData, requestLabel: string): string => Yo -First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for specific analysis yet, wait for my next instruction after acknowledging. +First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for a specific analysis yet, wait for my next instruction after acknowledging. @@ -34 +34 @@ First, briefly acknowledge that you received the LifeGrid context. Then help wit -You can help with schedule analysis, free-time finding, meeting coordination, task prioritization, project breakdown, drafting messages/emails, and bulk schedule/task changes. +You can help with schedule analysis, day/week/month planning, free-time finding, meeting coordination, task prioritization, project breakdown, drafting messages/emails, proposing changes to events/tasks, and bulk updates. Preserve existing commitments unless I ask to change them. Do not assume missing facts; flag ambiguity instead of guessing. Large exported calendars/task lists may take longer for external AI models to process. @@ -36 +36 @@ You can help with schedule analysis, free-time finding, meeting coordination, ta -When final changes are ready, I will ask you to output raw JSON for LifeGrid import. Final import output must be raw JSON only, with no markdown fences or explanation, and must include only changed/new/deleted items rather than the unchanged dataset. Flag ambiguity in notes instead of guessing. Large calendars/task lists may take longer for external AI models to process. +LifeGrid tags and categories are the same organizing concept: treat them as one shared classification system for events and tasks. Use the same tag/category IDs for events and tasks whenever possible. Do not say task categories are missing merely because the source uses tags or category-equivalent fields. If a task has no tag/category, call it "untagged" instead of saying category data is unavailable. @@ -38 +38,3 @@ When final changes are ready, I will ask you to output raw JSON for LifeGrid imp -CATEGORY / TAG ORDER (use these ids and order) +Tasks should be small, discrete, actionable items. Large goals should be handled as projects/tags containing multiple tasks and, when useful, related grid events. You may propose breaking a large project into smaller tasks or changing project/tag/category assignments, but output those changes as raw JSON only when I ask for final raw JSON. +${includeProjectsTags ?
++CATEGORY / TAG ORDER (shared IDs; preserve this saved order when possible)
+@@ -42,0 +45 @@ ${encodeProjects(data)}
++` : ''}
+@@ -135 +138,3 @@ OUTPUT FORMAT — return ONLY this minimal JSON patch
+
+    "new_tasks": [],
+
+    "new_tasks": [
+
+    { "id": "task-001", "name": "Task name", "category": "category-or-tag-id", "priority": "medium", "projectId": null }
+
+    ],
+    @@ -137 +142 @@ OUTPUT FORMAT — return ONLY this minimal JSON patch
+
+    { "id": "existing-task-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
+
+    { "id": "existing-task-id", "category": "category-or-tag-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
+    @@ -148,2 +153,3 @@ RULES:
+
+        Category/tag must be one of: ${catUnion}. Use "other" if needed.
+
+        Use projectId when assigning work to a known project; otherwise use null or omit it.
+
+        Category/tag must be one of: ${catUnion}. Tags and categories are the same LifeGrid classification system. Use "other" if needed.
+
+        Include category/tag and projectId when assigning or changing work. Use projectId for known projects; otherwise use null or omit it.
+
+        Ask/converse first if needed. When I say "Output the final LifeGrid raw JSON patch only," return this raw JSON object only.
+        @@ -204,0 +211 @@ const encodeTasks = (tasks: Task[]): string => {
+
+     `  tag/category:${t.category || 'untagged'}  project:${t.projectId ?? 'none'}` +
+
+@@ -293,0 +301,4 @@ export interface PlanningOptions {
+
+    includeTasks?: boolean;
+
+    includePeople?: boolean;
+
+    includeCompletedTasks?: boolean;
+
+    includeProjectsTags?: boolean;
+    @@ -298 +309,4 @@ export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}
+
+    const { promptType = 'analyze', focusStart, focusEnd } = opts;
+
+    const {
+
+    promptType = 'compact', focusStart, focusEnd,
+
+    includeTasks = true, includePeople = true, includeCompletedTasks = false, includeProjectsTags = true,
+
+    } = opts;
+    @@ -300 +314 @@ export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}
+
+    // ── Compact mode: hard-coded 14-day window + slim task set ──
+
+    // ── Primary LifeGrid Admin prompt: broad, efficient, and range-aware ──
+    @@ -303,9 +317,20 @@ export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}
+
+    const end14 = new Date(); end14.setDate(end14.getDate() + 14);
+
+    const end14Str = end14.toISOString().split('T')[0];
+
+    const windowEvents = data.events.filter(e => e.date >= t && e.date <= end14Str);
+
+    const urgentTasks = data.tasks.filter(t =>
+
+     t.status !== 'done' &&
+
+     (t.priority === 'urgent' || t.priority === 'high' || (t.dueDate && t.dueDate <= end14Str))
+
+    );
+
+    return `${adminAssistantIntro(data, 'administrative planning for the next 14 days')}
+    -Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
+
+    const scoped = !!(focusStart && focusEnd);
+
+    const inFocus = (date: string | null | undefined) => scoped && date ? (date >= focusStart! && date <= focusEnd!) : true;
+
+    const rangeLabel = scoped ? ${focusStart} → ${focusEnd} : 'the full selected LifeGrid calendar';
+
+    const windowEvents = data.events.filter(e => inFocus(e.date));
+
+    const tasksForPrompt = includeTasks
+
+     ? data.tasks.filter(task => (includeCompletedTasks || task.status !== 'done') && (!scoped || !task.dueDate || inFocus(task.dueDate)))
+
+     : [];
+
+    const peopleLines = includePeople
+
+     ? data.personEvents
+
+       .filter(p => inFocus(p.date))
+
+       .slice()
+
+       .sort((a, b) => a.date.localeCompare(b.date))
+
+       .map(p => `  ${p.date}  [${p.person}]  ${p.startTime ?? '     '}${p.endTime ? `-${p.endTime}` : ''}  ${p.title}`)
+
+       .join('\n')
+
+     : '  (not included by user choice)';
+
+    return ${adminAssistantIntro(data, comprehensive LifeGrid admin planning for ${rangeLabel}`, includeProjectsTags)}
+    +Today is ${t}. The exported date range is ${rangeLabel}.
+
++Help me plan, analyze, prioritize, coordinate, draft messages, and propose LifeGrid changes as requested. Start conversationally; do not output raw JSON until I explicitly ask: "Output the final LifeGrid raw JSON patch only."
+@@ -313 +338 @@ Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a qu
+-${OBJECTIVE['compact']}
++When final changes are ready, the raw JSON patch must include only changed/new/deleted items, not the full unchanged dataset. Supported patch keys are new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, and notes.
+@@ -316 +341 @@ ${OBJECTIVE['compact']}
+-EVENTS — next 14 days (${windowEvents.length})
++EVENTS — ${rangeLabel} (${windowEvents.length})
+@@ -321 +346 @@ ${encodeEventsDetailed(windowEvents)}
+-TASKS — overdue, high-priority, or due within 14 days (${urgentTasks.length})
++${includeTasks ? TASKS — ${includeCompletedTasks ? 'all included' : 'incomplete only'} (${tasksForPrompt.length}) : 'TASKS — not included'}
+@@ -323,2 +348,7 @@ TASKS — overdue, high-priority, or due within 14 days (${urgentTasks.length})
+-${encodeTasks(urgentTasks)}
+-${schemaReference(data.categories)}; +${includeTasks ? encodeTasks(tasksForPrompt) : ' (not included by user choice)'} + +================================================== +OTHER PEOPLE'S AVAILABILITY — ${includePeople ? rangeLabel : 'not included'} +================================================== +${peopleLines || ' (none)'} +${patchSchemaReference(data.categories)};
+@@ -727 +757,2 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
+
+     const cat = validCats.has(e.category) ? e.category : 'other';
+
+     const rawCat = e.category ?? e.tag ?? (Array.isArray(e.tags) ? e.tags[0] : undefined);
+
+     const cat = validCats.has(rawCat) ? rawCat : 'other';
+
+@@ -751 +782 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
+
+     category:        validCats.has(t.category) ? t.category : 'other',
+
+     category:        validCats.has(t.category ?? t.tag ?? (Array.isArray(t.tags) ? t.tags[0] : undefined)) ? (t.category ?? t.tag ?? t.tags[0]) : 'other',
+
+@@ -773 +804,4 @@ function normalizeEventUpdate(
+
+    if (u.category !== undefined) out.category = validCats.has(u.category) ? u.category : 'other';
+
+    if (u.category !== undefined || u.tag !== undefined || u.tags !== undefined) {
+
+    const rawCat = u.category ?? u.tag ?? (Array.isArray(u.tags) ? u.tags[0] : undefined);
+
+    out.category = validCats.has(rawCat) ? rawCat : 'other';
+
+    }
+    @@ -785 +819,4 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
+
+    if (u.category !== undefined) out.category = validCats.has(u.category) ? u.category : 'other';
+
+    if (u.category !== undefined || u.tag !== undefined || u.tags !== undefined) {
+
+    const rawCat = u.category ?? u.tag ?? (Array.isArray(u.tags) ? u.tags[0] : undefined);
+
+    out.category = validCats.has(rawCat) ? rawCat : 'other';
+
+    }
+    diff --git a/artifacts/lifegrid/src/pages/AIView.tsx b/artifacts/lifegrid/src/pages/AIView.tsx
+    index 555ef01..958bb28 100644
+    --- a/artifacts/lifegrid/src/pages/AIView.tsx
+    +++ b/artifacts/lifegrid/src/pages/AIView.tsx
+    @@ -30,0 +31 @@ type ImportSource = 'text' | 'image';
+    +type DateRangePreset = 'next14' | 'next30' | 'next90' | 'full' | 'custom';
+    @@ -39,0 +41 @@ interface Draft {
+
+    rangePreset: DateRangePreset; includeTasks: boolean; includePeople: boolean; includeCompletedTasks: boolean; includeProjectsTags: boolean;
+    @@ -75 +77 @@ export const AIView = () => {
+
+    // Analyze options
+
+    // LifeGrid Admin prompt options
+    @@ -77 +79,2 @@ export const AIView = () => {
+
+    const [useRange, setUseRange] = useState(draft.useRange ?? false);
+
+    const [rangePreset, setRangePreset] = useState<DateRangePreset>(draft.rangePreset ?? 'next30');
+
+    const [useRange, setUseRange] = useState(draft.useRange ?? true);
+    @@ -79,0 +83,4 @@ export const AIView = () => {
+
+    const [includeTasks, setIncludeTasks] = useState(draft.includeTasks ?? true);
+
+    const [includePeople, setIncludePeople] = useState(draft.includePeople ?? true);
+
+    const [includeCompletedTasks, setIncludeCompletedTasks] = useState(draft.includeCompletedTasks ?? false);
+
+    const [includeProjectsTags, setIncludeProjectsTags] = useState(draft.includeProjectsTags ?? true);
+    @@ -98 +105 @@ export const AIView = () => {
+
+     const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, importSource, savedAt: Date.now() };
+
+     const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, importSource, savedAt: Date.now() };
+
+@@ -101 +108 @@ export const AIView = () => {
+
+    }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, importSource]);
+
+    }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, importSource]);
+    @@ -108,0 +116,4 @@ export const AIView = () => {
+
+       includeTasks,
+
+       includePeople,
+
+       includeCompletedTasks,
+
+       includeProjectsTags,
+
+@@ -200,0 +212,2 @@ export const AIView = () => {
+
+    setPromptType('compact'); setRangePreset('next30'); setUseRange(true); setRangeStart(toISODate(new Date())); setRangeEnd(toISODate(addDays(new Date(), 30)));
+
+    setIncludeTasks(true); setIncludePeople(true); setIncludeCompletedTasks(false); setIncludeProjectsTags(true);
+    @@ -255 +268 @@ export const AIView = () => {
+
+             title="Copy AI Admin Assistant Prompt"
+
+             title="Copy LifeGrid Admin Prompt"
+
+@@ -319 +332 @@ export const AIView = () => {
+
+    optimize: { title: 'Copy AI Admin Assistant Prompt', emoji: '🧭', promptLabel: 'Generate admin assistant prompt' },
+
+    optimize: { title: 'Copy LifeGrid Admin Prompt', emoji: '🧭', promptLabel: 'Copy LifeGrid Admin Prompt' },
+    @@ -325,0 +339,17 @@ export const AIView = () => {
+
+    const applyDatePreset = (preset: DateRangePreset) => {
+
+    const start = toISODate(new Date());
+
+    const setWindow = (days: number) => {
+
+     setUseRange(true);
+
+     setRangeStart(start);
+
+     setRangeEnd(toISODate(addDays(new Date(), days)));
+
+    };
+
+    setRangePreset(preset);
+
+    setPrompt('');
+
+    setCopied(false);
+
+    setPromptTokens(null);
+
+    if (preset === 'next14') setWindow(14);
+
+    if (preset === 'next30') setWindow(30);
+
+    if (preset === 'next90') setWindow(90);
+
+    if (preset === 'full') setUseRange(false);
+
+    if (preset === 'custom') setUseRange(true);
+
+    };
+    @@ -339 +369 @@ export const AIView = () => {
+
+       {/* ── ANALYZE: prompt-type picker + range ── */}
+
+       {/* ── ADMIN PROMPT: range, inclusions, then tucked-away focused modes ── */}
+
+@@ -341,26 +371,25 @@ export const AIView = () => {
+
+         <StepBlock number={1} title="What LifeGrid context should the AI use?">
+
+           <div className="grid grid-cols-2 gap-2">
+
+             {PROMPT_TYPES.map(pt => {
+
+               const on = promptType === pt.id;
+
+               return (
+
+                 <button
+
+                   key={pt.id}
+
+                   onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); setPromptTokens(null); }}
+
+                   className={`text-left p-2.5 rounded-lg border transition-all ${
+
+                     on ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+
+                   }`}
+
+                   data-testid={`prompt-type-${pt.id}`}
+
+                 >
+
+                   <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+
+                     <span className="text-sm">{pt.emoji}</span>
+
+                     <span className="text-xs font-semibold">{pt.title}</span>
+
+                     {pt.badge && (
+
+                       <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+
+                         pt.badge === 'Fast' ? 'bg-green-500/15 text-green-600 dark:text-green-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+
+                       }`}>{pt.badge}</span>
+
+                     )}
+
+                   </div>
+
+                   <p className="text-[10px] text-muted-foreground leading-tight">{pt.description}</p>
+
+                 </button>
+
+               );
+
+             })}
+
+         <StepBlock number={1} title="Choose date range and context">
+
+           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+
+             Choose what LifeGrid context to include, copy the prompt into any AI, then ask it to plan, analyze, prioritize, coordinate, or draft messages. When ready, ask the AI: <strong className="text-foreground">Output the final LifeGrid raw JSON patch only.</strong>
+
+           </p>
+
+           <Label className="text-xs font-semibold">Date range</Label>
+
+           <div className="grid grid-cols-2 gap-2 mt-2">
+
+             {[
+
+               ['next14', 'Next 14 days'],
+
+               ['next30', 'Next 30 days'],
+
+               ['next90', 'Next 90 days'],
+
+               ['full', 'Full selected calendar'],
+
+               ['custom', 'Custom range'],
+
+             ].map(([id, label]) => (
+
+               <button
+
+                 key={id}
+
+                 onClick={() => applyDatePreset(id as DateRangePreset)}
+
+                 className={`text-left p-2.5 rounded-lg border text-xs font-semibold transition-all ${
+
+                   rangePreset === id ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+
+                 }`}
+
+                 data-testid={`range-${id}`}
+
+               >
+
+                 {label}
+
+               </button>
+
+             ))}
+
+@@ -369,2 +398,2 @@ export const AIView = () => {
+
+           <div className="mt-3 pt-3 border-t border-border/50">
+
+             <div className="flex items-center justify-between">
+
+           {useRange && (
+
+             <div className="grid grid-cols-2 gap-2 mt-2 animate-in fade-in">
+
+@@ -372,2 +401,2 @@ export const AIView = () => {
+
+                 <Label className="text-xs font-semibold">Limit to a date range</Label>
+
+                 <p className="text-[10px] text-muted-foreground">Analyze just this window; the rest is sent as context.</p>
+
+                 <Label className="text-[10px] text-muted-foreground">From</Label>
+
+                 <Input type="date" value={rangeStart} onChange={e => { setRangePreset('custom'); setRangeStart(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-start" />
+
+@@ -375,12 +404,3 @@ export const AIView = () => {
+
+               <Switch checked={useRange} onCheckedChange={(v) => { setUseRange(v); setPrompt(''); setCopied(false); }} data-testid="switch-range" />
+
+             </div>
+
+             {useRange && (
+
+               <div className="grid grid-cols-2 gap-2 mt-2 animate-in fade-in">
+
+                 <div>
+
+                   <Label className="text-[10px] text-muted-foreground">From</Label>
+
+                   <Input type="date" value={rangeStart} onChange={e => { setRangeStart(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-start" />
+
+                 </div>
+
+                 <div>
+
+                   <Label className="text-[10px] text-muted-foreground">To</Label>
+
+                   <Input type="date" value={rangeEnd} onChange={e => { setRangeEnd(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-end" />
+
+                 </div>
+
+               <div>
+
+                 <Label className="text-[10px] text-muted-foreground">To</Label>
+
+                 <Input type="date" value={rangeEnd} onChange={e => { setRangePreset('custom'); setRangeEnd(e.target.value); setPrompt(''); }} className="h-9 text-xs" data-testid="input-range-end" />
+
+@@ -388 +408,9 @@ export const AIView = () => {
+
+             )}
+
+             </div>
+
+           )}
+
+           <div className="mt-4 pt-3 border-t border-border/50 space-y-3">
+
+             <Label className="text-xs font-semibold">Include</Label>
+
+             <ToggleRow label="Tasks" description="Incomplete tasks are included by default." checked={includeTasks} onChange={setIncludeTasks} />
+
+             <ToggleRow label="People availability" description="Shared person schedules for the selected range." checked={includePeople} onChange={setIncludePeople} />
+
+             <ToggleRow label="Completed tasks" description="Off by default to keep prompts smaller." checked={includeCompletedTasks} onChange={setIncludeCompletedTasks} disabled={!includeTasks} />
+
+             <ToggleRow label="Projects / tags" description="Include tag/category list, saved order, and project structure." checked={includeProjectsTags} onChange={setIncludeProjectsTags} />
+
+@@ -389,0 +418,28 @@ export const AIView = () => {
++
+
+           <details className="group mt-4 pt-3 border-t border-border/50">
+
+             <summary className="text-xs font-semibold text-primary cursor-pointer list-none flex items-center gap-1">
+
+               <ChevronRight size={12} className="group-open:rotate-90 transition-transform" />
+
+               Advanced options: focused prompt modes
+
+             </summary>
+
+             <div className="grid grid-cols-2 gap-2 mt-3">
+
+               {PROMPT_TYPES.map(pt => {
+
+                 const on = promptType === pt.id;
+
+                 return (
+
+                   <button
+
+                     key={pt.id}
+
+                     onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); setPromptTokens(null); }}
+
+                     className={`text-left p-2.5 rounded-lg border transition-all ${
+
+                       on ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
+
+                     }`}
+
+                     data-testid={`prompt-type-${pt.id}`}
+
+                   >
+
+                     <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+
+                       <span className="text-sm">{pt.emoji}</span>
+
+                       <span className="text-xs font-semibold">{pt.title}</span>
+
+                     </div>
+
+                     <p className="text-[10px] text-muted-foreground leading-tight">{pt.description}</p>
+
+                   </button>
+
+                 );
+
+               })}
+
+             </div>
+
+           </details>
+
+@@ -455 +511 @@ export const AIView = () => {
+
+             Generates an AI Admin Assistant prompt with {useRange ? 'your focus-period schedule plus the rest as context' : `your selected calendar context (${appData.events.length} events, ${appData.tasks.length} tasks)`}. Large calendars can take external AI models longer to process.
+
+             Copies one comprehensive LifeGrid Admin prompt with your selected date range and data controls. Large calendars can take external AI models longer to process.
+
+@@ -487 +543 @@ export const AIView = () => {
+
+                 Large — try ⚡ Quick update for a smaller prompt
+
+                 Large — narrow the range or turn off extra context
+
+@@ -518 +574 @@ export const AIView = () => {
+
+               Paste the prompt, ask for planning/drafting help, and when ready ask the AI for raw LifeGrid JSON. Paste/upload that response in Step {responseStep} below.
+
+               Paste the prompt, ask for planning/drafting help, and when ready ask: “Output the final LifeGrid raw JSON patch only.” Paste/upload that response in Step {responseStep} below.
+
+@@ -607,0 +664,19 @@ function ModeCard({ emoji, title, description, tag, tagColor, onClick }: {
++
++function ToggleRow({ label, description, checked, onChange, disabled = false }: {
+
+    label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean;
+    +}) {
+
+    const handleChange = (value: boolean) => {
+
+    onChange(value);
+
+    };
+
+    return (
+    <div className={`flex items-center justify-between gap-3 ${disabled ? 'opacity-50' : ''}`}>
+
+     <div className="min-w-0">
+
+       <p className="text-xs font-semibold text-foreground">{label}</p>
+
+       <p className="text-[10px] text-muted-foreground leading-tight">{description}</p>
+
+     </div>
+
+     <Switch checked={checked} onCheckedChange={handleChange} disabled={disabled} />
+
+    </div>
+
+    );
+    +}
+

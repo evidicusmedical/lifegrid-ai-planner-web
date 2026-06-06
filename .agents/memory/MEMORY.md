@@ -2,3 +2,5 @@
 - [LifeGrid PWA & reliability setup](lifegrid-pwa-reliability.md) — vite-plugin-pwa installed; backup timestamp key; fixTime normalizer; icon gen approach.
 - [LifeGrid AppData shape](lifegrid-appdata-shape.md) — AppData requires `projects: []`; every place that constructs AppData (especially sampleData.ts) must include it.
 - [LifeGrid Radix Sheet X-button](lifegrid-sheet-x-fix.md) — suppress Radix SheetContent built-in X with `[&>button:first-of-type]:hidden` on SheetContent className; do NOT edit ui/sheet.tsx.
+- [LifeGrid AIView onboard card](lifegrid-aiview-onboard.md) — "Build a starter schedule" card must always render; use contextual copy not conditional render, so the card shows even when data exists.
+- [LifeGrid v0.3.2 AI prompt architecture](lifegrid-aiprompt-v032.md) — compact mode is now the primary range-aware admin prompt; PlanningOptions extended; adminAssistantIntro takes includeProjectsTags param; normalize* accept tag/tags aliases.

@@ -41,6 +41,10 @@ const shiftByFreq = (date: string, freq: string, n: number): string => {
   if (freq === 'weekly') return shiftDate(date, n * 7);
   if (freq === 'biweekly') return shiftDate(date, n * 14);
   const d = new Date(date + 'T00:00:00');
+  if (freq === 'yearly') {
+    d.setFullYear(d.getFullYear() + n);
+    return d.toISOString().split('T')[0];
+  }
   d.setMonth(d.getMonth() + n);
   return d.toISOString().split('T')[0];
 };
@@ -62,7 +66,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   const [multiDay, setMultiDay] = useState(false);
   const [endDate, setEndDate] = useState('');
   const [repeat, setRepeat] = useState(false);
-  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly');
+  const [repeatFreq, setRepeatFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'>('weekly');
   const [repeatCount, setRepeatCount] = useState(4);
 
   const groupId = initialData?.recurringGroupId;
@@ -328,7 +332,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                     <div className="flex items-center justify-between">
                       <div>
                         <Label className="text-sm font-semibold">Repeat</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Create multiple occurrences at once</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Create normal event records for each occurrence</p>
                       </div>
                       <Switch checked={repeat} onCheckedChange={setRepeat} data-testid="switch-repeat" />
                     </div>
@@ -337,7 +341,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                         <div>
                           <Label className="text-xs text-muted-foreground mb-1 block">Frequency</Label>
                           <div className="grid grid-cols-2 gap-2">
-                            {(['daily', 'weekly', 'biweekly', 'monthly'] as const).map(f => (
+                            {(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const).map(f => (
                               <button
                                 key={f}
                                 type="button"

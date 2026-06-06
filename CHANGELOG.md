@@ -127,3 +127,22 @@ Settings and exports
 - Large calendars/task lists may still take external AI models longer to process.
 - ICS export includes grid/calendar events only; tasks, projects, and People tab entries remain available through JSON backup and text export.
 - The app accepts minimal AI patches, but unknown IDs are still warnings that should be reviewed before applying.
+
+## v0.3.2 — Yearly Grid Recurrence + Simplified AI Admin Prompt
+
+### Improvements
+
+- Added yearly repeat support for grid/calendar events, using the existing recurring-group/event-instance behavior so generated occurrences remain normal event records for grid display, JSON backup, PNG export, and ICS export.
+- Simplified the AI Planner primary workflow around one Copy LifeGrid Admin Prompt action.
+- Added date-range controls for Next 14 days, Next 30 days, Next 90 days, Full selected calendar, and Custom range.
+- Added LifeGrid Admin prompt data-inclusion controls for tasks, people availability, completed tasks, and projects/tags. Defaults are Next 30 days, incomplete tasks, people availability, projects/tags, and no completed tasks.
+- Rewrote the primary exported prompt to explain the LifeGrid Admin Assistant role, local-first context, cross-LLM usage, ambiguity handling, preserving commitments, conversational planning, and the final raw JSON patch workflow.
+- Clarified that tags and categories are the same shared LifeGrid organizing concept; prompts now include tag/category order and task category/project fields, and parser normalization accepts tag/category aliases.
+- Improved raw JSON patch instructions for new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, and notes, including projectId and category/tag assignment guidance.
+
+### Known limitations
+
+- AI remains copy/paste or file-upload based; there are no external AI API calls, auth, backend, or cloud sync.
+- Repeating grid events are generated as individual normal event records at creation time; there is still no rule-based recurring-event engine or "edit this and future" workflow.
+- Large full-calendar prompts may still exceed or slow some external AI model contexts; users should narrow the range or disable optional context when needed.
+- Offline/PWA behavior and JSON backup/import/export behavior are unchanged.

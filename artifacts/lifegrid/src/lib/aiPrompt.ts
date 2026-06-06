@@ -27,20 +27,18 @@ const encodeProjects = (data: AppData): string => {
   }).join('\n');
 };
 
-const adminAssistantIntro = (data: AppData, requestLabel: string): string => `You are acting as my LifeGrid AI Admin Assistant. LifeGrid is local-first; I will paste context here and later paste raw JSON back into the app if I accept changes.
+const adminAssistantIntro = (data: AppData, requestLabel: string, includeProjectsTags = true): string => `You are acting as my LifeGrid Admin Assistant. LifeGrid is a local-first personal planning app. I am pasting structured context exported from the app.
 
-First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for specific analysis yet, wait for my next instruction after acknowledging.
+You can help me plan, analyze, prioritize, coordinate, draft messages, and prepare calendar/task changes. Work conversationally: acknowledge that you received the context, ask clarifying questions as needed, preserve existing commitments, and help me think through decisions before proposing changes. When I say "Output the final LifeGrid raw JSON patch only," produce raw JSON without markdown fences or explanation, including only changed/new/deleted items rather than the unchanged full dataset. Flag ambiguity in notes instead of guessing.
 
-You can help with schedule analysis, free-time finding, meeting coordination, task prioritization, project breakdown, drafting messages/emails, and bulk schedule/task changes.
-
-When final changes are ready, I will ask you to output raw JSON for LifeGrid import. Final import output must be raw JSON only, with no markdown fences or explanation, and must include only changed/new/deleted items rather than the unchanged dataset. Flag ambiguity in notes instead of guessing. Large calendars/task lists may take longer for external AI models to process.
-
-CATEGORY / TAG ORDER (use these ids and order)
+First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for a specific analysis yet, wait for my next instruction after acknowledging.
+${includeProjectsTags ? `
+CATEGORY / TAG ORDER (shared IDs; preserve this saved order when possible)
 ${encodeCategoryOrder(data)}
 
 PROJECT STRUCTURE
 ${encodeProjects(data)}
-`;
+` : ''}`;
 
 // ─── Concrete schema + example the AI can mirror exactly ─────────────────────
 const schemaReference = (categories: Category[]): string => {
@@ -132,9 +130,11 @@ OUTPUT FORMAT — return ONLY this minimal JSON patch
     { "id": "existing-event-id", "date": "YYYY-MM-DD", "startTime": "09:00", "endTime": "10:00", "notes": "only changed fields" }
   ],
   "deleted_event_ids": [],
-  "new_tasks": [],
+  "new_tasks": [
+    { "id": "task-001", "name": "Task name", "category": "category-or-tag-id", "priority": "medium", "projectId": null }
+  ],
   "updated_tasks": [
-    { "id": "existing-task-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
+    { "id": "existing-task-id", "category": "category-or-tag-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
   ],
   "completed_task_ids": [],
   "deleted_task_ids": [],
@@ -145,8 +145,9 @@ RULES:
   - Return raw JSON only. No markdown fences and no explanation.
   - Do not repeat unchanged events or tasks.
   - For simple task completion, use completed_task_ids instead of updated_tasks.
-  - Category/tag must be one of: ${catUnion}. Use "other" if needed.
-  - Use projectId when assigning work to a known project; otherwise use null or omit it.
+  - Category/tag must be one of: ${catUnion}. Tags and categories are the same LifeGrid classification system. Use "other" if needed.
+  - Include category/tag and projectId when assigning or changing work. Use projectId for known projects; otherwise use null or omit it.
+  - Ask/converse first if needed. When I say "Output the final LifeGrid raw JSON patch only," return this raw JSON object only.
   - If something is ambiguous, add a short string to notes instead of guessing.
 ==================================================
 `;
@@ -203,6 +204,7 @@ const encodeTasks = (tasks: Task[]): string => {
     .map(t =>
       `  [${t.priority.toUpperCase().padEnd(6)}] ${t.name}` +
       `  due:${t.dueDate ?? 'none'}  status:${t.status}  owner:${t.owner}` +
+      `  tag/category:${t.category || 'untagged'}  project:${t.projectId ?? 'none'}` +
       (t.nextAction ? `  → ${t.nextAction}` : '') +
       (t.schedulingNotes ? `  ⚙ constraints: ${t.schedulingNotes}` : '')
     )
@@ -291,37 +293,60 @@ export interface PlanningOptions {
   promptType?: PromptType;
   focusStart?: string | null; // YYYY-MM-DD
   focusEnd?: string | null;   // YYYY-MM-DD
+  includeTasks?: boolean;
+  includePeople?: boolean;
+  includeCompletedTasks?: boolean;
+  includeProjectsTags?: boolean;
 }
 
 // ─── 1. PLANNING PROMPT — analyze schedule, optionally scoped to a date range ─
 export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}): string => {
-  const { promptType = 'analyze', focusStart, focusEnd } = opts;
+  const {
+    promptType = 'compact', focusStart, focusEnd,
+    includeTasks = true, includePeople = true, includeCompletedTasks = false, includeProjectsTags = true,
+  } = opts;
 
-  // ── Compact mode: hard-coded 14-day window + slim task set ──
+  // ── Primary LifeGrid Admin prompt: broad, efficient, and range-aware ──
   if (promptType === 'compact') {
     const t = today();
-    const end14 = new Date(); end14.setDate(end14.getDate() + 14);
-    const end14Str = end14.toISOString().split('T')[0];
-    const windowEvents = data.events.filter(e => e.date >= t && e.date <= end14Str);
-    const urgentTasks = data.tasks.filter(t =>
-      t.status !== 'done' &&
-      (t.priority === 'urgent' || t.priority === 'high' || (t.dueDate && t.dueDate <= end14Str))
-    );
-    return `${adminAssistantIntro(data, 'administrative planning for the next 14 days')}
-Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
+    const scoped = !!(focusStart && focusEnd);
+    const inFocus = (date: string | null | undefined) => scoped && date ? (date >= focusStart! && date <= focusEnd!) : true;
+    const rangeLabel = scoped ? `${focusStart} → ${focusEnd}` : 'the full selected LifeGrid calendar';
+    const windowEvents = data.events.filter(e => inFocus(e.date));
+    const tasksForPrompt = includeTasks
+      ? data.tasks.filter(task => (includeCompletedTasks || task.status !== 'done') && (!scoped || !task.dueDate || inFocus(task.dueDate)))
+      : [];
+    const peopleLines = includePeople
+      ? data.personEvents
+        .filter(p => inFocus(p.date))
+        .slice()
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map(p => `  ${p.date}  [${p.person}]  ${p.startTime ?? '     '}${p.endTime ? `-${p.endTime}` : ''}  ${p.title}`)
+        .join('\n')
+      : '  (not included by user choice)';
 
-${OBJECTIVE['compact']}
+    return `${adminAssistantIntro(data, `comprehensive LifeGrid admin planning for ${rangeLabel}`, includeProjectsTags)}
+Today is ${t}. The exported date range is ${rangeLabel}.
+
+Help me plan, analyze, prioritize, coordinate, draft messages, and propose LifeGrid changes as requested. Start conversationally; do not output raw JSON until I explicitly ask: "Output the final LifeGrid raw JSON patch only."
+
+When final changes are ready, the raw JSON patch must include only changed/new/deleted items, not the full unchanged dataset. Supported patch keys are new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, and notes.
 
 ==================================================
-EVENTS — next 14 days (${windowEvents.length})
+EVENTS — ${rangeLabel} (${windowEvents.length})
 ==================================================
 ${encodeEventsDetailed(windowEvents)}
 
 ==================================================
-TASKS — overdue, high-priority, or due within 14 days (${urgentTasks.length})
+${includeTasks ? `TASKS — ${includeCompletedTasks ? 'all included' : 'incomplete only'} (${tasksForPrompt.length})` : 'TASKS — not included'}
 ==================================================
-${encodeTasks(urgentTasks)}
-${schemaReference(data.categories)}`;
+${includeTasks ? encodeTasks(tasksForPrompt) : '  (not included by user choice)'}
+
+==================================================
+OTHER PEOPLE'S AVAILABILITY — ${includePeople ? rangeLabel : 'not included'}
+==================================================
+${peopleLines || '  (none)'}
+${patchSchemaReference(data.categories)}`;
   }
 
   // ── JSON patch mode: same compact data window, minimal raw output only ──
@@ -724,7 +749,8 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
   return arr
     .filter(e => e && typeof e === 'object')
     .map((e, i) => {
-      const cat = validCats.has(e.category) ? e.category : 'other';
+      const rawCat = e.category ?? e.tag ?? (Array.isArray(e.tags) ? e.tags[0] : undefined);
+      const cat = validCats.has(rawCat) ? rawCat : 'other';
       const date = fixDate(e.date ?? '');
       if (!date) return null;
       return {
@@ -748,7 +774,7 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
     .map((t, i) => ({
       id:              String(t.id ?? `imp-task-${Date.now()}-${i}`),
       name:            String(t.name ?? 'Untitled Task'),
-      category:        validCats.has(t.category) ? t.category : 'other',
+      category:        validCats.has(t.category ?? t.tag ?? (Array.isArray(t.tags) ? t.tags[0] : undefined)) ? (t.category ?? t.tag ?? t.tags?.[0]) : 'other',
       dueDate:         t.dueDate ? fixDate(t.dueDate) : null,
       status:          VALID_STA.has(t.status) ? t.status : 'todo',
       owner:           String(t.owner ?? 'Me'),
@@ -770,7 +796,10 @@ function normalizeEventUpdate(
   const out: any = { id: String(u.id) };
   if (u.date     !== undefined) { const d = fixDate(String(u.date)); if (d) out.date = d; }
   if (u.title    !== undefined) out.title = String(u.title);
-  if (u.category !== undefined) out.category = validCats.has(u.category) ? u.category : 'other';
+  if (u.category !== undefined || u.tag !== undefined || u.tags !== undefined) {
+    const rawCat = u.category ?? u.tag ?? (Array.isArray(u.tags) ? u.tags[0] : undefined);
+    out.category = validCats.has(rawCat) ? rawCat : 'other';
+  }
   if (u.color    !== undefined) out.color = String(u.color);
   if ('startTime' in u) out.startTime = fixTime(u.startTime);
   if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
@@ -782,7 +811,10 @@ function normalizeEventUpdate(
 function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & Partial<Task> {
   const out: any = { id: String(u.id) };
   if (u.name     !== undefined) out.name = String(u.name);
-  if (u.category !== undefined) out.category = validCats.has(u.category) ? u.category : 'other';
+  if (u.category !== undefined || u.tag !== undefined || u.tags !== undefined) {
+    const rawCat = u.category ?? u.tag ?? (Array.isArray(u.tags) ? u.tags[0] : undefined);
+    out.category = validCats.has(rawCat) ? rawCat : 'other';
+  }
   if (u.dueDate  !== undefined) { const d = fixDate(String(u.dueDate)); if (d) out.dueDate = d; }
   if (u.status   !== undefined && VALID_STA.has(u.status))  out.status   = u.status;
   if (u.priority !== undefined && VALID_PRI.has(u.priority)) out.priority = u.priority;

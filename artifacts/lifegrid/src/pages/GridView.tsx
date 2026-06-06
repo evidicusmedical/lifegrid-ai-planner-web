@@ -38,6 +38,7 @@ export const GridView = () => {
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
+  const [exportPixelRatio, setExportPixelRatio] = useState(2);
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -106,7 +107,7 @@ export const GridView = () => {
     container.style.height = table.scrollHeight + 'px';
 
     const opts = {
-      pixelRatio: 2,
+      pixelRatio: exportPixelRatio,
       backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
       width: table.scrollWidth,
       height: table.scrollHeight,
@@ -232,16 +233,40 @@ export const GridView = () => {
 
         <div className="flex-1" />
 
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
-          data-testid="button-export"
-          title="Export grid as PNG"
-        >
-          <Image size={12} />
-          Export
-        </button>
+        {/* Export button + quality dropdown */}
+        <div className="flex items-center">
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-1 px-2 py-1.5 rounded-l-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50 border-r border-border/50"
+            data-testid="button-export"
+            title="Export grid as PNG"
+          >
+            <Image size={12} />
+            {exporting ? 'Exporting…' : 'Export'}
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={exporting}
+                className="flex items-center px-1 py-1.5 rounded-r-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
+                title="Export quality"
+              >
+                <ChevronDown size={11} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              <DropdownMenuLabel className="text-[10px]">Export quality</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setExportPixelRatio(2)} className={`text-xs ${exportPixelRatio === 2 ? 'font-semibold text-primary' : ''}`}>
+                Standard (2× — sharp)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setExportPixelRatio(1)} className={`text-xs ${exportPixelRatio === 1 ? 'font-semibold text-primary' : ''}`}>
+                Compact (1× — faster)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         <button
           onClick={toggleTheme}

@@ -22,6 +22,15 @@ export interface Person {
   color: string;
 }
 
+// ─── Projects / major events ──────────────────────────────────────────────────
+// A lightweight grouping layer for tasks. Tasks can optionally belong to one
+// project. Projects are per-calendar and stored alongside other AppData.
+export interface Project {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface Event {
   id: string;
   date: string; // YYYY-MM-DD
@@ -47,6 +56,8 @@ export interface Task {
   priority: TaskPriority;
   // Scheduling parameters / dependencies — exported to AI for analysis.
   schedulingNotes?: string | null;
+  // Optional parent project / major event.
+  projectId?: string | null;
   // Links recurring task siblings.
   recurringGroupId?: string;
 }
@@ -70,6 +81,7 @@ export interface AppData {
   personEvents: PersonEvent[];
   categories: Category[];
   people: Person[];
+  projects: Project[];
 }
 
 // ─── Calendar versioning ──────────────────────────────────────────────────────

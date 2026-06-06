@@ -1,2 +1,4 @@
 - [LifeGrid build & export gotchas](lifegrid-build-config.md) — `vite build` needs PORT+BASE_PATH set; PNG export must use html-to-image (html2canvas can't parse modern hsl colors).
 - [LifeGrid PWA & reliability setup](lifegrid-pwa-reliability.md) — vite-plugin-pwa installed; backup timestamp key; fixTime normalizer; icon gen approach.
+- [LifeGrid AppData shape](lifegrid-appdata-shape.md) — AppData requires `projects: []`; every place that constructs AppData (especially sampleData.ts) must include it.
+- [LifeGrid Radix Sheet X-button](lifegrid-sheet-x-fix.md) — suppress Radix SheetContent built-in X with `[&>button:first-of-type]:hidden` on SheetContent className; do NOT edit ui/sheet.tsx.

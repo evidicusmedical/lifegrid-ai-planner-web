@@ -1,0 +1,206 @@
+Create LifeGrid AI Planner v0.3 with focused usability, speed, task-prioritization, AI-export efficiency, and documentation updates.
+
+Primary goal:
+Make the app easier and faster to use day-to-day while minimizing unnecessary code churn, Replit Agent cost, and risk of breaking existing functionality.
+
+Constraints:
+
+* Keep changes minimal and targeted.
+* Do not redesign the entire app.
+* Do not add backend, auth, cloud sync, or external AI API calls.
+* Preserve local-first/offline/PWA behavior.
+* Preserve JSON backup/export/import.
+* Preserve existing user data through safe migrations.
+* Do not commit private schedule data, JSON backups, screenshots, archives, .env files, or secrets.
+* Before editing, inspect the relevant files and briefly state the implementation plan.
+* Then proceed unless there is a major blocking issue.
+
+Version:
+LifeGrid AI Planner v0.3 — Task Prioritization, Category Ordering, Faster Export, and AI Workflow Efficiency
+
+Phase 1 — Task prioritization improvements:
+
+1. Add task sorting controls:
+    * Smart priority / “What should I do first”
+    * Due date ascending
+    * Due date descending
+    * Priority/importance
+    * Status
+    * Category
+2. Make Smart Priority the default task sort if safe.
+    Smart Priority should consider:
+    * Overdue tasks first
+    * Due today / due soon next
+    * High priority before medium/low
+    * Incomplete tasks before completed tasks
+    * Blocked/waiting tasks should be visually clear
+    * Tasks without due dates should be lower unless high priority
+3. Add task filters:
+    * All
+    * Incomplete only
+    * Overdue
+    * Due today
+    * Due this week
+    * High priority
+    * Completed
+    * By category
+    * By project/major event if implemented
+4. Add optional parent project / major event support for tasks:
+    * A task can optionally belong to a parent project/event.
+    * Existing tasks should migrate with no parent.
+    * Add focus mode to show tasks for one selected major event/project.
+    * If simple, show progress such as “4 of 9 complete.”
+
+Phase 2 — Category/tag ordering:
+
+1. In Settings, allow categories/tags to be reordered.
+2. Store category order in the data model.
+3. Use saved category order everywhere:
+    * Calendar/grid legends
+    * Event forms
+    * Task filters
+    * Settings category list
+    * AI export grouping if applicable
+4. Preserve category order in JSON backup/export/import.
+5. Safely migrate existing categories.
+
+Phase 3 — Image export speed:
+The current export image button is slow.
+
+Inspect how image export currently works, likely html-to-image or html2canvas.
+
+Improve speed with minimal changes:
+
+1. Avoid exporting unnecessary hidden/offscreen DOM if possible.
+2. Add loading/progress text while export is running.
+3. Disable the export button while generating.
+4. Reduce export scale/pixel ratio if currently excessive.
+5. Prefer exporting only the selected grid/month/year container rather than the entire page.
+6. If both html-to-image and html2canvas are installed but only one is needed, identify whether one can be removed safely.
+7. Add a faster “compact export” option if simple:
+    * Lower resolution
+    * Smaller image
+    * Faster generation
+8. Preserve current export behavior unless replacing it is clearly better.
+
+Phase 4 — Mobile visual cleanup:
+There is a large “X” button on mobile and a duplicate lower “X” below it.
+
+Find the duplicated close button in the relevant mobile sheet/dialog/drawer/component.
+Remove or hide the duplicate lower X while preserving one accessible close button.
+Do not remove needed accessibility labels or keyboard/screen-reader close behavior.
+Confirm visually in code that only one close button should render.
+
+Phase 5 — AI export/import efficiency:
+The AI export → ChatGPT modify → raw JSON return workflow is too slow and nearly times out.
+
+Improve the AI workflow to reduce prompt size and output burden.
+
+Add AI export modes:
+
+1. Compact update mode
+    * Default for routine planning.
+    * Export only active calendar, next 14 days, overdue tasks, high-priority tasks, incomplete tasks, and relevant people availability.
+    * Ask the LLM to return only changed fields and only necessary JSON.
+2. Full context mode
+    * Existing comprehensive export.
+    * Use when major planning is needed.
+3. Task-only mode
+    * Export only tasks, priorities, due dates, projects, and statuses.
+4. Availability-only mode
+    * Export only schedule/free blocks/people availability for meeting planning.
+5. JSON patch/update mode
+    * Instruct LLM to return minimal JSON patches rather than rewriting the entire data structure.
+    * Require output to include only:
+        * new_events
+        * updated_events
+        * deleted_event_ids
+        * new_tasks
+        * updated_tasks
+        * completed_task_ids
+        * notes
+    * Tell the LLM not to repeat unchanged schedule/tasks.
+6. Add a token/size estimate if simple:
+    * Show approximate number of characters in the export.
+    * Show “Compact recommended” if export is large.
+7. Improve AI export instructions:
+    * Tell the LLM to be concise.
+    * Tell the LLM not to explain unchanged data.
+    * Tell the LLM to return raw JSON only when app import is requested.
+    * Tell the LLM to flag ambiguity instead of guessing.
+    * Preserve robust import parsing.
+8. Update AI import preview:
+    * Show counts of additions, updates, completions, deletions, and notes before applying.
+    * Warn if update references unknown IDs.
+    * Preserve the option to apply AI changes as a new calendar version if currently supported.
+
+Phase 6 — Documentation and version logging:
+Update documentation after changes.
+
+Update or create:
+
+1. PROJECT_HANDOFF.md
+2. CHANGELOG.md
+3. CODE_REVIEW_AND_END_USER_ANALYSIS.md
+4. EXPORT_CHECKLIST.md
+5. OFFLINE_PWA_INSTALL_GUIDE.md if PWA/offline behavior is affected
+
+CHANGELOG should include:
+
+* v0.3 task sorting/filtering
+* Smart Priority default
+* Parent project/major event subtasks
+* Category ordering
+* Faster image export improvements
+* Mobile duplicate X cleanup
+* AI export efficiency modes
+* JSON patch/minimal update workflow
+* Known limitations
+* Any migration notes
+
+PROJECT_HANDOFF should include:
+
+* Updated data model
+* Task sorting/filtering behavior
+* Project/subtask behavior
+* Category ordering behavior
+* AI export modes
+* Image export behavior
+* Offline/PWA status
+* Backup/restore behavior
+* How to run/build/deploy
+
+Testing:
+Run:
+
+* pnpm –filter @workspace/lifegrid run typecheck
+* pnpm –filter @workspace/lifegrid run build
+
+If either fails:
+
+* Attempt one minimal fix.
+* Rerun the failed command.
+* If still failing, stop and clearly report the issue.
+
+Git/repository:
+
+1. Run git status.
+2. Ensure no private data, backup JSON, screenshots, archive files, .env files, or secrets are staged.
+3. Commit with:
+    Add v0.3 task prioritization and AI workflow refinements
+4. Push to GitHub.
+5. Report branch and commit hash.
+
+Final response:
+Summarize:
+
+* Task sorting/filtering changes
+* Project/subtask changes
+* Category ordering changes
+* Image export speed changes
+* Mobile duplicate X fix
+* AI export efficiency changes
+* Documentation updated
+* Typecheck/build results
+* Files changed
+* GitHub push status and commit hash

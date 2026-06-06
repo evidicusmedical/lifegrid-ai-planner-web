@@ -275,6 +275,7 @@ const ED_SHIFTS = [
 export const defaultData: AppData = {
   categories: DEFAULT_CATEGORIES,
   people: DEFAULT_PEOPLE,
+  projects: [],
   events: [
     ...ED_SHIFTS,
 

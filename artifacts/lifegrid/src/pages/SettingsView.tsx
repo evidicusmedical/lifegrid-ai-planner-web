@@ -11,8 +11,9 @@ import { toast } from 'sonner';
 import {
   Plus, Trash2, Check, X, Pencil, Copy, Download, Upload,
   CalendarDays, Tag, Users, Database, Eraser, Smartphone,
+  FolderOpen, ChevronUp, ChevronDown,
 } from 'lucide-react';
-import { Category, Person } from '../types';
+import { Category, Person, Project } from '../types';
 import { formatDate } from '../lib/format';
 
 const PRESET_COLORS = [
@@ -24,18 +25,17 @@ const slug = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `id-${Date.now()}`;
 
 export const SettingsView = () => {
-  const app = useAppData();
-
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto">
       <div className="flex-none p-4 pb-3 border-b border-border bg-card sticky top-0 z-10">
         <h1 className="text-xl font-bold tracking-tight">Settings</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Customize categories, people, versions, and your data.</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Customize categories, people, projects, versions, and your data.</p>
       </div>
 
       <div className="p-4 pb-24 space-y-6">
         <CalendarVersions />
         <CategoryManager />
+        <ProjectManager />
         <PeopleManager />
         <InstallSection />
         <DataManager />
@@ -170,7 +170,7 @@ function CalendarVersions() {
 
 // ─── Categories ───────────────────────────────────────────────────────────────
 function CategoryManager() {
-  const { categories, addCategory, updateCategory, deleteCategory } = useAppData();
+  const { categories, addCategory, updateCategory, deleteCategory, reorderCategories } = useAppData();
   const [adding, setAdding] = useState(false);
   const [label, setLabel] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
@@ -186,9 +186,18 @@ function CategoryManager() {
   };
 
   return (
-    <Section icon={<Tag size={16} />} title="Categories / tags" subtitle="Used to color and filter events and tasks.">
-      {categories.map(cat => (
-        <CategoryRow key={cat.id} cat={cat} onUpdate={updateCategory} onDelete={deleteCategory} />
+    <Section icon={<Tag size={16} />} title="Categories / tags" subtitle="Used to color and filter events and tasks. Drag to reorder.">
+      {categories.map((cat, idx) => (
+        <CategoryRow
+          key={cat.id}
+          cat={cat}
+          idx={idx}
+          total={categories.length}
+          onUpdate={updateCategory}
+          onDelete={deleteCategory}
+          onMoveUp={() => reorderCategories(idx, idx - 1)}
+          onMoveDown={() => reorderCategories(idx, idx + 1)}
+        />
       ))}
 
       {adding ? (
@@ -209,8 +218,14 @@ function CategoryManager() {
   );
 }
 
-function CategoryRow({ cat, onUpdate, onDelete }: {
-  cat: Category; onUpdate: (id: string, u: Partial<Category>) => void; onDelete: (id: string) => void;
+function CategoryRow({ cat, idx, total, onUpdate, onDelete, onMoveUp, onMoveDown }: {
+  cat: Category;
+  idx: number;
+  total: number;
+  onUpdate: (id: string, u: Partial<Category>) => void;
+  onDelete: (id: string) => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(cat.label);
@@ -233,6 +248,29 @@ function CategoryRow({ cat, onUpdate, onDelete }: {
     <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
       <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
       <span className="text-sm font-medium flex-1 truncate">{cat.label}</span>
+
+      {/* Reorder arrows */}
+      <div className="flex flex-col gap-0.5">
+        <button
+          onClick={onMoveUp}
+          disabled={idx === 0}
+          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"
+          title="Move up"
+          data-testid={`cat-up-${cat.id}`}
+        >
+          <ChevronUp size={13} />
+        </button>
+        <button
+          onClick={onMoveDown}
+          disabled={idx >= total - 1}
+          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"
+          title="Move down"
+          data-testid={`cat-down-${cat.id}`}
+        >
+          <ChevronDown size={13} />
+        </button>
+      </div>
+
       <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground hover:text-foreground" data-testid={`edit-cat-${cat.id}`}>
         <Pencil size={14} />
       </button>
@@ -257,6 +295,112 @@ function CategoryRow({ cat, onUpdate, onDelete }: {
           </AlertDialogContent>
         </AlertDialog>
       )}
+    </div>
+  );
+}
+
+// ─── Projects ────────────────────────────────────────────────────────────────
+function ProjectManager() {
+  const { projects, tasks, addProject, updateProject, deleteProject } = useAppData();
+  const [adding, setAdding] = useState(false);
+  const [label, setLabel] = useState('');
+  const [color, setColor] = useState(PRESET_COLORS[2]);
+
+  const taskCountForProject = (id: string) => tasks.filter(t => t.projectId === id).length;
+
+  const submit = () => {
+    const l = label.trim();
+    if (!l) { toast.error('Enter a project name'); return; }
+    const id = `proj-${Date.now()}`;
+    addProject({ id, name: l, color });
+    setLabel(''); setColor(PRESET_COLORS[2]); setAdding(false);
+    toast.success(`Added project "${l}"`);
+  };
+
+  return (
+    <Section icon={<FolderOpen size={16} />} title="Projects" subtitle="Group related tasks under a project or major initiative.">
+      {projects.length === 0 && !adding && (
+        <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group tasks together.</p>
+      )}
+      {projects.map(proj => (
+        <ProjectRow
+          key={proj.id}
+          proj={proj}
+          taskCount={taskCountForProject(proj.id)}
+          onUpdate={updateProject}
+          onDelete={deleteProject}
+        />
+      ))}
+
+      {adding ? (
+        <div className="p-2 rounded-lg border border-border space-y-2">
+          <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="Project name…" className="h-8 text-xs" autoFocus data-testid="input-new-project" />
+          <ColorPicker value={color} onChange={setColor} />
+          <div className="flex gap-2">
+            <Button size="sm" onClick={submit} className="flex-1 h-8" data-testid="button-save-project">Add</Button>
+            <Button size="sm" variant="outline" onClick={() => { setAdding(false); setLabel(''); }} className="flex-1 h-8">Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <Button size="sm" variant="secondary" onClick={() => setAdding(true)} className="w-full gap-1 h-9" data-testid="button-add-project">
+          <Plus size={14} /> Add project
+        </Button>
+      )}
+    </Section>
+  );
+}
+
+function ProjectRow({ proj, taskCount, onUpdate, onDelete }: {
+  proj: Project; taskCount: number;
+  onUpdate: (id: string, u: Partial<Project>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [label, setLabel] = useState(proj.name);
+  const [color, setColor] = useState(proj.color);
+
+  if (editing) {
+    return (
+      <div className="p-2 rounded-lg border border-border space-y-2">
+        <Input value={label} onChange={e => setLabel(e.target.value)} className="h-8 text-xs" />
+        <ColorPicker value={color} onChange={setColor} />
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => { onUpdate(proj.id, { name: label.trim() || proj.name, color }); setEditing(false); }} className="flex-1 h-8">Save</Button>
+          <Button size="sm" variant="outline" onClick={() => { setEditing(false); setLabel(proj.name); setColor(proj.color); }} className="flex-1 h-8">Cancel</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
+      <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: proj.color }} />
+      <div className="flex-1 min-w-0">
+        <span className="text-sm font-medium block truncate">{proj.name}</span>
+        <span className="text-[10px] text-muted-foreground">{taskCount} task{taskCount !== 1 ? 's' : ''}</span>
+      </div>
+      <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground hover:text-foreground" data-testid={`edit-proj-${proj.id}`}>
+        <Pencil size={14} />
+      </button>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button className="p-1.5 text-muted-foreground hover:text-destructive" data-testid={`del-proj-${proj.id}`}>
+            <Trash2 size={14} />
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete "{proj.name}"?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the project. The {taskCount} task{taskCount !== 1 ? 's' : ''} linked to it will remain but will no longer have a project. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => onDelete(proj.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -485,60 +629,64 @@ function DataManager() {
       importBackup(text);
       toast.success('Backup restored');
     } catch (err: any) {
-      toast.error('Restore failed', { description: err.message ?? 'Invalid backup file.' });
-    } finally {
-      e.target.value = '';
+      toast.error('Restore failed', { description: err?.message ?? 'Invalid backup file.' });
     }
+    e.target.value = '';
   };
 
   return (
-    <Section icon={<Database size={16} />} title="Data & backup" subtitle="Everything is stored only on this device.">
-      <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[11px] ${backupOk ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'}`}>
-        <span className="mt-0.5 shrink-0">{backupOk ? '✓' : '⚠️'}</span>
-        <span>
+    <Section icon={<Database size={16} />} title="Data & backup" subtitle="All data lives on your device. Export regularly.">
+      {!backupOk && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-700 dark:text-amber-400 mb-1">
           {daysSince === null
-            ? 'No backup yet — download one below to protect your data.'
-            : daysSince === 0
-            ? 'Last backup: today'
-            : daysSince === 1
-            ? 'Last backup: yesterday'
-            : `Last backup: ${daysSince} days ago${daysSince >= 7 ? ' — consider a fresh backup' : ''}`}
-        </span>
+            ? 'No backup yet — download one now to be safe.'
+            : `Last backup was ${daysSince} day${daysSince !== 1 ? 's' : ''} ago. Consider making a fresh one.`}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button size="sm" variant="secondary" onClick={handleExport} className="gap-1.5 h-9 text-xs" data-testid="button-export-backup">
+          <Download size={14} /> JSON backup
+        </Button>
+        <Button size="sm" variant="secondary" onClick={handleTextExport} className="gap-1.5 h-9 text-xs" data-testid="button-export-text">
+          <Download size={14} /> Export .txt
+        </Button>
       </div>
-      <Button variant="secondary" onClick={handleExport} className="w-full gap-2 h-9" data-testid="button-export-backup">
-        <Download size={14} /> Download backup (.json)
-      </Button>
 
-      <Button variant="secondary" onClick={handleTextExport} className="w-full gap-2 h-9" data-testid="button-export-text">
-        <Download size={14} /> Export as readable text (.txt)
-      </Button>
-
-      <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={handleImport} data-testid="input-restore-backup" />
-      <Button variant="secondary" onClick={() => fileRef.current?.click()} className="w-full gap-2 h-9" data-testid="button-restore-backup">
+      <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} className="w-full gap-1.5 h-9 text-xs" data-testid="button-import-backup">
         <Upload size={14} /> Restore from backup
       </Button>
+      <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
 
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="outline" className="w-full gap-2 h-9 text-destructive border-destructive/30 hover:bg-destructive/10" data-testid="button-clear-calendar">
-            <Eraser size={14} /> Clear this calendar
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Clear "{activeCalendar.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes all events, tasks, and people entries from the current calendar version. Categories and people definitions are kept. This cannot be undone — consider downloading a backup first.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { clearActiveCalendar(); toast.success('Calendar cleared'); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Clear everything
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <div className="pt-1 border-t border-border">
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Active calendar: <strong className="text-foreground">{activeCalendar.name}</strong> · {activeCalendar.data.events.length} events · {activeCalendar.data.tasks.length} tasks
+        </p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" variant="outline" className="w-full gap-1.5 h-9 text-xs text-destructive border-destructive/30 hover:bg-destructive/5" data-testid="button-clear-calendar">
+              <Eraser size={14} /> Clear this calendar's data
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Clear "{activeCalendar.name}"?</AlertDialogTitle>
+              <AlertDialogDescription>
+                This removes all {activeCalendar.data.events.length} events, {activeCalendar.data.tasks.length} tasks, and {activeCalendar.data.personEvents.length} people entries from this calendar version. Categories and people are kept. This cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => { clearActiveCalendar(); toast.success('Calendar cleared'); }}
+              >
+                Clear all data
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </Section>
   );
 }

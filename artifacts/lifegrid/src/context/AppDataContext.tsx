@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AppData, Event, Task, PersonEvent, Category, Person, Calendar, Store } from '../types';
+import { AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
 
 interface AppContextType extends AppData {
@@ -23,15 +23,21 @@ interface AppContextType extends AppData {
   updatePersonEvent: (id: string, event: Partial<PersonEvent>) => void;
   deletePersonEvent: (id: string) => void;
 
-  // Category CRUD
+  // Category CRUD + reorder
   addCategory: (category: Category) => void;
   updateCategory: (id: string, update: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
+  reorderCategories: (fromIndex: number, toIndex: number) => void;
 
   // Person CRUD
   addPerson: (person: Person) => void;
   updatePerson: (id: string, update: Partial<Person>) => void;
   deletePerson: (id: string) => void;
+
+  // Project CRUD
+  addProject: (project: Project) => void;
+  updateProject: (id: string, update: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
 
   // Calendar versioning
   createCalendar: (name: string, seed?: 'empty' | 'sample' | 'duplicate') => string;
@@ -79,6 +85,8 @@ const normalizeAppData = (raw: any): AppData => {
     people: Array.isArray(raw?.people)
       ? raw.people
       : DEFAULT_PEOPLE.map(p => ({ ...p })),
+    // Projects are optional — existing data migrates with empty list.
+    projects: Array.isArray(raw?.projects) ? raw.projects : [],
   };
   // Make sure every event/task category exists; fall back to "other".
   const catIds = new Set(data.categories.map(c => c.id));
@@ -91,6 +99,7 @@ const normalizeAppData = (raw: any): AppData => {
     ...t,
     category: catIds.has(t.category) ? t.category : 'other',
     schedulingNotes: t.schedulingNotes ?? null,
+    projectId: t.projectId ?? null,
   }));
   // Make sure every person-event person exists.
   const personIds = new Set(data.people.map(p => p.id));
@@ -225,6 +234,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
+  const reorderCategories = (fromIndex: number, toIndex: number) =>
+    mutate(d => {
+      const cats = [...d.categories];
+      const [moved] = cats.splice(fromIndex, 1);
+      cats.splice(toIndex, 0, moved);
+      return { ...d, categories: cats };
+    });
+
   // ── People ──
   const addPerson = (person: Person) => mutate(d => ({ ...d, people: [...d.people, person] }));
   const updatePerson = (id: string, update: Partial<Person>) =>
@@ -244,6 +261,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       personEvents: d.personEvents.filter(pe => pe.person !== id),
     }));
 
+  // ── Projects ──
+  const addProject = (project: Project) =>
+    mutate(d => ({ ...d, projects: [...d.projects, project] }));
+  const updateProject = (id: string, update: Partial<Project>) =>
+    mutate(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...update } : p)) }));
+  const deleteProject = (id: string) =>
+    mutate(d => ({
+      ...d,
+      projects: d.projects.filter(p => p.id !== id),
+      // Detach tasks from deleted project
+      tasks: d.tasks.map(t => (t.projectId === id ? { ...t, projectId: null } : t)),
+    }));
+
   // ── Calendar versioning ──
   const createCalendar = (name: string, seed: 'empty' | 'sample' | 'duplicate' = 'empty'): string => {
     const seedData =
@@ -257,6 +287,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             personEvents: [],
             categories: activeCalendar.data.categories.map(c => ({ ...c })),
             people: activeCalendar.data.people.map(p => ({ ...p })),
+            projects: activeCalendar.data.projects.map(p => ({ ...p })),
           } as AppData);
     const cal = freshCalendar(name || 'Untitled Calendar', seedData);
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
@@ -396,8 +427,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addEvent, updateEvent, deleteEvent,
         addTask, updateTask, deleteTask,
         addPersonEvent, updatePersonEvent, deletePersonEvent,
-        addCategory, updateCategory, deleteCategory,
+        addCategory, updateCategory, deleteCategory, reorderCategories,
         addPerson, updatePerson, deletePerson,
+        addProject, updateProject, deleteProject,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar,
         lastBackupAt, recordBackup,

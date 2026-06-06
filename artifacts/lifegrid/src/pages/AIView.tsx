@@ -9,8 +9,10 @@ import {
   ParsedUpdate,
   PromptType,
   PROMPT_TYPES,
+  CATEGORY_COLOR,
+  estimateTokens,
+  COMPACT_THRESHOLD_TOKENS,
 } from '../lib/aiPrompt';
-import { CATEGORY_COLOR } from '../lib/aiPrompt';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -83,6 +85,9 @@ export const AIView = () => {
   const [applyAsVersion, setApplyAsVersion] = useState(false);
   const [versionName, setVersionName] = useState('');
 
+  // Prompt size estimate
+  const [promptTokens, setPromptTokens] = useState<number | null>(null);
+
   // Keep the draft in sync so an app-switch on mobile never loses progress.
   // Only persist once there's real work in flight — keeps storage clean and
   // makes "clear draft" semantics exact.
@@ -119,6 +124,7 @@ export const AIView = () => {
       return;
     }
     setPrompt(p);
+    setPromptTokens(estimateTokens(p));
     try {
       await navigator.clipboard.writeText(p);
       setCopied(true);
@@ -150,7 +156,7 @@ export const AIView = () => {
       setImportJson(text);
       setError(null);
       setPreview(null);
-      setPreview(parseAIUpdate(text, appData.categories));
+      setPreview(parseAIUpdate(text, appData.categories, appData));
       toast.success('File loaded', { description: `${file.name} parsed — review the changes below.` });
     } catch (err: any) {
       setError(err.message ?? 'Could not read that file.');
@@ -164,7 +170,7 @@ export const AIView = () => {
     setPreview(null);
     try {
       if (!importJson.trim()) throw new Error('Paste the AI response first.');
-      setPreview(parseAIUpdate(importJson, appData.categories));
+      setPreview(parseAIUpdate(importJson, appData.categories, appData));
     } catch (e: any) {
       setError(e.message ?? 'Could not parse the response.');
     }
@@ -338,15 +344,20 @@ export const AIView = () => {
                 return (
                   <button
                     key={pt.id}
-                    onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); }}
+                    onClick={() => { setPromptType(pt.id); setPrompt(''); setCopied(false); setPromptTokens(null); }}
                     className={`text-left p-2.5 rounded-lg border transition-all ${
                       on ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border hover:border-primary/40'
                     }`}
                     data-testid={`prompt-type-${pt.id}`}
                   >
-                    <div className="flex items-center gap-1.5 mb-0.5">
+                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                       <span className="text-sm">{pt.emoji}</span>
                       <span className="text-xs font-semibold">{pt.title}</span>
+                      {pt.badge && (
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
+                          pt.badge === 'Fast' ? 'bg-green-500/15 text-green-600 dark:text-green-400' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                        }`}>{pt.badge}</span>
+                      )}
                     </div>
                     <p className="text-[10px] text-muted-foreground leading-tight">{pt.description}</p>
                   </button>
@@ -463,6 +474,20 @@ export const AIView = () => {
             {copied ? <Check size={15} /> : <Copy size={15} />}
             {copied ? 'Copied!' : modeConfig.promptLabel}
           </Button>
+
+          {/* Prompt size estimate */}
+          {promptTokens !== null && (
+            <div className={`flex items-center gap-2 mt-1.5 px-1 ${promptTokens > COMPACT_THRESHOLD_TOKENS ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+              <span className="text-[10px]">
+                ~{promptTokens.toLocaleString()} tokens · {Math.round(prompt.length / 1000)}k chars
+              </span>
+              {promptTokens > COMPACT_THRESHOLD_TOKENS && (
+                <span className="text-[9px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                  Large — try ⚡ Quick update for a smaller prompt
+                </span>
+              )}
+            </div>
+          )}
 
           {prompt && (
             <Button onClick={handleDownloadPrompt} variant="outline" className="w-full gap-2 mt-2 h-10" data-testid="button-download-prompt">
@@ -639,13 +664,34 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
   const tskDelete = preview.tasks?.delete ?? [];
   const total = evtAdd.length + evtUpdate.length + evtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
+  const warnings = preview.warnings ?? [];
+
+  const summaryParts = [
+    (evtAdd.length + tskAdd.length) > 0 && `+${evtAdd.length + tskAdd.length} added`,
+    (evtUpdate.length + tskUpdate.length) > 0 && `~${evtUpdate.length + tskUpdate.length} updated`,
+    (evtDelete.length + tskDelete.length) > 0 && `−${evtDelete.length + tskDelete.length} removed`,
+  ].filter(Boolean);
 
   return (
     <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2">
+      {/* Warnings */}
+      {warnings.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 space-y-1">
+          <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wide">
+            ⚠️ {warnings.length} warning{warnings.length !== 1 ? 's' : ''} — review before applying
+          </p>
+          {warnings.map((w, i) => (
+            <p key={i} className="text-[10px] text-amber-700 dark:text-amber-400">{w}</p>
+          ))}
+        </div>
+      )}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="px-3 py-2 bg-muted/20 border-b border-border flex items-center gap-2">
+        <div className="px-3 py-2 bg-muted/20 border-b border-border flex items-center gap-2 flex-wrap">
           <CheckCircle2 size={13} className="text-green-500" />
           <span className="text-xs font-semibold">{total} change{total !== 1 ? 's' : ''} ready to apply</span>
+          {summaryParts.length > 0 && (
+            <span className="text-[10px] text-muted-foreground ml-1">{summaryParts.join('  ')}</span>
+          )}
         </div>
         <div className="p-3 space-y-1 max-h-60 overflow-y-auto">
           {evtAdd.map((e, i) => <DiffRow key={`ea${i}`} op="add" label={`${e.date} — ${e.title}`} cat={e.category} />)}

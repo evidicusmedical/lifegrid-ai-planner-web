@@ -28,6 +28,7 @@ const schema = z.object({
   notes: z.string().nullable(),
   schedulingNotes: z.string().nullable(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']),
+  projectId: z.string().nullable().optional(),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -54,7 +55,7 @@ interface TaskSheetProps {
 }
 
 export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialData }) => {
-  const { addTask, updateTask, deleteTask, deleteTaskGroup, tasks, categories } = useAppData();
+  const { addTask, updateTask, deleteTask, deleteTaskGroup, tasks, categories, projects } = useAppData();
 
   const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
   const [repeat, setRepeat] = useState(false);
@@ -71,6 +72,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
     defaultValues: {
       name: '', category: defaultCat, dueDate: '', status: 'todo',
       owner: 'Me', nextAction: '', notes: '', schedulingNotes: '', priority: 'medium',
+      projectId: null,
     },
   });
 
@@ -90,11 +92,13 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
           notes: initialData.notes || '',
           schedulingNotes: initialData.schedulingNotes || '',
           priority: initialData.priority,
+          projectId: initialData.projectId ?? null,
         });
       } else {
         form.reset({
           name: '', category: defaultCat, dueDate: '', status: 'todo',
           owner: 'Me', nextAction: '', notes: '', schedulingNotes: '', priority: 'medium',
+          projectId: null,
         });
       }
     }
@@ -108,6 +112,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
       nextAction: data.nextAction || null,
       notes: data.notes || null,
       schedulingNotes: data.schedulingNotes || null,
+      projectId: data.projectId || null,
     };
 
     if (initialData) {
@@ -141,7 +146,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="bottom"
-          className="rounded-t-2xl overflow-hidden flex flex-col p-0"
+          className="rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
           style={{ height: '88dvh', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
@@ -250,6 +255,37 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                     )}
                   />
                 </div>
+
+                {/* Project / parent */}
+                {projects.length > 0 && (
+                  <FormField
+                    control={form.control}
+                    name="projectId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Project (optional)</FormLabel>
+                        <Select
+                          onValueChange={v => field.onChange(v === '__none__' ? null : v)}
+                          value={field.value ?? '__none__'}
+                        >
+                          <FormControl><SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">No project</SelectItem>
+                            {projects.map(p => (
+                              <SelectItem key={p.id} value={p.id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                                  {p.name}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 {/* Repeat (new tasks only) */}
                 {!initialData && (

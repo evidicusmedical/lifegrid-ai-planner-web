@@ -140,7 +140,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="bottom"
-          className="rounded-t-2xl overflow-hidden flex flex-col p-0"
+          className="rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
           style={{ height: '88dvh', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">

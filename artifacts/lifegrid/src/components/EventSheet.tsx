@@ -164,7 +164,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="bottom"
-          className="rounded-t-2xl overflow-hidden flex flex-col p-0"
+          className="rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
           style={{ height: '88dvh', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
         >
           {/* Sticky header — always reachable, large close button */}

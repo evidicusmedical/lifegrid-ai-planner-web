@@ -92,7 +92,6 @@ EXTRA RULES:
 // ─── Compact event encoding (collapses repeated titles to cut prompt size) ────
 const encodeEventsCompact = (events: Event[]): string => {
   if (events.length === 0) return '  (none)';
-  // Group consecutive-by-title to compress recurring events (e.g. ED Shift x17)
   const byTitle = new Map<string, Event[]>();
   events.forEach(e => {
     const arr = byTitle.get(e.title) ?? [];
@@ -149,15 +148,19 @@ const encodeTasks = (tasks: Task[]): string => {
 
 // ─── Prompt types & their objective blocks ───────────────────────────────────
 export type PromptType =
-  | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest';
+  | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
+  | 'compact' | 'tasks-only' | 'availability';
 
-export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; description: string }[] = [
-  { id: 'analyze',   emoji: '🔍', title: 'Full analysis',        description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
-  { id: 'conflicts', emoji: '⚠️', title: 'Find conflicts',        description: 'Double-bookings and overlapping commitments only.' },
-  { id: 'freetime',  emoji: '🟢', title: 'Find free time',        description: 'Open slots and gaps where new things could be scheduled.' },
-  { id: 'balance',   emoji: '⚖️', title: 'Work–life balance',     description: 'Rest days, overwork streaks, and category balance.' },
-  { id: 'prep',      emoji: '🧰', title: 'Add prep & buffers',    description: 'Suggest prep/buffer events before big items and deadlines.' },
-  { id: 'digest',    emoji: '📋', title: 'Summary digest',        description: 'A readable rundown of the focus period (few or no changes).' },
+export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; description: string; badge?: string }[] = [
+  { id: 'analyze',      emoji: '🔍', title: 'Full analysis',        description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
+  { id: 'conflicts',    emoji: '⚠️', title: 'Find conflicts',        description: 'Double-bookings and overlapping commitments only.' },
+  { id: 'freetime',     emoji: '🟢', title: 'Find free time',        description: 'Open slots and gaps where new things could be scheduled.' },
+  { id: 'balance',      emoji: '⚖️', title: 'Work–life balance',     description: 'Rest days, overwork streaks, and category balance.' },
+  { id: 'prep',         emoji: '🧰', title: 'Add prep & buffers',    description: 'Suggest prep/buffer events before big items and deadlines.' },
+  { id: 'digest',       emoji: '📋', title: 'Summary digest',        description: 'A readable rundown of the focus period (few or no changes).' },
+  { id: 'compact',      emoji: '⚡', title: 'Quick update',          description: 'Next 14 days + overdue/high-priority tasks only — smallest prompt.', badge: 'Fast' },
+  { id: 'tasks-only',   emoji: '✅', title: 'Tasks only',            description: 'Focuses entirely on your task list — scheduling, priorities, next actions.', badge: 'Focused' },
+  { id: 'availability', emoji: '📅', title: 'Availability planner',  description: 'Shows your schedule; asks AI to find free slots for you to use.', badge: 'Focused' },
 ];
 
 const OBJECTIVE: Record<PromptType, string> = {
@@ -188,6 +191,21 @@ List each conflict clearly, then propose "update"/"delete"/"add" fixes.`,
 1. A day-by-day or week-by-week rundown of what's on
 2. Highlight the busiest days and the most important items
 3. Only propose changes if something is clearly broken — otherwise return empty arrays`,
+  compact: `Quick schedule health-check for the next 14 days + urgent/overdue tasks:
+1. Flag any obvious conflicts or critical gaps
+2. Suggest prep for any upcoming deadlines
+3. Keep your response SHORT — bullet points, then the JSON`,
+  'tasks-only': `Focus entirely on the task list:
+1. Which tasks are overdue or at risk of becoming overdue?
+2. Are priorities correctly set? Suggest changes where needed
+3. For each high/urgent task, ensure there is a clear next action
+4. Suggest scheduling blocks (calendar events) for tasks that need focus time
+5. Propose any task status updates (e.g. blocked → needs a next action)`,
+  availability: `Find free time and plan when things can be done:
+1. Identify open days and blocks of time in the schedule
+2. Match each pending/incomplete task to a realistic time slot
+3. Suggest "add" events as focus blocks or appointments
+4. Keep suggestions practical — don't overschedule`,
 };
 
 export interface PlanningOptions {
@@ -199,8 +217,76 @@ export interface PlanningOptions {
 // ─── 1. PLANNING PROMPT — analyze schedule, optionally scoped to a date range ─
 export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}): string => {
   const { promptType = 'analyze', focusStart, focusEnd } = opts;
-  const scoped = !!(focusStart && focusEnd);
 
+  // ── Compact mode: hard-coded 14-day window + slim task set ──
+  if (promptType === 'compact') {
+    const t = today();
+    const end14 = new Date(); end14.setDate(end14.getDate() + 14);
+    const end14Str = end14.toISOString().split('T')[0];
+    const windowEvents = data.events.filter(e => e.date >= t && e.date <= end14Str);
+    const urgentTasks = data.tasks.filter(t =>
+      t.status !== 'done' &&
+      (t.priority === 'urgent' || t.priority === 'high' || (t.dueDate && t.dueDate <= end14Str))
+    );
+    return `Analyze my schedule for the next 14 days (${t} → ${end14Str}) and give me a quick health-check. Today is ${t}.
+
+${OBJECTIVE['compact']}
+
+==================================================
+EVENTS — next 14 days (${windowEvents.length})
+==================================================
+${encodeEventsDetailed(windowEvents)}
+
+==================================================
+TASKS — overdue, high-priority, or due within 14 days (${urgentTasks.length})
+==================================================
+${encodeTasks(urgentTasks)}
+${schemaReference(data.categories)}`;
+  }
+
+  // ── Tasks-only mode ──
+  if (promptType === 'tasks-only') {
+    const incompleteTasks = data.tasks.filter(t => t.status !== 'done');
+    return `Analyze my task list and help me prioritize and schedule them. Today is ${today()}.
+
+${OBJECTIVE['tasks-only']}
+
+Return your analysis as plain text, then end with the JSON change set.
+Only include items in add/update/delete that you are actually recommending.
+
+==================================================
+MY TASKS (${incompleteTasks.length} incomplete, ${data.tasks.length} total)
+==================================================
+${encodeTasks(incompleteTasks)}
+${schemaReference(data.categories)}`;
+  }
+
+  // ── Availability mode ──
+  if (promptType === 'availability') {
+    const scoped = !!(focusStart && focusEnd);
+    const inFocus = (date: string) => scoped ? (date >= focusStart! && date <= focusEnd!) : true;
+    const windowEvents = data.events.filter(e => inFocus(e.date));
+    const pendingTasks = data.tasks.filter(t => t.status !== 'done');
+    return `Here is my calendar${scoped ? ` for ${focusStart} → ${focusEnd}` : ''}. Today is ${today()}.
+
+${OBJECTIVE['availability']}
+
+Return your analysis as plain text (which slots are free, what you'd put where), then end with the JSON change set for any scheduling blocks you want to add.
+
+==================================================
+MY SCHEDULE${scoped ? ` (${focusStart} → ${focusEnd})` : ''} — ${windowEvents.length} events
+==================================================
+${encodeEventsDetailed(windowEvents)}
+
+==================================================
+PENDING TASKS — ${pendingTasks.length}
+==================================================
+${encodeTasks(pendingTasks)}
+${schemaReference(data.categories)}`;
+  }
+
+  // ── Standard modes (analyze, conflicts, freetime, balance, prep, digest) ──
+  const scoped = !!(focusStart && focusEnd);
   const inFocus = (date: string) => scoped ? (date >= focusStart! && date <= focusEnd!) : true;
 
   const focusEvents = data.events.filter(e => inFocus(e.date));
@@ -330,7 +416,6 @@ export interface ParsedUpdate {
 }
 
 // Find the closing brace that matches the opening brace at `start`.
-// More robust than lastIndexOf('}') when the AI appends text after the JSON.
 function findMatchingBrace(s: string, start: number): number {
   let depth = 0;
   let inStr = false;
@@ -347,24 +432,17 @@ function findMatchingBrace(s: string, start: number): number {
   return -1;
 }
 
-export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpdate => {
+export const parseAIUpdate = (input: string, categories: Category[], existingData?: AppData): ParsedUpdate => {
   const raw = input.trim();
   if (!raw) throw new Error('Nothing pasted. Copy the full AI response and paste it here.');
 
-  // Normalize typographic/curly quotes → straight ASCII quotes.
-  // iPhone and some desktop apps silently replace " with " " and ' with ' '
-  // when copying from ChatGPT, breaking JSON.parse every time.
   let s = raw
-    .replace(/[\u201C\u201D]/g, '"')   // " " → "
-    .replace(/[\u2018\u2019]/g, "'")   // ' ' → '
-    // Strip markdown code fences (handles ```json, ```JSON, plain ```, with or without newlines)
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
     .replace(/```(?:json|JSON)?\s*/g, '')
     .replace(/```\s*/g, '')
     .trim();
 
-  // Locate the JSON object. ChatGPT/Claude analysis responses contain { characters
-  // in their prose text (e.g. "conflicts {Tuesday}"), so naive indexOf('{') picks
-  // the wrong brace. We look specifically for the {"events" or {"tasks" key first.
   const dataKeyMatch = s.match(/\{\s*"(?:events|tasks)"/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
@@ -377,10 +455,8 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
     );
   }
 
-  // Use brace-matching to find the correct end (more reliable than lastIndexOf
-  // when there is text or closing parentheses after the JSON).
   let end = findMatchingBrace(s, start);
-  if (end < 0) end = s.lastIndexOf('}'); // fallback
+  if (end < 0) end = s.lastIndexOf('}');
   if (end < start) {
     throw new Error(
       'The JSON block appears to be cut off. Make sure you copied the full response, ' +
@@ -395,8 +471,8 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
     parsed = JSON.parse(s);
   } catch {
     const fixed = s
-      .replace(/,\s*([}\]])/g, '$1')           // trailing commas
-      .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":'); // single-quoted keys
+      .replace(/,\s*([}\]])/g, '$1')
+      .replace(/([{,]\s*)'([^']+)'\s*:/g, '$1"$2":');
     try {
       parsed = JSON.parse(fixed);
     } catch (e2: any) {
@@ -417,28 +493,58 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
   const colorMap = catColorMap(categories);
   const validCats = new Set(categories.map(c => c.id).concat('other'));
 
+  // Build ID sets for unknown-ID warnings
+  const existingEventIds = new Set(existingData?.events.map(e => e.id) ?? []);
+  const existingTaskIds  = new Set(existingData?.tasks.map(t => t.id) ?? []);
+  const warnings: string[] = [];
+
   const result: ParsedUpdate = {};
 
   if (parsed.events) {
+    const updateArr = Array.isArray(parsed.events.update) ? parsed.events.update : [];
+    const deleteArr = normalizeIds(parsed.events.delete ?? []);
+    // Warn on unknown update/delete IDs
+    if (existingData) {
+      updateArr.forEach((u: any) => {
+        if (u?.id && !existingEventIds.has(u.id)) {
+          warnings.push(`Event update ID not found: "${u.id}" — may be a new or incorrect ID`);
+        }
+      });
+      deleteArr.forEach((id: string) => {
+        if (!existingEventIds.has(id)) {
+          warnings.push(`Event delete ID not found: "${id}"`);
+        }
+      });
+    }
     result.events = {
       add:    normalizeEvents(parsed.events.add ?? [], validCats, colorMap),
-      update: Array.isArray(parsed.events.update)
-        ? parsed.events.update
-            .filter((u: any) => u && typeof u.id === 'string')
-            .map((u: any) => normalizeEventUpdate(u, validCats, colorMap))
-        : [],
-      delete: normalizeIds(parsed.events.delete ?? []),
+      update: updateArr
+        .filter((u: any) => u && typeof u.id === 'string')
+        .map((u: any) => normalizeEventUpdate(u, validCats, colorMap)),
+      delete: deleteArr,
     };
   }
   if (parsed.tasks) {
+    const updateArr = Array.isArray(parsed.tasks.update) ? parsed.tasks.update : [];
+    const deleteArr = normalizeIds(parsed.tasks.delete ?? []);
+    if (existingData) {
+      updateArr.forEach((u: any) => {
+        if (u?.id && !existingTaskIds.has(u.id)) {
+          warnings.push(`Task update ID not found: "${u.id}" — may be a new or incorrect ID`);
+        }
+      });
+      deleteArr.forEach((id: string) => {
+        if (!existingTaskIds.has(id)) {
+          warnings.push(`Task delete ID not found: "${id}"`);
+        }
+      });
+    }
     result.tasks = {
       add:    normalizeTasks(parsed.tasks.add ?? [], validCats),
-      update: Array.isArray(parsed.tasks.update)
-        ? parsed.tasks.update
-            .filter((u: any) => u && typeof u.id === 'string')
-            .map((u: any) => normalizeTaskUpdate(u, validCats))
-        : [],
-      delete: normalizeIds(parsed.tasks.delete ?? []),
+      update: updateArr
+        .filter((u: any) => u && typeof u.id === 'string')
+        .map((u: any) => normalizeTaskUpdate(u, validCats)),
+      delete: deleteArr,
     };
   }
 
@@ -453,6 +559,7 @@ export const parseAIUpdate = (input: string, categories: Category[]): ParsedUpda
     );
   }
 
+  if (warnings.length > 0) result.warnings = warnings;
   return result;
 };
 
@@ -515,7 +622,6 @@ function normalizeEventUpdate(
   if ('startTime' in u) out.startTime = fixTime(u.startTime);
   if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
   if ('notes'     in u) out.notes = u.notes ?? null;
-  // Re-color if category changed but caller supplied no explicit color
   if (out.category && !out.color) out.color = colorMap[out.category];
   return out;
 }
@@ -530,39 +636,43 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
   if ('notes'          in u) out.notes          = u.notes ?? null;
   if ('nextAction'     in u) out.nextAction     = u.nextAction ?? null;
   if ('schedulingNotes' in u) out.schedulingNotes = u.schedulingNotes ?? null;
+  if ('owner'          in u) out.owner          = String(u.owner ?? 'Me');
   return out;
 }
 
-function fixTime(raw: any): string | null {
-  if (raw === null || raw === undefined || raw === '') return null;
-  const s = String(raw).trim();
-  if (/^\d{2}:\d{2}$/.test(s)) return s;
-  // "9:00" → "09:00"
-  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
-  if (m24) return `${m24[1].padStart(2, '0')}:${m24[2]}`;
-  // "9:00 AM" / "9:00 PM" (12-hour) → 24-hour
-  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (m12) {
-    let h = parseInt(m12[1], 10);
-    const isPM = m12[3].toLowerCase() === 'pm';
-    if (isPM && h !== 12) h += 12;
-    if (!isPM && h === 12) h = 0;
-    return `${String(h).padStart(2, '0')}:${m12[2]}`;
+// ─── Date / time helpers ──────────────────────────────────────────────────────
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const SLASH_DATE_RE = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/;
+
+function fixDate(raw: string): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (ISO_DATE_RE.test(s)) return s;
+  const slash = s.match(SLASH_DATE_RE);
+  if (slash) {
+    const [, m, d, y] = slash;
+    const year = y
+      ? (y.length === 2 ? `20${y}` : y)
+      : String(new Date().getFullYear());
+    return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
-  return null; // unrecognized — drop rather than store garbage
+  try {
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+  } catch { /* ignore */ }
+  return null;
 }
 
-function fixDate(raw: string): string {
-  if (!raw) return '';
-  const s = String(raw).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (m1) return `${m1[3]}-${m1[1].padStart(2, '0')}-${m1[2].padStart(2, '0')}`;
-  const m2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
-  if (m2) return `20${m2[3]}-${m2[1].padStart(2, '0')}-${m2[2].padStart(2, '0')}`;
-  try {
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-  } catch { /* */ }
-  return '';
+const TIME_RE = /^([01]?\d|2[0-3]):([0-5]\d)$/;
+function fixTime(raw: any): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const s = raw.trim();
+  if (TIME_RE.test(s)) return s;
+  const match = s.match(/(\d{1,2}):(\d{2})/);
+  if (match) return `${match[1].padStart(2, '0')}:${match[2]}`;
+  return null;
 }
+
+// ─── Token / size estimate (rough: 1 token ≈ 4 chars) ────────────────────────
+export const estimateTokens = (text: string): number => Math.ceil(text.length / 4);
+export const COMPACT_THRESHOLD_TOKENS = 3000;

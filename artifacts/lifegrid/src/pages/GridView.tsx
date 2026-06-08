@@ -27,6 +27,67 @@ const HEADER_H = 44;
 const MAX_VISIBLE_EVENTS = 5;
 const EVENT_PILL_H = 10;
 const EXPORT_ROW_BASE_H = 16;
+const TARGETED_EXPORT_MAX_DAYS = 45;
+const TARGETED_EXPORT_COLS = 7;
+
+
+type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
+type ExportProjectFilter = 'all' | string;
+
+interface GridExportFilters {
+  datePreset: ExportDatePreset;
+  customStart: string;
+  customEnd: string;
+  categoryMode: 'all' | 'selected';
+  selectedCategoryIds: string[];
+  projectId: ExportProjectFilter;
+}
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const parseISODate = (value: string) => {
+  const [yearPart, monthPart, dayPart] = value.split('-').map(Number);
+  return new Date(yearPart, monthPart - 1, dayPart);
+};
+
+const daysBetweenInclusive = (start: string, end: string) => {
+  const startTime = parseISODate(start).getTime();
+  const endTime = parseISODate(end).getTime();
+  return Math.floor((endTime - startTime) / 86_400_000) + 1;
+};
+
+const getDatesInRange = (start: string, end: string) => {
+  const dates: string[] = [];
+  let cursor = parseISODate(start);
+  const endDate = parseISODate(end);
+  while (cursor <= endDate) {
+    dates.push(toISODate(cursor));
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
+};
+
+const getEventProjectIds = (event: Event, taskById: Map<string, Task>, tasksByLinkedEvent: Map<string, Task[]>) => {
+  const projectIds = new Set<string>();
+  event.linkedTaskIds.forEach(taskId => {
+    const task = taskById.get(taskId);
+    if (task?.projectId) projectIds.add(task.projectId);
+  });
+  (tasksByLinkedEvent.get(event.id) ?? []).forEach(task => {
+    if (task.projectId) projectIds.add(task.projectId);
+  });
+  return projectIds;
+};
+
+const sortProjectsForExport = (a: Project, b: Project) => {
+  const byOrder = a.order - b.order;
+  if (byOrder !== 0) return byOrder;
+  return a.name.localeCompare(b.name);
+};
 
 type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
 type ExportProjectFilter = 'all' | string;
@@ -82,6 +143,7 @@ export const GridView = () => {
 
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
+  const targetedExportRef = useRef<HTMLDivElement>(null);
   const didScrollRef = useRef(false);
 
   const todayStr   = toISODate(today);
@@ -230,7 +292,6 @@ export const GridView = () => {
   // download we render the PNG and show it in an in-app preview the user can
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
-    const table = tableRef.current;
     const container = scrollRef.current;
     if (!table || !container) return;
     const { start, end } = getExportDateRange();
@@ -256,17 +317,33 @@ export const GridView = () => {
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
     const prevH = container.style.height;
-    container.style.overflow = 'visible';
-    container.style.width  = table.scrollWidth + 'px';
-    container.style.height = table.scrollHeight + 'px';
+    const useTargetedLayout = isTargetedDateExport;
+
+    if (!useTargetedLayout) {
+      container.style.overflow = 'visible';
+    }
+
+    await new Promise(requestAnimationFrame);
+
+    const captureNode = useTargetedLayout ? targetedExportRef.current : tableRef.current;
+    if (!captureNode) {
+      toast.error('Export failed — try again', { id: 'export' });
+      setExporting(false);
+      return;
+    }
+
+    if (!useTargetedLayout) {
+      container.style.width  = captureNode.scrollWidth + 'px';
+      container.style.height = captureNode.scrollHeight + 'px';
+    }
 
     await new Promise(requestAnimationFrame);
 
     const opts = {
       pixelRatio: exportPixelRatio,
       backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
-      width: table.scrollWidth,
-      height: table.scrollHeight,
+      width: captureNode.scrollWidth,
+      height: captureNode.scrollHeight,
       cacheBust: true,
     };
 
@@ -274,10 +351,10 @@ export const GridView = () => {
       // Safari frequently renders a blank/partial image on the first pass
       // (fonts/styles not yet inlined). Rendering a few times fixes it.
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      let dataUrl = await toPng(table, opts);
+      let dataUrl = await toPng(captureNode, opts);
       if (isSafari) {
-        await toPng(table, opts);
-        dataUrl = await toPng(table, opts);
+        await toPng(captureNode, opts);
+        dataUrl = await toPng(captureNode, opts);
       }
 
       // Try the native share sheet first (best path on iOS — "Save Image").
@@ -768,6 +845,95 @@ export const GridView = () => {
           </tbody>
         </table>
       </div>
+
+      {exporting && isTargetedDateExport && (
+        <div
+          ref={targetedExportRef}
+          className="fixed top-0 -left-[10000px] bg-background text-foreground"
+          style={{ width: 1120, padding: 24 }}
+          data-testid="targeted-export-grid"
+        >
+          <div className="mb-4 flex items-end justify-between border-b border-border pb-3">
+            <div>
+              <div className="text-2xl font-extrabold tracking-tight">{activeCalendar?.name ?? 'LifeGrid'} schedule</div>
+              <div className="mt-1 text-sm font-semibold text-muted-foreground">{exportRange.start} → {exportRange.end}</div>
+            </div>
+            <div className="text-right text-xs font-semibold text-muted-foreground">
+              <div>{exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} selected tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`}</div>
+              <div>{exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project focus'}</div>
+            </div>
+          </div>
+
+          <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
+            <thead>
+              <tr>
+                {DOW_SHORT.map(day => (
+                  <th key={day} className="border-b border-r border-border bg-card px-2 py-2 text-left text-xs font-extrabold uppercase tracking-widest text-muted-foreground last:border-r-0">
+                    {day}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {targetedExportWeeks.map((week, weekIdx) => {
+                const weekMax = Math.max(0, ...week.map(day => day?.events.length ?? 0));
+                const expandedCellHeight = Math.max(112, 48 + weekMax * 18);
+                const cellHeight = exportMode === 'expanded' ? expandedCellHeight : 116;
+                return (
+                  <tr key={weekIdx}>
+                    {week.map((day, dayIdx) => {
+                      if (!day) {
+                        return (
+                          <td
+                            key={`blank-${weekIdx}-${dayIdx}`}
+                            className="border-b border-r border-border bg-muted/25 align-top last:border-r-0"
+                            style={{ height: cellHeight }}
+                          />
+                        );
+                      }
+                      const visibleEvents = exportMode === 'expanded' ? day.events : day.events.slice(0, MAX_VISIBLE_EVENTS);
+                      const overflow = exportMode === 'expanded' ? 0 : Math.max(0, day.events.length - MAX_VISIBLE_EVENTS);
+                      return (
+                        <td
+                          key={day.date}
+                          className="border-b border-r border-border align-top last:border-r-0"
+                          style={{ height: cellHeight, padding: 6 }}
+                        >
+                          <div className="mb-2 flex items-baseline justify-between gap-2">
+                            <span className="text-sm font-extrabold text-foreground">{day.label}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{day.weekday}</span>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {visibleEvents.map(evt => (
+                              <div
+                                key={evt.id}
+                                className="flex items-center gap-1 overflow-hidden rounded-md px-1.5 py-1"
+                                style={{ backgroundColor: evt.color }}
+                              >
+                                {evt.startTime && (
+                                  <span className="shrink-0 tabular-nums text-white/80" style={{ fontSize: 9, lineHeight: 1.1 }}>
+                                    {evt.startTime}
+                                  </span>
+                                )}
+                                <span className="truncate font-bold text-white" style={{ fontSize: 10, lineHeight: 1.1 }}>
+                                  {evt.title}
+                                </span>
+                              </div>
+                            ))}
+                            {overflow > 0 && (
+                              <div className="px-1 text-[9px] font-bold text-muted-foreground">+{overflow} more</div>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Add-event FAB */}
       <button

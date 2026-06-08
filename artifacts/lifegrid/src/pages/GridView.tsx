@@ -75,7 +75,7 @@ export const GridView = () => {
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
-    events.filter(e => e.showInGrid !== false).forEach(e => {
+    events.forEach(e => {
       const arr = map.get(e.date) ?? [];
       arr.push(e);
       map.set(e.date, arr);

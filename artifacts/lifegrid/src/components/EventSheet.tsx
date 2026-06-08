@@ -470,28 +470,6 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                         </FormItem>
                       )}
                     />
-                    <div className="grid grid-cols-2 gap-3">
-                      <FormField
-                        control={form.control}
-                        name="showInGrid"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border border-border bg-background/60 p-2">
-                            <FormLabel className="text-xs">Show in grid</FormLabel>
-                            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="showInExport"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border border-border bg-background/60 p-2">
-                            <FormLabel className="text-xs">Show in export</FormLabel>
-                            <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
                     <FormField
                       control={form.control}
                       name="aiNotes"

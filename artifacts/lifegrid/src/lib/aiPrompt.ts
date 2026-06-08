@@ -1,4 +1,4 @@
-import { AppData, Event, Task, Category } from '../types';
+import { AppData, Event, Task, Category, EventDisplayPriority, TaskDueDateType, TaskTriageStatus } from '../types';
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextYear = () => new Date().getFullYear() + 1;
@@ -743,6 +743,9 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 const VALID_STA = new Set(['todo', 'in-progress', 'done', 'blocked']);
 const VALID_PRI = new Set(['low', 'medium', 'high', 'urgent']);
+const VALID_DUE_DATE_TYPE = new Set<TaskDueDateType>(['real-deadline', 'target-date', 'someday-backlog', 'needs-clarification', 'project-subtask']);
+const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
+const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
 
 function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
   if (!Array.isArray(arr)) return [];
@@ -762,6 +765,14 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         endTime:   fixTime(e.endTime),
         color:     e.color ?? colorMap[cat] ?? '#6b7280',
         notes:     e.notes ?? null,
+        displayPriority: VALID_EVENT_PRIORITY.has(Number(e.displayPriority) as EventDisplayPriority)
+          ? Number(e.displayPriority) as EventDisplayPriority
+          : (e.startTime ? 2 : 4),
+        showInGrid: typeof e.showInGrid === 'boolean' ? e.showInGrid : true,
+        showInExport: typeof e.showInExport === 'boolean' ? e.showInExport : true,
+        linkedTaskIds: normalizeIds(e.linkedTaskIds ?? []),
+        aiNotes: e.aiNotes ?? null,
+        sourceNotes: e.sourceNotes ?? null,
       } as Event;
     })
     .filter(Boolean) as Event[];
@@ -783,6 +794,10 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
       schedulingNotes: t.schedulingNotes ?? null,
       priority:        VALID_PRI.has(t.priority) ? t.priority : 'medium',
       projectId:       typeof t.projectId === 'string' ? t.projectId : null,
+      dueDateType:     VALID_DUE_DATE_TYPE.has(t.dueDateType) ? t.dueDateType : (t.dueDate ? (t.projectId ? 'project-subtask' : 'target-date') : 'someday-backlog'),
+      triageStatus:    VALID_TRIAGE_STATUS.has(t.triageStatus) ? t.triageStatus : (t.status === 'blocked' ? 'blocked' : t.status === 'done' ? 'backlog' : t.dueDate ? 'ready' : 'backlog'),
+      parentTaskId:    typeof t.parentTaskId === 'string' ? t.parentTaskId : null,
+      linkedEventIds:  normalizeIds(t.linkedEventIds ?? []),
     } as Task));
 }
 
@@ -804,6 +819,12 @@ function normalizeEventUpdate(
   if ('startTime' in u) out.startTime = fixTime(u.startTime);
   if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
   if ('notes'     in u) out.notes = u.notes ?? null;
+  if ('displayPriority' in u && VALID_EVENT_PRIORITY.has(Number(u.displayPriority) as EventDisplayPriority)) out.displayPriority = Number(u.displayPriority);
+  if ('showInGrid' in u) out.showInGrid = Boolean(u.showInGrid);
+  if ('showInExport' in u) out.showInExport = Boolean(u.showInExport);
+  if ('linkedTaskIds' in u) out.linkedTaskIds = normalizeIds(u.linkedTaskIds ?? []);
+  if ('aiNotes' in u) out.aiNotes = u.aiNotes ?? null;
+  if ('sourceNotes' in u) out.sourceNotes = u.sourceNotes ?? null;
   if (out.category && !out.color) out.color = colorMap[out.category];
   return out;
 }
@@ -823,6 +844,10 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
   if ('schedulingNotes' in u) out.schedulingNotes = u.schedulingNotes ?? null;
   if ('owner'          in u) out.owner          = String(u.owner ?? 'Me');
   if ('projectId'      in u) out.projectId      = u.projectId ? String(u.projectId) : null;
+  if ('dueDateType'    in u && VALID_DUE_DATE_TYPE.has(u.dueDateType)) out.dueDateType = u.dueDateType;
+  if ('triageStatus'   in u && VALID_TRIAGE_STATUS.has(u.triageStatus)) out.triageStatus = u.triageStatus;
+  if ('parentTaskId'   in u) out.parentTaskId = u.parentTaskId ? String(u.parentTaskId) : null;
+  if ('linkedEventIds' in u) out.linkedEventIds = normalizeIds(u.linkedEventIds ?? []);
   return out;
 }
 

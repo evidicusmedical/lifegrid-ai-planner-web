@@ -1,4 +1,4 @@
-import { AppData, Category, Person } from '../types';
+import { Category, Person } from '../types';
 
 // ── Default categories & people (user-editable in Settings) ──────────────────
 export const DEFAULT_CATEGORIES: Category[] = [
@@ -272,7 +272,7 @@ const ED_SHIFTS = [
   ed('2026-12-28', 'day'),
 ];
 
-export const defaultData: AppData = {
+export const defaultData = {
   categories: DEFAULT_CATEGORIES,
   people: DEFAULT_PEOPLE,
   projects: [],

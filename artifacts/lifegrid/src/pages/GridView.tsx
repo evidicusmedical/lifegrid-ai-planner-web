@@ -58,6 +58,8 @@ export const GridView = () => {
   const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
 
   const sortEventsForCell = useCallback((a: Event, b: Event) => {
+    const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
+    if (byPriority !== 0) return byPriority;
     const aAllDay = !a.startTime;
     const bAllDay = !b.startTime;
     if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
@@ -72,7 +74,7 @@ export const GridView = () => {
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
-    events.forEach(e => {
+    events.filter(e => e.showInGrid !== false).forEach(e => {
       const arr = map.get(e.date) ?? [];
       arr.push(e);
       map.set(e.date, arr);

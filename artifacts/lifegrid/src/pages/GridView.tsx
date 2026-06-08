@@ -89,42 +89,6 @@ const sortProjectsForExport = (a: Project, b: Project) => {
   return a.name.localeCompare(b.name);
 };
 
-type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
-type ExportProjectFilter = 'all' | string;
-
-interface GridExportFilters {
-  datePreset: ExportDatePreset;
-  customStart: string;
-  customEnd: string;
-  categoryMode: 'all' | 'selected';
-  selectedCategoryIds: string[];
-  projectId: ExportProjectFilter;
-}
-
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-const getEventProjectIds = (event: Event, taskById: Map<string, Task>, tasksByLinkedEvent: Map<string, Task[]>) => {
-  const projectIds = new Set<string>();
-  event.linkedTaskIds.forEach(taskId => {
-    const task = taskById.get(taskId);
-    if (task?.projectId) projectIds.add(task.projectId);
-  });
-  (tasksByLinkedEvent.get(event.id) ?? []).forEach(task => {
-    if (task.projectId) projectIds.add(task.projectId);
-  });
-  return projectIds;
-};
-
-const sortProjectsForExport = (a: Project, b: Project) => {
-  const byOrder = a.order - b.order;
-  if (byOrder !== 0) return byOrder;
-  return a.name.localeCompare(b.name);
-};
-
 export const GridView = () => {
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
@@ -140,6 +104,15 @@ export const GridView = () => {
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
   const [exportMode, setExportMode] = useState<'expanded' | 'visible'>('expanded');
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
+  const [exportFilters, setExportFilters] = useState<GridExportFilters>({
+    datePreset: 'current',
+    customStart: '',
+    customEnd: '',
+    categoryMode: 'all',
+    selectedCategoryIds: [],
+    projectId: 'all',
+  });
+  const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
 
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
@@ -197,8 +170,6 @@ export const GridView = () => {
     });
   }, [events, exportFilters.categoryMode, exportFilters.projectId, getExportDateRange, selectedCategorySet, taskById, tasksByLinkedEvent]);
 
-  const eventsForGrid = exporting ? exportFilteredEvents : events;
-
   const sortEventsForCell = useCallback((a: Event, b: Event) => {
     const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
     if (byPriority !== 0) return byPriority;
@@ -213,6 +184,41 @@ export const GridView = () => {
     if (byCat !== 0) return byCat;
     return a.title.localeCompare(b.title);
   }, [categoryRank]);
+
+  const isTargetedDateExport = useMemo(() => {
+    if (exportFilters.datePreset === 'current') return false;
+    const { start, end } = getExportDateRange();
+    if (!start || !end || start > end) return false;
+    return daysBetweenInclusive(start, end) <= TARGETED_EXPORT_MAX_DAYS;
+  }, [exportFilters.datePreset, getExportDateRange]);
+
+  const targetedExportWeeks = useMemo(() => {
+    const { start, end } = getExportDateRange();
+    if (!start || !end || start > end) return [];
+    const dates = getDatesInRange(start, end);
+    const startDow = parseISODate(start).getDay();
+    const filteredByDate = new Map<string, Event[]>();
+    exportFilteredEvents.forEach(e => {
+      const arr = filteredByDate.get(e.date) ?? [];
+      arr.push(e);
+      filteredByDate.set(e.date, arr);
+    });
+    filteredByDate.forEach(arr => arr.sort(sortEventsForCell));
+    const days = dates.map(date => {
+      const d = parseISODate(date);
+      return { date, label: String(d.getDate()), weekday: DOW_SHORT[d.getDay()], events: filteredByDate.get(date) ?? [] };
+    });
+    const padded: (typeof days[0] | null)[] = [...Array(startDow).fill(null), ...days];
+    const weeks: (typeof days[0] | null)[][] = [];
+    for (let i = 0; i < padded.length; i += 7) {
+      const week = padded.slice(i, i + 7);
+      while (week.length < 7) week.push(null);
+      weeks.push(week);
+    }
+    return weeks;
+  }, [exportFilteredEvents, getExportDateRange, sortEventsForCell]);
+
+  const eventsForGrid = exporting ? exportFilteredEvents : events;
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
@@ -293,7 +299,7 @@ export const GridView = () => {
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
-    if (!table || !container) return;
+    if (!tableRef.current || !container) return;
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) {
       toast.error('Choose a valid export date range.', { id: 'export' });
@@ -506,6 +512,15 @@ export const GridView = () => {
               Sharp
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setExportOptionsOpen(prev => !prev)}
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${exportOptionsOpen ? 'bg-primary/15 text-primary ring-1 ring-primary/30' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
+            title="Export filter options"
+            data-testid="button-export-options"
+          >
+            Filters <ChevronDown size={10} className={`transition-transform ${exportOptionsOpen ? 'rotate-180' : ''}`} />
+          </button>
           <button
             onClick={handleExport}
             disabled={exporting}

@@ -89,6 +89,42 @@ const sortProjectsForExport = (a: Project, b: Project) => {
   return a.name.localeCompare(b.name);
 };
 
+type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
+type ExportProjectFilter = 'all' | string;
+
+interface GridExportFilters {
+  datePreset: ExportDatePreset;
+  customStart: string;
+  customEnd: string;
+  categoryMode: 'all' | 'selected';
+  selectedCategoryIds: string[];
+  projectId: ExportProjectFilter;
+}
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const getEventProjectIds = (event: Event, taskById: Map<string, Task>, tasksByLinkedEvent: Map<string, Task[]>) => {
+  const projectIds = new Set<string>();
+  event.linkedTaskIds.forEach(taskId => {
+    const task = taskById.get(taskId);
+    if (task?.projectId) projectIds.add(task.projectId);
+  });
+  (tasksByLinkedEvent.get(event.id) ?? []).forEach(task => {
+    if (task.projectId) projectIds.add(task.projectId);
+  });
+  return projectIds;
+};
+
+const sortProjectsForExport = (a: Project, b: Project) => {
+  const byOrder = a.order - b.order;
+  if (byOrder !== 0) return byOrder;
+  return a.name.localeCompare(b.name);
+};
+
 export const GridView = () => {
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
@@ -103,15 +139,6 @@ export const GridView = () => {
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
   const [exportMode, setExportMode] = useState<'expanded' | 'visible'>('expanded');
-  const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
-  const [exportFilters, setExportFilters] = useState<GridExportFilters>(() => ({
-    datePreset: 'current',
-    customStart: toISODate(today),
-    customEnd: toISODate(today),
-    categoryMode: 'all',
-    selectedCategoryIds: [],
-    projectId: 'all',
-  }));
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -242,47 +269,7 @@ export const GridView = () => {
     exportFilters.datePreset === 'current' &&
     exportFilters.categoryMode === 'all' &&
     exportFilters.projectId === 'all';
-  const isTargetedDateExport = exportFilters.datePreset !== 'current';
-  const exportDayCount = exportRange.start && exportRange.end && exportRange.start <= exportRange.end
-    ? daysBetweenInclusive(exportRange.start, exportRange.end)
-    : 0;
   const exportFilterSummary = `${exportRange.start || 'Start'} → ${exportRange.end || 'End'} · ${exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`} · ${exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project'}`;
-
-  const targetedExportDays = useMemo(() => {
-    if (!exportRange.start || !exportRange.end || exportRange.start > exportRange.end) return [];
-    const eventMap = new Map<string, Event[]>();
-    exportFilteredEvents.forEach(event => {
-      const dateEvents = eventMap.get(event.date) ?? [];
-      dateEvents.push(event);
-      eventMap.set(event.date, dateEvents);
-    });
-    eventMap.forEach(dateEvents => dateEvents.sort(sortEventsForCell));
-
-    return getDatesInRange(exportRange.start, exportRange.end).map(date => {
-      const dateObj = parseISODate(date);
-      return {
-        date,
-        label: `${MONTHS[dateObj.getMonth()]} ${dateObj.getDate()}`,
-        weekday: DOW_SHORT[dateObj.getDay()],
-        events: eventMap.get(date) ?? [],
-      };
-    });
-  }, [exportFilteredEvents, exportRange.end, exportRange.start, sortEventsForCell]);
-
-  const targetedExportWeeks = useMemo(() => {
-    if (!targetedExportDays.length) return [];
-    const leadingBlanks = parseISODate(targetedExportDays[0].date).getDay();
-    const cells: (typeof targetedExportDays[number] | null)[] = [
-      ...Array.from({ length: leadingBlanks }, () => null),
-      ...targetedExportDays,
-    ];
-    while (cells.length % TARGETED_EXPORT_COLS !== 0) cells.push(null);
-    const weeks: (typeof targetedExportDays[number] | null)[][] = [];
-    for (let i = 0; i < cells.length; i += TARGETED_EXPORT_COLS) {
-      weeks.push(cells.slice(i, i + TARGETED_EXPORT_COLS));
-    }
-    return weeks;
-  }, [targetedExportDays]);
 
   useEffect(() => {
     if (didScrollRef.current) return;
@@ -306,14 +293,14 @@ export const GridView = () => {
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
-    if (!container) return;
+    if (!table || !container) return;
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) {
       toast.error('Choose a valid export date range.', { id: 'export' });
       return;
     }
-    if (!isTargetedDateExport && (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`))) {
-      toast.error(`Full Grid export uses the selected ${year} grid. Choose a targeted range for other dates.`, { id: 'export' });
+    if (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`)) {
+      toast.error(`Pass 1 exports keep the ${year} grid. Choose dates inside ${year}.`, { id: 'export' });
       return;
     }
     if (exportFilters.categoryMode === 'selected' && exportFilters.selectedCategoryIds.length === 0) {
@@ -324,12 +311,8 @@ export const GridView = () => {
       toast.error('No events match those image export filters.', { id: 'export' });
       return;
     }
-    if (isTargetedDateExport && exportDayCount > TARGETED_EXPORT_MAX_DAYS) {
-      toast.error(`Targeted image export supports up to ${TARGETED_EXPORT_MAX_DAYS} days. Use Full Grid for longer ranges.`, { id: 'export' });
-      return;
-    }
     setExporting(true);
-    toast.loading(`Generating filtered ${exportMode === 'expanded' ? 'expanded' : 'visible'} grid image…`, { id: 'export' });
+    toast.loading(`Generating ${exportMode === 'expanded' ? 'expanded' : 'visible'} ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
@@ -401,7 +384,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio, exportMode, exportDayCount, exportFilteredEvents.length, exportFilters.categoryMode, exportFilters.selectedCategoryIds.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -531,17 +514,7 @@ export const GridView = () => {
             title="Export grid as PNG"
           >
             <Image size={12} />
-            {exporting ? 'Working…' : 'Create Image'}
-          </button>
-          <button
-            type="button"
-            disabled={exporting}
-            onClick={() => setExportOptionsOpen(open => !open)}
-            className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50 ${exportOptionsOpen ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
-            title="Choose image export range and filters"
-            data-testid="button-export-options"
-          >
-            Options
+            {exporting ? 'Working…' : `Export ${exportMode === 'expanded' ? 'Expanded' : 'Visible'}`}
           </button>
           <button
             type="button"

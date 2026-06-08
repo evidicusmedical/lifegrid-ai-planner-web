@@ -1,0 +1,87 @@
+Review the current LifeGrid AI Planner codebase and create a safe implementation plan for:
+
+v0.4.2 — Targeted Grid Image Export
+
+Do not modify files yet.
+Do not commit.
+Do not open a PR yet.
+
+Product goal:
+Improve the existing grid image export so the exported product is still simply a PNG/image of the LifeGrid grid, but with export-time controls for date range and selected content.
+
+Important design direction:
+Do not build a complex Export Studio.
+Do not build a custom report builder.
+Do not expose dozens of toggles.
+Do not require editing each event to decide if it appears.
+The user chooses what data to export; LifeGrid automatically formats it into the most readable image possible.
+
+Core export behavior:
+Existing grid data → export-time filters → Smart Fit grid image.
+
+The exported image should:
+- be a grid image
+- show selected date range
+- show selected tags/categories/projects
+- include selected events
+- automatically fit information in the most visually appealing and readable way possible
+- include event titles and times when available
+- preserve colors/tags
+- never include notes
+- never include AI notes
+- never include source notes
+- never include internal IDs or hidden metadata
+
+Required controls:
+1. Date range:
+   - current full grid/current view
+   - next 7 days
+   - next 14 days
+   - next 30 days
+   - custom range
+
+2. Content filter:
+   - all tags/categories
+   - selected tags/categories
+   - selected project if feasible
+
+3. Create Image button.
+
+Optional lightweight preset shortcuts:
+- Full Grid
+- Share Schedule
+- Availability
+- Project Focus
+
+Important:
+The presets should only pre-fill date range/filter choices. They are not a full preset editor.
+
+Smart Fit rules:
+- No Clean vs Complete choice.
+- No notes/details choice.
+- No per-event show/hide toggles.
+- Automatically expand rows during export when needed.
+- Automatically compact event pills when many selected events exist.
+- Keep the image readable.
+- Preserve current full export behavior as a fallback.
+
+Constraints:
+- Do not add backend, auth, cloud sync, external AI API calls, native iOS, Electron, or Tauri.
+- Do not change localStorage key.
+- Preserve JSON backup/restore.
+- Preserve AI patch v2.
+- Preserve existing grid behavior when not exporting.
+- Keep mobile UI simple.
+- Avoid broad refactors.
+
+Return:
+1. Files likely affected.
+2. Recommended UI placement.
+3. Proposed export filter state model.
+4. How date-range export should render from the current year grid.
+5. How tag/category/project filtering should work.
+6. How Smart Fit should work.
+7. What should be implemented in Pass 1, Pass 2, and Pass 3.
+8. What should be deferred.
+9. Risks and mitigations.
+10. Exact implementation prompt for Pass 1 only.

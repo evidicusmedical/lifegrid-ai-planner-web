@@ -919,57 +919,6 @@ const VALID_PRI = new Set(['low', 'medium', 'high', 'urgent']);
 const VALID_DUE_DATE_TYPE = new Set<TaskDueDateType>(['real-deadline', 'target-date', 'someday-backlog', 'needs-clarification', 'project-subtask']);
 const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
 const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
-const VALID_PROJECT_STATUS = new Set<ProjectStatus>(['active', 'paused', 'completed', 'archived']);
-
-
-function normalizeProjects(arr: any[]): Project[] {
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .filter(p => p && typeof p === 'object')
-    .map((p, i) => ({
-      id:      String(p.id ?? `imp-proj-${Date.now()}-${i}`),
-      name:    String(p.name ?? 'Untitled Project'),
-      color:   typeof p.color === 'string' ? p.color : '#059669',
-      order:   Number.isFinite(Number(p.order)) ? Number(p.order) : i,
-      aliases: normalizeStringArray(p.aliases),
-      status:  VALID_PROJECT_STATUS.has(p.status) ? p.status : 'active',
-      notes:   typeof p.notes === 'string' && p.notes.trim() ? p.notes : null,
-    } as Project));
-}
-
-function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
-  const out: any = { id: String(u.id) };
-  if ('name' in u) out.name = String(u.name ?? 'Untitled Project');
-  if ('color' in u) out.color = typeof u.color === 'string' ? u.color : '#059669';
-  if ('order' in u && Number.isFinite(Number(u.order))) out.order = Number(u.order);
-  if ('aliases' in u) out.aliases = normalizeStringArray(u.aliases);
-  if ('status' in u && VALID_PROJECT_STATUS.has(u.status)) out.status = u.status;
-  if ('notes' in u) out.notes = typeof u.notes === 'string' && u.notes.trim() ? u.notes : null;
-  return out;
-}
-
-function normalizeStringArray(value: any): string[] {
-  return Array.isArray(value)
-    ? [...new Set(value.filter((v: any) => typeof v === 'string').map((v: string) => v.trim()).filter(Boolean))]
-    : [];
-}
-
-const projectNameKey = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-
-function warnSimilarProjectAdds(adds: Project[], existing: Project[], warnings: string[]): void {
-  const existingNames = existing.flatMap(p => [p.name, ...(p.aliases ?? [])])
-    .map(name => ({ raw: name, key: projectNameKey(name) }))
-    .filter(x => x.key);
-  adds.forEach(p => {
-    const addNames = [p.name, ...(p.aliases ?? [])]
-      .map(name => ({ raw: name, key: projectNameKey(name) }))
-      .filter(x => x.key);
-    addNames.forEach(add => {
-      const match = existingNames.find(ex => ex.key === add.key || (add.key.length > 3 && ex.key.includes(add.key)) || (ex.key.length > 3 && add.key.includes(ex.key)));
-      if (match) warnings.push(`Project add "${p.name}" may duplicate existing project/alias "${match.raw}" — review before applying.`);
-    });
-  });
-}
 
 function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
   if (!Array.isArray(arr)) return [];
@@ -1072,6 +1021,44 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
   if ('triageStatus'   in u && VALID_TRIAGE_STATUS.has(u.triageStatus)) out.triageStatus = u.triageStatus;
   if ('parentTaskId'   in u) out.parentTaskId = u.parentTaskId ? String(u.parentTaskId) : null;
   if ('linkedEventIds' in u) out.linkedEventIds = normalizeIds(u.linkedEventIds ?? []);
+  return out;
+}
+
+const VALID_PROJECT_STATUS = new Set<ProjectStatus>(['active', 'paused', 'completed', 'archived']);
+
+function normalizeProjects(arr: any[]): Project[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(p => p && typeof p === 'object')
+    .map((p, i) => ({
+      id:      String(p.id ?? `imp-proj-${Date.now()}-${i}`),
+      name:    String(p.name ?? 'Untitled Project'),
+      color:   String(p.color ?? '#6b7280'),
+      order:   typeof p.order === 'number' ? p.order : i,
+      aliases: Array.isArray(p.aliases) ? p.aliases.map(String) : [],
+      status:  VALID_PROJECT_STATUS.has(p.status) ? p.status : 'active',
+      notes:   p.notes ?? null,
+    } as Project));
+}
+
+function warnSimilarProjectAdds(adds: Project[], existing: Project[], warnings: string[]): void {
+  const existingNames = existing.map(p => p.name.toLowerCase());
+  adds.forEach(p => {
+    const lower = p.name.toLowerCase();
+    if (existingNames.includes(lower)) {
+      warnings.push(`Project add may duplicate existing project: "${p.name}"`);
+    }
+  });
+}
+
+function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
+  const out: any = { id: String(u.id) };
+  if (u.name    !== undefined) out.name    = String(u.name);
+  if (u.color   !== undefined) out.color   = String(u.color);
+  if (u.order   !== undefined && typeof u.order === 'number') out.order = u.order;
+  if (u.aliases !== undefined && Array.isArray(u.aliases)) out.aliases = u.aliases.map(String);
+  if (u.status  !== undefined && VALID_PROJECT_STATUS.has(u.status)) out.status = u.status;
+  if ('notes'   in u) out.notes = u.notes ?? null;
   return out;
 }
 

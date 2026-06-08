@@ -470,9 +470,6 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                         </FormItem>
                       )}
                     />
-                    <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Visibility flags are reserved internally for future Export Studio filtering and are not user-facing in v0.4.
-                    </p>
                     <FormField
                       control={form.control}
                       name="aiNotes"

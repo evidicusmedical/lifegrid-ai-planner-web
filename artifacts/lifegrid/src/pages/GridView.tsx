@@ -30,6 +30,7 @@ const EXPORT_ROW_BASE_H = 16;
 const TARGETED_EXPORT_MAX_DAYS = 45;
 const TARGETED_EXPORT_COLS = 7;
 
+
 type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
 type ExportProjectFilter = 'all' | string;
 
@@ -88,6 +89,42 @@ const sortProjectsForExport = (a: Project, b: Project) => {
   return a.name.localeCompare(b.name);
 };
 
+type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
+type ExportProjectFilter = 'all' | string;
+
+interface GridExportFilters {
+  datePreset: ExportDatePreset;
+  customStart: string;
+  customEnd: string;
+  categoryMode: 'all' | 'selected';
+  selectedCategoryIds: string[];
+  projectId: ExportProjectFilter;
+}
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const getEventProjectIds = (event: Event, taskById: Map<string, Task>, tasksByLinkedEvent: Map<string, Task[]>) => {
+  const projectIds = new Set<string>();
+  event.linkedTaskIds.forEach(taskId => {
+    const task = taskById.get(taskId);
+    if (task?.projectId) projectIds.add(task.projectId);
+  });
+  (tasksByLinkedEvent.get(event.id) ?? []).forEach(task => {
+    if (task.projectId) projectIds.add(task.projectId);
+  });
+  return projectIds;
+};
+
+const sortProjectsForExport = (a: Project, b: Project) => {
+  const byOrder = a.order - b.order;
+  if (byOrder !== 0) return byOrder;
+  return a.name.localeCompare(b.name);
+};
+
 export const GridView = () => {
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
@@ -100,16 +137,8 @@ export const GridView = () => {
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
-  const exportPixelRatio = 1;
-  const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
-  const [exportFilters, setExportFilters] = useState<GridExportFilters>(() => ({
-    datePreset: 'current',
-    customStart: toISODate(today),
-    customEnd: toISODate(today),
-    categoryMode: 'all',
-    selectedCategoryIds: [],
-    projectId: 'all',
-  }));
+  const [exportPixelRatio, setExportPixelRatio] = useState(1);
+  const [exportMode, setExportMode] = useState<'expanded' | 'visible'>('expanded');
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -217,52 +246,30 @@ export const GridView = () => {
     });
   };
 
+  const applyExportShortcut = (shortcut: 'full-grid' | 'share-schedule' | 'availability' | 'project-focus') => {
+    if (shortcut === 'full-grid') {
+      setExportFilters(prev => ({ ...prev, datePreset: 'current', categoryMode: 'all', selectedCategoryIds: [], projectId: 'all' }));
+      return;
+    }
+    if (shortcut === 'project-focus') {
+      setExportFilters(prev => ({
+        ...prev,
+        datePreset: 'next30',
+        categoryMode: 'all',
+        selectedCategoryIds: [],
+        projectId: prev.projectId === 'all' ? sortedProjects[0]?.id ?? 'all' : prev.projectId,
+      }));
+      return;
+    }
+    setExportFilters(prev => ({ ...prev, datePreset: 'next14', categoryMode: 'all', selectedCategoryIds: [], projectId: 'all' }));
+  };
+
   const exportRange = getExportDateRange();
   const isDefaultExportFilter =
     exportFilters.datePreset === 'current' &&
     exportFilters.categoryMode === 'all' &&
     exportFilters.projectId === 'all';
-  const isTargetedDateExport = exportFilters.datePreset !== 'current';
-  const exportDayCount = exportRange.start && exportRange.end && exportRange.start <= exportRange.end
-    ? daysBetweenInclusive(exportRange.start, exportRange.end)
-    : 0;
   const exportFilterSummary = `${exportRange.start || 'Start'} → ${exportRange.end || 'End'} · ${exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`} · ${exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project'}`;
-
-  const targetedExportDays = useMemo(() => {
-    if (!exportRange.start || !exportRange.end || exportRange.start > exportRange.end) return [];
-    const eventMap = new Map<string, Event[]>();
-    exportFilteredEvents.forEach(event => {
-      const dateEvents = eventMap.get(event.date) ?? [];
-      dateEvents.push(event);
-      eventMap.set(event.date, dateEvents);
-    });
-    eventMap.forEach(dateEvents => dateEvents.sort(sortEventsForCell));
-
-    return getDatesInRange(exportRange.start, exportRange.end).map(date => {
-      const dateObj = parseISODate(date);
-      return {
-        date,
-        label: `${MONTHS[dateObj.getMonth()]} ${dateObj.getDate()}`,
-        weekday: DOW_SHORT[dateObj.getDay()],
-        events: eventMap.get(date) ?? [],
-      };
-    });
-  }, [exportFilteredEvents, exportRange.end, exportRange.start, sortEventsForCell]);
-
-  const targetedExportWeeks = useMemo(() => {
-    if (!targetedExportDays.length) return [];
-    const leadingBlanks = parseISODate(targetedExportDays[0].date).getDay();
-    const cells: (typeof targetedExportDays[number] | null)[] = [
-      ...Array.from({ length: leadingBlanks }, () => null),
-      ...targetedExportDays,
-    ];
-    while (cells.length % TARGETED_EXPORT_COLS !== 0) cells.push(null);
-    const weeks: (typeof targetedExportDays[number] | null)[][] = [];
-    for (let i = 0; i < cells.length; i += TARGETED_EXPORT_COLS) {
-      weeks.push(cells.slice(i, i + TARGETED_EXPORT_COLS));
-    }
-    return weeks;
-  }, [targetedExportDays]);
 
   useEffect(() => {
     if (didScrollRef.current) return;
@@ -286,14 +293,14 @@ export const GridView = () => {
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
-    if (!container) return;
+    if (!table || !container) return;
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) {
       toast.error('Choose a valid export date range.', { id: 'export' });
       return;
     }
-    if (!isTargetedDateExport && (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`))) {
-      toast.error(`Full selected year export uses the selected ${year} grid. Choose a targeted range for other dates.`, { id: 'export' });
+    if (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`)) {
+      toast.error(`Pass 1 exports keep the ${year} grid. Choose dates inside ${year}.`, { id: 'export' });
       return;
     }
     if (exportFilters.categoryMode === 'selected' && exportFilters.selectedCategoryIds.length === 0) {
@@ -304,12 +311,8 @@ export const GridView = () => {
       toast.error('No events match those image export filters.', { id: 'export' });
       return;
     }
-    if (isTargetedDateExport && exportDayCount > TARGETED_EXPORT_MAX_DAYS) {
-      toast.error(`Targeted image export supports up to ${TARGETED_EXPORT_MAX_DAYS} days. Use Full selected year for longer ranges.`, { id: 'export' });
-      return;
-    }
     setExporting(true);
-    toast.loading('Creating grid image…', { id: 'export' });
+    toast.loading(`Generating ${exportMode === 'expanded' ? 'expanded' : 'visible'} ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
@@ -381,7 +384,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio, exportDayCount, exportFilteredEvents.length, exportFilters.categoryMode, exportFilters.selectedCategoryIds.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -465,6 +468,44 @@ export const GridView = () => {
 
         {/* Compact grid image export controls */}
         <div className="flex items-center gap-1">
+          <div className="hidden md:flex items-center rounded-lg bg-muted p-0.5">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportMode('visible')}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportMode === 'visible' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+              title="Export the grid as currently visible, with overflow indicators"
+            >
+              Visible
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportMode('expanded')}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportMode === 'expanded' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+              title="Expand rows during export to include all events"
+            >
+              Expanded
+            </button>
+          </div>
+          <div className="hidden sm:flex items-center rounded-lg bg-muted p-0.5">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportPixelRatio(1)}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 1 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+            >
+              Fast
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportPixelRatio(2)}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 2 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+            >
+              Sharp
+            </button>
+          </div>
           <button
             onClick={handleExport}
             disabled={exporting}
@@ -473,7 +514,7 @@ export const GridView = () => {
             title="Create grid image"
           >
             <Image size={12} />
-            {exporting ? 'Working…' : 'Create Grid Image'}
+            {exporting ? 'Working…' : `Export ${exportMode === 'expanded' ? 'Expanded' : 'Visible'}`}
           </button>
           <button
             type="button"
@@ -484,6 +525,15 @@ export const GridView = () => {
             data-testid="button-export-options"
           >
             Options
+          </button>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => setExportMode(exportMode === 'expanded' ? 'visible' : 'expanded')}
+            className="md:hidden px-2 py-1.5 rounded-lg text-[10px] font-bold bg-muted text-muted-foreground disabled:opacity-50"
+            title="Toggle export mode"
+          >
+            {exportMode === 'expanded' ? 'Expanded' : 'Visible'}
           </button>
         </div>
 
@@ -499,10 +549,28 @@ export const GridView = () => {
 
       {exportOptionsOpen && (
         <div className="flex-none border-b border-border bg-card/95 px-3 py-3 space-y-3" data-testid="panel-export-options">
-          <div className="space-y-1">
-            <div className="text-xs font-bold text-foreground">Export Grid Image</div>
-            <div className="text-[11px] text-muted-foreground">Creates a readable grid image from the selected date range and filters. Notes are not included.</div>
-            <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs font-bold text-foreground">Image export filters</div>
+              <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {[
+                ['full-grid', 'Full Grid'],
+                ['share-schedule', 'Share Schedule'],
+                ['availability', 'Availability'],
+                ['project-focus', 'Project Focus'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => applyExportShortcut(id as 'full-grid' | 'share-schedule' | 'availability' | 'project-focus')}
+                  className="rounded-full border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
@@ -510,7 +578,7 @@ export const GridView = () => {
               <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Date range</div>
               <div className="flex flex-wrap gap-1">
                 {[
-                  ['current', 'Full selected year'],
+                  ['current', 'Current grid'],
                   ['next7', 'Next 7'],
                   ['next14', 'Next 14'],
                   ['next30', 'Next 30'],
@@ -657,7 +725,7 @@ export const GridView = () => {
 
           <tbody>
             {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
-              const isExpandedExport = exporting;
+              const isExpandedExport = exporting && exportMode === 'expanded';
               const rowEventMax = MONTHS.reduce((max, _, mIdx) => {
                 const maxDay = getDaysForMonth(mIdx);
                 if (day > maxDay) return max;
@@ -783,13 +851,13 @@ export const GridView = () => {
         <div
           ref={targetedExportRef}
           className="fixed top-0 -left-[10000px] bg-background text-foreground"
-          style={{ width: 1120, padding: 28 }}
+          style={{ width: 1120, padding: 24 }}
           data-testid="targeted-export-grid"
         >
-          <div className="mb-5 flex items-end justify-between gap-6 border-b border-border pb-4">
+          <div className="mb-4 flex items-end justify-between border-b border-border pb-3">
             <div>
-              <div className="text-2xl font-extrabold tracking-tight">{activeCalendar?.name ?? 'LifeGrid'} grid image</div>
-              <div className="mt-1 text-sm font-semibold text-muted-foreground">{exportRange.start} → {exportRange.end} · {exportDayCount} day{exportDayCount === 1 ? '' : 's'}</div>
+              <div className="text-2xl font-extrabold tracking-tight">{activeCalendar?.name ?? 'LifeGrid'} schedule</div>
+              <div className="mt-1 text-sm font-semibold text-muted-foreground">{exportRange.start} → {exportRange.end}</div>
             </div>
             <div className="text-right text-xs font-semibold text-muted-foreground">
               <div>{exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} selected tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`}</div>
@@ -810,8 +878,8 @@ export const GridView = () => {
             <tbody>
               {targetedExportWeeks.map((week, weekIdx) => {
                 const weekMax = Math.max(0, ...week.map(day => day?.events.length ?? 0));
-                const expandedCellHeight = Math.max(124, 54 + weekMax * 20);
-                const cellHeight = expandedCellHeight;
+                const expandedCellHeight = Math.max(112, 48 + weekMax * 18);
+                const cellHeight = exportMode === 'expanded' ? expandedCellHeight : 116;
                 return (
                   <tr key={weekIdx}>
                     {week.map((day, dayIdx) => {
@@ -824,15 +892,15 @@ export const GridView = () => {
                           />
                         );
                       }
-                      const visibleEvents = day.events;
-                      const overflow = 0;
+                      const visibleEvents = exportMode === 'expanded' ? day.events : day.events.slice(0, MAX_VISIBLE_EVENTS);
+                      const overflow = exportMode === 'expanded' ? 0 : Math.max(0, day.events.length - MAX_VISIBLE_EVENTS);
                       return (
                         <td
                           key={day.date}
                           className="border-b border-r border-border align-top last:border-r-0"
-                          style={{ height: cellHeight, padding: 8 }}
+                          style={{ height: cellHeight, padding: 6 }}
                         >
-                          <div className="mb-2.5 flex items-baseline justify-between gap-2">
+                          <div className="mb-2 flex items-baseline justify-between gap-2">
                             <span className="text-sm font-extrabold text-foreground">{day.label}</span>
                             <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{day.weekday}</span>
                           </div>
@@ -840,15 +908,15 @@ export const GridView = () => {
                             {visibleEvents.map(evt => (
                               <div
                                 key={evt.id}
-                                className="flex items-center gap-1.5 overflow-hidden rounded-md px-2 py-1.5 shadow-sm"
+                                className="flex items-center gap-1 overflow-hidden rounded-md px-1.5 py-1"
                                 style={{ backgroundColor: evt.color }}
                               >
                                 {evt.startTime && (
-                                  <span className="shrink-0 tabular-nums text-white/80" style={{ fontSize: 11, lineHeight: 1.1 }}>
+                                  <span className="shrink-0 tabular-nums text-white/80" style={{ fontSize: 9, lineHeight: 1.1 }}>
                                     {evt.startTime}
                                   </span>
                                 )}
-                                <span className="truncate font-bold text-white" style={{ fontSize: 11, lineHeight: 1.1 }}>
+                                <span className="truncate font-bold text-white" style={{ fontSize: 10, lineHeight: 1.1 }}>
                                   {evt.title}
                                 </span>
                               </div>

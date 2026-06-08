@@ -7,11 +7,9 @@ Follow these steps in order. Each section is independent — you can do them on 
 ## v0.4 export notes
 
 - JSON backup filenames now include calendar name, date, and time for easier sorting.
-- PNG grid export uses one **Create Grid Image** flow: choose date range, categories/tags, optional project, then create the image.
-- Full selected year preserves the existing year-grid PNG; Next 7/14/30 and Custom ranges render focused date-windowed grid images.
-- PNG exports include date/day labels, event time/title, and category color only. Notes, AI notes, source notes, internal IDs, and hidden metadata are not included.
+- PNG grid export supports a simple Visible/Expanded mode. Expanded mode is the default and tries to include all event pills by expanding rows during export.
 - Readable TXT export includes v0.4 planning metadata, but it is still **not restorable**; use JSON backup for restore.
-- Deferred: TXT/AI export using the same filters, true availability/privacy masking, editable presets, multi-calendar export, People/calendar intake, and full external calendar import.
+- Export presets and privacy/filtering controls are deferred to a future Export Studio pass.
 
 ---
 

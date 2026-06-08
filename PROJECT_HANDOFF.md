@@ -37,15 +37,8 @@ LifeGrid is a personal life-planning calendar app designed to run entirely insid
 
 - LifeGrid now has an AI-ready planning model: projects are first-class objects, tasks include due-date type and triage status, and events include display priority plus internal visibility metadata.
 - The AI Planner supports project-aware patch v2 imports/exports while preserving older AI patch compatibility.
-- The Event sheet intentionally does **not** expose per-event `showInGrid` / `showInExport` controls in v0.4; those fields are reserved internally for future filtering.
-
-## v0.4.2 Targeted Grid Image Export notes
-
-- Grid PNG export now has one simple flow: choose date range, categories/tags, optional project, then **Create Grid Image**.
-- Preset shortcut buttons were intentionally removed; the remaining controls are the actual filter choices.
-- Full selected year keeps the existing year-grid PNG behavior, while Next 7/14/30 and Custom ranges render a focused date-windowed weekly grid.
-- Exported images include date/day labels plus event time, title, and category color. Notes, AI notes, source notes, internal IDs, and hidden metadata are not rendered into the PNG.
-- Deferred items: TXT/AI export using the same filters, true availability/privacy masking, editable presets, multi-calendar export, People/calendar intake, and full external calendar import.
+- The Event sheet intentionally does **not** expose per-event `showInGrid` / `showInExport` controls in v0.4; those fields are reserved internally for future Export Studio filtering.
+- Export filtering/presets, People/calendar import, and multi-calendar AI comparison/export are deferred to v0.4.1/v0.5.
 
 ---
 

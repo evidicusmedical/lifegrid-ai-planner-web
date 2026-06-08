@@ -1,7 +1,7 @@
 # LifeGrid AI Planner — Code Review & End-User Analysis
 
 > Reviewed June 2026 against codebase at HEAD (`main`).  
-> App version: v0.4.2 targeted grid image export polish pass.
+> App version: v0.4 final polish pass.
 
 ---
 
@@ -10,10 +10,8 @@
 - The data model is now AI-ready: projects are first-class, task due dates are classified, tasks have triage status, and events have display priority.
 - AI import/export now supports a project-aware LifeGrid patch v2 shape while retaining older flat/nested patch compatibility.
 - JSON backup filenames now include sanitized calendar name, local date, and local HHmm time.
-- The confusing per-event grid/export visibility controls were removed from the Event sheet UI. `showInGrid` and `showInExport` remain internal normalized fields reserved for future filtering.
-- v0.4.2 adds targeted Grid PNG export: one simplified **Create Grid Image** flow with date range, category/tag, and optional project filters; preset shortcut buttons were removed.
-- Targeted date ranges render focused weekly grid images, while Full selected year preserves the existing year-grid export; exported PNGs omit notes, AI notes, source notes, internal IDs, and hidden metadata.
-- Deferred items remain: TXT/AI export using the same filters, true availability/privacy masking, editable presets, multi-calendar export, People/calendar intake, and full external calendar import.
+- The confusing per-event grid/export visibility controls were removed from the Event sheet UI. `showInGrid` and `showInExport` remain internal normalized fields reserved for future Export Studio filtering.
+- Deferred items remain: export filtering/presets, full Export Studio, People/calendar intake, Google/Outlook/ICS import, and multi-calendar AI comparison/export.
 
 ---
 

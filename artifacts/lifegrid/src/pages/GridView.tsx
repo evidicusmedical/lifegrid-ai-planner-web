@@ -252,24 +252,6 @@ export const GridView = () => {
     });
   };
 
-  const applyExportShortcut = (shortcut: 'full-grid' | 'share-schedule' | 'availability' | 'project-focus') => {
-    if (shortcut === 'full-grid') {
-      setExportFilters(prev => ({ ...prev, datePreset: 'current', categoryMode: 'all', selectedCategoryIds: [], projectId: 'all' }));
-      return;
-    }
-    if (shortcut === 'project-focus') {
-      setExportFilters(prev => ({
-        ...prev,
-        datePreset: 'next30',
-        categoryMode: 'all',
-        selectedCategoryIds: [],
-        projectId: prev.projectId === 'all' ? sortedProjects[0]?.id ?? 'all' : prev.projectId,
-      }));
-      return;
-    }
-    setExportFilters(prev => ({ ...prev, datePreset: 'next14', categoryMode: 'all', selectedCategoryIds: [], projectId: 'all' }));
-  };
-
   const exportRange = getExportDateRange();
   const isDefaultExportFilter =
     exportFilters.datePreset === 'current' &&
@@ -564,28 +546,9 @@ export const GridView = () => {
 
       {exportOptionsOpen && (
         <div className="flex-none border-b border-border bg-card/95 px-3 py-3 space-y-3" data-testid="panel-export-options">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-xs font-bold text-foreground">Image export filters</div>
-              <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {[
-                ['full-grid', 'Full Grid'],
-                ['share-schedule', 'Share Schedule'],
-                ['availability', 'Availability'],
-                ['project-focus', 'Project Focus'],
-              ].map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => applyExportShortcut(id as 'full-grid' | 'share-schedule' | 'availability' | 'project-focus')}
-                  className="rounded-full border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          <div>
+            <div className="text-xs font-bold text-foreground">Image export filters</div>
+            <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
           </div>
 
           <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
@@ -671,6 +634,9 @@ export const GridView = () => {
               </p>
             </div>
           </div>
+          <p className="text-[10px] leading-snug text-muted-foreground pt-1">
+            Creates a readable grid image from the selected date range and filters. Notes are not included.
+          </p>
         </div>
       )}
 

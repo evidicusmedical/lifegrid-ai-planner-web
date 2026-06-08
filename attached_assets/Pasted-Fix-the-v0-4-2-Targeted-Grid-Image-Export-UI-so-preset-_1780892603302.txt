@@ -1,0 +1,90 @@
+Fix the v0.4.2 Targeted Grid Image Export UI so preset shortcut buttons are removed.
+
+Current issue:
+The Grid export options still show:
+- Full Grid
+- Share Schedule
+- Availability
+- Project Focus
+
+These should not appear. We decided to simplify the export flow because these presets duplicate the date range/category/project controls and add confusion.
+
+Goal:
+Keep one simple export flow:
+1. Choose date range
+2. Choose tags/categories
+3. Choose project if desired
+4. Click Create Image
+
+Do not add new features.
+Do not redesign the grid.
+Do not change localStorage.
+Do not change JSON backup/restore.
+Do not touch AI patch v2.
+Do not add Export Studio, preset editor, notes/details toggles, or per-event show/hide controls.
+
+Required changes:
+
+1. In artifacts/lifegrid/src/pages/GridView.tsx:
+   - Remove or hide the user-facing preset shortcut buttons:
+     - Full Grid
+     - Share Schedule
+     - Availability
+     - Project Focus
+   - Remove any related preset UI section/label such as "Presets" or "Shortcuts."
+   - If there is an internal preset type or helper used only for those buttons, remove it if safe.
+   - If removing it causes risk, leave the internal helper unused but remove all user-facing UI.
+
+2. Keep these controls:
+   - Date range:
+     - Full selected year
+     - Next 7 days
+     - Next 14 days
+     - Next 30 days
+     - Custom
+   - Tags/categories:
+     - All categories
+     - Selected categories
+   - Project:
+     - All projects
+     - Selected project
+   - Create Image button
+
+3. Keep this helper text:
+   “Creates a readable grid image from the selected date range and filters. Notes are not included.”
+
+4. Preserve export behavior:
+   - Full selected year still exports the full selected year grid.
+   - Next 7 / Next 14 / Next 30 / Custom still export focused date-window grid images.
+   - Category/tag filtering still works.
+   - Project filtering still works through linked tasks/events.
+   - The 45-day custom range safety cap remains.
+   - Notes, AI notes, source notes, IDs, and metadata are not included in image export.
+
+5. Confirm these are not user-facing anywhere:
+   - showInGrid
+   - showInExport
+   - Clean / Complete
+   - Export Studio
+   - Full Grid / Share Schedule / Availability / Project Focus preset buttons
+
+6. Run:
+   pnpm --filter @workspace/lifegrid run typecheck
+   pnpm --filter @workspace/lifegrid run build
+   git diff --check
+
+7. If all pass:
+   - Commit with:
+     Simplify grid image export options
+   - Push to GitHub main if appropriate.
+   - Redeploy/publish the app if needed.
+
+Final report should include:
+- files changed
+- exact UI elements removed
+- export controls that remain
+- typecheck result
+- build result
+- git diff check result
+- commit hash
+- deployment status

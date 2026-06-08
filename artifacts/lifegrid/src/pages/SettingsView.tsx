@@ -572,7 +572,7 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
     '═══════════════════════════════════════',
   ];
 
-  const sortedEvents = [...app.events].sort((a, b) => a.date.localeCompare(b.date));
+  const sortedEvents = app.events.filter(e => e.showInExport !== false).sort((a, b) => a.date.localeCompare(b.date));
   if (sortedEvents.length === 0) {
     lines.push('  (none)');
   } else {
@@ -656,7 +656,7 @@ function buildIcsExport(app: ReturnType<typeof useAppData>): string {
     'PRODID:-//LifeGrid AI Planner//EN',
     'CALSCALE:GREGORIAN',
   ];
-  [...app.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
+  app.events.filter(e => e.showInExport !== false).sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
     const start = e.startTime ? `${e.date.replace(/-/g, '')}T${e.startTime.replace(':', '')}00` : e.date.replace(/-/g, '');
     const end = e.endTime ? `${e.date.replace(/-/g, '')}T${e.endTime.replace(':', '')}00` : undefined;
     lines.push('BEGIN:VEVENT');

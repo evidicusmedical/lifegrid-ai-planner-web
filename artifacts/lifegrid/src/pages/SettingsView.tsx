@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -13,7 +14,7 @@ import {
   CalendarDays, Tag, Users, Database, Eraser, Smartphone,
   FolderOpen, ChevronUp, ChevronDown, FileText,
 } from 'lucide-react';
-import { Category, Person, Project } from '../types';
+import { Category, Person, Project, ProjectStatus } from '../types';
 import { formatDate } from '../lib/format';
 
 const PRESET_COLORS = [
@@ -313,7 +314,7 @@ function ProjectManager() {
     const l = label.trim();
     if (!l) { toast.error('Enter a project name'); return; }
     const id = `proj-${Date.now()}`;
-    addProject({ id, name: l, color });
+    addProject({ id, name: l, color, order: projects.length, aliases: [], status: 'active', notes: null });
     setLabel(''); setColor(PRESET_COLORS[2]); setAdding(false);
     toast.success(`Added project "${l}"`);
   };
@@ -323,7 +324,7 @@ function ProjectManager() {
       {projects.length === 0 && !adding && (
         <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group related subtasks for focus mode.</p>
       )}
-      {projects.map(proj => (
+      {[...projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)).map(proj => (
         <ProjectRow
           key={proj.id}
           proj={proj}
@@ -359,15 +360,67 @@ function ProjectRow({ proj, taskCount, onUpdate, onDelete }: {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(proj.name);
   const [color, setColor] = useState(proj.color);
+  const [order, setOrder] = useState(String(proj.order ?? 0));
+  const [aliases, setAliases] = useState((proj.aliases ?? []).join(', '));
+  const [status, setStatus] = useState<ProjectStatus>(proj.status ?? 'active');
+  const [notes, setNotes] = useState(proj.notes ?? '');
 
   if (editing) {
     return (
       <div className="p-2 rounded-lg border border-border space-y-2">
         <Input value={label} onChange={e => setLabel(e.target.value)} className="h-8 text-xs" />
         <ColorPicker value={color} onChange={setColor} />
+        <details className="rounded-lg border border-border bg-muted/20 p-2 group">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-foreground flex items-center justify-between">
+            Advanced project details
+            <span className="text-[10px] text-muted-foreground group-open:hidden">Show</span>
+          </summary>
+          <div className="space-y-2 mt-2">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-semibold text-muted-foreground">Order</label>
+                <Input type="number" value={order} onChange={e => setOrder(e.target.value)} className="h-8 text-xs" />
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-muted-foreground">Status</label>
+                <select
+                  value={status}
+                  onChange={e => setStatus(e.target.value as ProjectStatus)}
+                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+                >
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="completed">Completed</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-muted-foreground">Aliases</label>
+              <Input value={aliases} onChange={e => setAliases(e.target.value)} placeholder="Comma-separated alternate names" className="h-8 text-xs" />
+            </div>
+            <div>
+              <label className="text-[10px] font-semibold text-muted-foreground">Notes</label>
+              <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional project context..." className="text-xs min-h-16" />
+            </div>
+          </div>
+        </details>
         <div className="flex gap-2">
-          <Button size="sm" onClick={() => { onUpdate(proj.id, { name: label.trim() || proj.name, color }); setEditing(false); }} className="flex-1 h-8">Save</Button>
-          <Button size="sm" variant="outline" onClick={() => { setEditing(false); setLabel(proj.name); setColor(proj.color); }} className="flex-1 h-8">Cancel</Button>
+          <Button size="sm" onClick={() => {
+            onUpdate(proj.id, {
+              name: label.trim() || proj.name,
+              color,
+              order: Number.isFinite(Number(order)) ? Number(order) : (proj.order ?? 0),
+              aliases: aliases.split(',').map(a => a.trim()).filter(Boolean),
+              status,
+              notes: notes.trim() || null,
+            });
+            setEditing(false);
+          }} className="flex-1 h-8">Save</Button>
+          <Button size="sm" variant="outline" onClick={() => {
+            setEditing(false); setLabel(proj.name); setColor(proj.color); setOrder(String(proj.order ?? 0));
+            setAliases((proj.aliases ?? []).join(', ')); setStatus(proj.status ?? 'active'); setNotes(proj.notes ?? '');
+          }} className="flex-1 h-8">Cancel</Button>
         </div>
       </div>
     );
@@ -378,7 +431,8 @@ function ProjectRow({ proj, taskCount, onUpdate, onDelete }: {
       <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: proj.color }} />
       <div className="flex-1 min-w-0">
         <span className="text-sm font-medium block truncate">{proj.name}</span>
-        <span className="text-[10px] text-muted-foreground">{taskCount} task{taskCount !== 1 ? 's' : ''}</span>
+        <span className="text-[10px] text-muted-foreground">{taskCount} task{taskCount !== 1 ? 's' : ''} · {proj.status ?? 'active'}</span>
+        {proj.aliases?.length > 0 && <span className="text-[10px] text-muted-foreground block truncate">Aliases: {proj.aliases.join(', ')}</span>}
       </div>
       <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground hover:text-foreground" data-testid={`edit-proj-${proj.id}`}>
         <Pencil size={14} />
@@ -510,7 +564,7 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
     '═══════════════════════════════════════',
   ];
 
-  const sortedEvents = [...app.events].sort((a, b) => a.date.localeCompare(b.date));
+  const sortedEvents = app.events.filter(e => e.showInExport !== false).sort((a, b) => a.date.localeCompare(b.date));
   if (sortedEvents.length === 0) {
     lines.push('  (none)');
   } else {
@@ -582,7 +636,7 @@ function buildIcsExport(app: ReturnType<typeof useAppData>): string {
     'PRODID:-//LifeGrid AI Planner//EN',
     'CALSCALE:GREGORIAN',
   ];
-  [...app.events].sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
+  app.events.filter(e => e.showInExport !== false).sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
     const start = e.startTime ? `${e.date.replace(/-/g, '')}T${e.startTime.replace(':', '')}00` : e.date.replace(/-/g, '');
     const end = e.endTime ? `${e.date.replace(/-/g, '')}T${e.endTime.replace(':', '')}00` : undefined;
     lines.push('BEGIN:VEVENT');

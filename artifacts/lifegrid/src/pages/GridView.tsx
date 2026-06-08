@@ -466,7 +466,7 @@ export const GridView = () => {
 
         <div className="flex-1" />
 
-        {/* Mobile-friendly export controls */}
+        {/* Compact grid image export controls */}
         <div className="flex items-center gap-1">
           <div className="hidden md:flex items-center rounded-lg bg-muted p-0.5">
             <button
@@ -511,7 +511,7 @@ export const GridView = () => {
             disabled={exporting}
             className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
             data-testid="button-export"
-            title="Export grid as PNG"
+            title="Create grid image"
           >
             <Image size={12} />
             {exporting ? 'Working…' : `Export ${exportMode === 'expanded' ? 'Expanded' : 'Visible'}`}
@@ -519,11 +519,12 @@ export const GridView = () => {
           <button
             type="button"
             disabled={exporting}
-            onClick={() => setExportPixelRatio(exportPixelRatio === 1 ? 2 : 1)}
-            className="sm:hidden px-2 py-1.5 rounded-lg text-[10px] font-bold bg-muted text-muted-foreground disabled:opacity-50"
-            title="Toggle export quality"
+            onClick={() => setExportOptionsOpen(open => !open)}
+            className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50 ${exportOptionsOpen ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
+            title="Choose image export range and filters"
+            data-testid="button-export-options"
           >
-            {exportPixelRatio === 1 ? 'Fast' : 'Sharp'}
+            Options
           </button>
           <button
             type="button"

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
-import { Event } from '../types';
+import { Event, Project, Task } from '../types';
 import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown, X, Download } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 import { DayDetailSheet } from '../components/DayDetailSheet';
@@ -28,8 +28,44 @@ const MAX_VISIBLE_EVENTS = 5;
 const EVENT_PILL_H = 10;
 const EXPORT_ROW_BASE_H = 16;
 
+type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
+type ExportProjectFilter = 'all' | string;
+
+interface GridExportFilters {
+  datePreset: ExportDatePreset;
+  customStart: string;
+  customEnd: string;
+  categoryMode: 'all' | 'selected';
+  selectedCategoryIds: string[];
+  projectId: ExportProjectFilter;
+}
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const getEventProjectIds = (event: Event, taskById: Map<string, Task>, tasksByLinkedEvent: Map<string, Task[]>) => {
+  const projectIds = new Set<string>();
+  event.linkedTaskIds.forEach(taskId => {
+    const task = taskById.get(taskId);
+    if (task?.projectId) projectIds.add(task.projectId);
+  });
+  (tasksByLinkedEvent.get(event.id) ?? []).forEach(task => {
+    if (task.projectId) projectIds.add(task.projectId);
+  });
+  return projectIds;
+};
+
+const sortProjectsForExport = (a: Project, b: Project) => {
+  const byOrder = a.order - b.order;
+  if (byOrder !== 0) return byOrder;
+  return a.name.localeCompare(b.name);
+};
+
 export const GridView = () => {
-  const { events, categories, calendars, activeCalendarId, switchCalendar } = useAppData();
+  const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
 
   const today = useMemo(() => new Date(), []);
@@ -57,6 +93,49 @@ export const GridView = () => {
   const activeCalendar = calendars.find(c => c.id === activeCalendarId);
 
   const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
+  const sortedProjects = useMemo(() => [...projects].sort(sortProjectsForExport), [projects]);
+
+  const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
+  const tasksByLinkedEvent = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(task => {
+      task.linkedEventIds.forEach(eventId => {
+        const linkedTasks = map.get(eventId) ?? [];
+        linkedTasks.push(task);
+        map.set(eventId, linkedTasks);
+      });
+    });
+    return map;
+  }, [tasks]);
+
+  const getExportDateRange = useCallback(() => {
+    if (exportFilters.datePreset === 'custom') {
+      return { start: exportFilters.customStart, end: exportFilters.customEnd };
+    }
+    if (exportFilters.datePreset === 'current') {
+      return { start: `${year}-01-01`, end: `${year}-12-31` };
+    }
+    const days = exportFilters.datePreset === 'next7' ? 7 : exportFilters.datePreset === 'next14' ? 14 : 30;
+    return { start: todayStr, end: toISODate(addDays(today, days - 1)) };
+  }, [exportFilters.customEnd, exportFilters.customStart, exportFilters.datePreset, today, todayStr, year]);
+
+  const selectedCategorySet = useMemo(() => new Set(exportFilters.selectedCategoryIds), [exportFilters.selectedCategoryIds]);
+
+  const exportFilteredEvents = useMemo(() => {
+    const { start, end } = getExportDateRange();
+    if (!start || !end || start > end) return [];
+    return events.filter(event => {
+      if (event.date < start || event.date > end) return false;
+      if (exportFilters.categoryMode === 'selected' && !selectedCategorySet.has(event.category)) return false;
+      if (exportFilters.projectId !== 'all') {
+        const eventProjectIds = getEventProjectIds(event, taskById, tasksByLinkedEvent);
+        if (!eventProjectIds.has(exportFilters.projectId)) return false;
+      }
+      return true;
+    });
+  }, [events, exportFilters.categoryMode, exportFilters.projectId, getExportDateRange, selectedCategorySet, taskById, tasksByLinkedEvent]);
+
+  const eventsForGrid = exporting ? exportFilteredEvents : events;
 
   const sortEventsForCell = useCallback((a: Event, b: Event) => {
     const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
@@ -75,14 +154,14 @@ export const GridView = () => {
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
-    events.forEach(e => {
+    eventsForGrid.forEach(e => {
       const arr = map.get(e.date) ?? [];
       arr.push(e);
       map.set(e.date, arr);
     });
     map.forEach(arr => arr.sort(sortEventsForCell));
     return map;
-  }, [events, sortEventsForCell]);
+  }, [eventsForGrid, sortEventsForCell]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>
@@ -92,6 +171,43 @@ export const GridView = () => {
       return next;
     });
   const dim = (catId: string) => isFocusActive && !focusedCats.has(catId);
+
+  const setDatePreset = (datePreset: ExportDatePreset) => {
+    setExportFilters(prev => ({ ...prev, datePreset }));
+  };
+
+  const toggleExportCategory = (id: string) => {
+    setExportFilters(prev => {
+      const selected = new Set(prev.selectedCategoryIds);
+      selected.has(id) ? selected.delete(id) : selected.add(id);
+      return { ...prev, categoryMode: 'selected', selectedCategoryIds: Array.from(selected) };
+    });
+  };
+
+  const applyExportShortcut = (shortcut: 'full-grid' | 'share-schedule' | 'availability' | 'project-focus') => {
+    if (shortcut === 'full-grid') {
+      setExportFilters(prev => ({ ...prev, datePreset: 'current', categoryMode: 'all', selectedCategoryIds: [], projectId: 'all' }));
+      return;
+    }
+    if (shortcut === 'project-focus') {
+      setExportFilters(prev => ({
+        ...prev,
+        datePreset: 'next30',
+        categoryMode: 'all',
+        selectedCategoryIds: [],
+        projectId: prev.projectId === 'all' ? sortedProjects[0]?.id ?? 'all' : prev.projectId,
+      }));
+      return;
+    }
+    setExportFilters(prev => ({ ...prev, datePreset: 'next14', categoryMode: 'all', selectedCategoryIds: [], projectId: 'all' }));
+  };
+
+  const exportRange = getExportDateRange();
+  const isDefaultExportFilter =
+    exportFilters.datePreset === 'current' &&
+    exportFilters.categoryMode === 'all' &&
+    exportFilters.projectId === 'all';
+  const exportFilterSummary = `${exportRange.start || 'Start'} → ${exportRange.end || 'End'} · ${exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`} · ${exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project'}`;
 
   useEffect(() => {
     if (didScrollRef.current) return;
@@ -117,6 +233,23 @@ export const GridView = () => {
     const table = tableRef.current;
     const container = scrollRef.current;
     if (!table || !container) return;
+    const { start, end } = getExportDateRange();
+    if (!start || !end || start > end) {
+      toast.error('Choose a valid export date range.', { id: 'export' });
+      return;
+    }
+    if (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`)) {
+      toast.error(`Pass 1 exports keep the ${year} grid. Choose dates inside ${year}.`, { id: 'export' });
+      return;
+    }
+    if (exportFilters.categoryMode === 'selected' && exportFilters.selectedCategoryIds.length === 0) {
+      toast.error('Select at least one tag/category, or switch back to all tags.', { id: 'export' });
+      return;
+    }
+    if (exportFilteredEvents.length === 0 && !isDefaultExportFilter) {
+      toast.error('No events match those image export filters.', { id: 'export' });
+      return;
+    }
     setExporting(true);
     toast.loading(`Generating ${exportMode === 'expanded' ? 'expanded' : 'visible'} ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
@@ -335,6 +468,118 @@ export const GridView = () => {
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
       </div>
+
+      {exportOptionsOpen && (
+        <div className="flex-none border-b border-border bg-card/95 px-3 py-3 space-y-3" data-testid="panel-export-options">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-xs font-bold text-foreground">Image export filters</div>
+              <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {[
+                ['full-grid', 'Full Grid'],
+                ['share-schedule', 'Share Schedule'],
+                ['availability', 'Availability'],
+                ['project-focus', 'Project Focus'],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => applyExportShortcut(id as 'full-grid' | 'share-schedule' | 'availability' | 'project-focus')}
+                  className="rounded-full border border-border px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-muted"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Date range</div>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  ['current', 'Current grid'],
+                  ['next7', 'Next 7'],
+                  ['next14', 'Next 14'],
+                  ['next30', 'Next 30'],
+                  ['custom', 'Custom'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setDatePreset(id as ExportDatePreset)}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.datePreset === id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {exportFilters.datePreset === 'custom' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={exportFilters.customStart}
+                    onChange={e => setExportFilters(prev => ({ ...prev, customStart: e.target.value }))}
+                    className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                    data-testid="input-export-start"
+                  />
+                  <input
+                    type="date"
+                    value={exportFilters.customEnd}
+                    onChange={e => setExportFilters(prev => ({ ...prev, customEnd: e.target.value }))}
+                    className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                    data-testid="input-export-end"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tags / categories</div>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => setExportFilters(prev => ({ ...prev, categoryMode: 'all', selectedCategoryIds: [] }))}
+                  className={`rounded-full px-2 py-1 text-[10px] font-bold ${exportFilters.categoryMode === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+                >
+                  All
+                </button>
+                {categories.map(category => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => toggleExportCategory(category.id)}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.categoryMode === 'selected' && selectedCategorySet.has(category.id) ? 'text-white' : 'bg-muted text-muted-foreground'}`}
+                    style={exportFilters.categoryMode === 'selected' && selectedCategorySet.has(category.id) ? { backgroundColor: category.color } : undefined}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Project</div>
+              <select
+                value={exportFilters.projectId}
+                onChange={e => setExportFilters(prev => ({ ...prev, projectId: e.target.value }))}
+                className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                data-testid="select-export-project"
+              >
+                <option value="all">All projects</option>
+                {sortedProjects.map(project => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Project focus includes events linked to tasks in that project.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Color legend (clickable focus toggles) ── */}
       <div className="flex-none px-3 py-1.5 flex items-center gap-2 border-b border-border bg-card/50 overflow-x-auto">

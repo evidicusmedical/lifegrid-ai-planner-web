@@ -15,7 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
-import { Event } from '../types';
+import { Event, EventDisplayPriority } from '../types';
 import { X } from 'lucide-react';
 
 const schema = z.object({
@@ -26,9 +26,24 @@ const schema = z.object({
   endTime: z.string().nullable(),
   color: z.string().min(1),
   notes: z.string().nullable(),
+  displayPriority: z.coerce.number().refine(v => [1, 2, 3, 4, 5].includes(v), 'Choose a priority') as z.ZodType<EventDisplayPriority>,
+  showInGrid: z.boolean(),
+  showInExport: z.boolean(),
+  linkedTaskIds: z.array(z.string()),
+  aiNotes: z.string().nullable(),
+  sourceNotes: z.string().nullable(),
 });
 
 type FormData = z.infer<typeof schema>;
+
+
+const DISPLAY_PRIORITY_OPTIONS: { value: EventDisplayPriority; label: string }[] = [
+  { value: 1, label: '1 · Day-defining item' },
+  { value: 2, label: '2 · Fixed commitment' },
+  { value: 3, label: '3 · Important planning block' },
+  { value: 4, label: '4 · Flexible item' },
+  { value: 5, label: '5 · Reference / informational' },
+];
 
 const shiftDate = (date: string, days: number): string => {
   const d = new Date(date + 'T00:00:00');
@@ -84,6 +99,12 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       endTime: '',
       color: firstCat?.color ?? '#2563eb',
       notes: '',
+      displayPriority: 4,
+      showInGrid: true,
+      showInExport: true,
+      linkedTaskIds: [],
+      aiNotes: '',
+      sourceNotes: '',
     },
   });
 
@@ -103,6 +124,12 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
           endTime: initialData.endTime || '',
           color: initialData.color,
           notes: initialData.notes || '',
+          displayPriority: initialData.displayPriority ?? (initialData.startTime ? 2 : 4),
+          showInGrid: initialData.showInGrid ?? true,
+          showInExport: initialData.showInExport ?? true,
+          linkedTaskIds: initialData.linkedTaskIds ?? [],
+          aiNotes: initialData.aiNotes || '',
+          sourceNotes: initialData.sourceNotes || '',
         });
       } else {
         form.reset({
@@ -113,6 +140,12 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
           endTime: '',
           color: firstCat?.color ?? '#2563eb',
           notes: '',
+          displayPriority: 4,
+          showInGrid: true,
+          showInExport: true,
+          linkedTaskIds: [],
+          aiNotes: '',
+          sourceNotes: '',
         });
       }
     }
@@ -127,6 +160,12 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       startTime: data.startTime || null,
       endTime: data.endTime || null,
       notes: data.notes || null,
+      displayPriority: data.displayPriority,
+      showInGrid: data.showInGrid,
+      showInExport: data.showInExport,
+      linkedTaskIds: data.linkedTaskIds ?? [],
+      aiNotes: data.aiNotes || null,
+      sourceNotes: data.sourceNotes || null,
     };
 
     if (initialData) {
@@ -407,6 +446,57 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                     </FormItem>
                   )}
                 />
+
+                {/* Advanced display & AI */}
+                <details className="rounded-xl border border-border bg-muted/20 p-3 group">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-foreground flex items-center justify-between">
+                    Advanced display &amp; AI
+                    <span className="text-[10px] text-muted-foreground group-open:hidden">Show</span>
+                  </summary>
+                  <div className="space-y-3 mt-3">
+                    <FormField
+                      control={form.control}
+                      name="displayPriority"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Display priority</FormLabel>
+                          <Select onValueChange={(v) => field.onChange(Number(v))} value={String(field.value)}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              {DISPLAY_PRIORITY_OPTIONS.map(opt => <SelectItem key={opt.value} value={String(opt.value)}>{opt.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Visibility flags are reserved internally for future Export Studio filtering and are not user-facing in v0.4.
+                    </p>
+                    <FormField
+                      control={form.control}
+                      name="aiNotes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>AI notes</FormLabel>
+                          <FormControl><Textarea placeholder="Planning notes for AI review..." {...field} value={field.value || ''} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="sourceNotes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Source notes</FormLabel>
+                          <FormControl><Textarea placeholder="Where this came from, import details, or context..." {...field} value={field.value || ''} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </details>
 
                 <div className="flex flex-col gap-2 pt-2 pb-2">
                   <Button type="submit" className="w-full h-11">{saveLabel}</Button>

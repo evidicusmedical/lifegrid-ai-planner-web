@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
-import { Event } from '../types';
+import { Event, Project, Task } from '../types';
 import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown, X, Download } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 import { DayDetailSheet } from '../components/DayDetailSheet';
@@ -24,12 +24,72 @@ const DAY_COL_W = 32;
 const MONTH_COL_W = 110;
 const ROW_H = 52;
 const HEADER_H = 44;
-const MAX_VISIBLE_EVENTS = 4;
+const MAX_VISIBLE_EVENTS = 5;
 const EVENT_PILL_H = 10;
 const EXPORT_ROW_BASE_H = 16;
+const TARGETED_EXPORT_MAX_DAYS = 45;
+const TARGETED_EXPORT_COLS = 7;
+
+type ExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
+type ExportProjectFilter = 'all' | string;
+
+interface GridExportFilters {
+  datePreset: ExportDatePreset;
+  customStart: string;
+  customEnd: string;
+  categoryMode: 'all' | 'selected';
+  selectedCategoryIds: string[];
+  projectId: ExportProjectFilter;
+}
+
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const parseISODate = (value: string) => {
+  const [yearPart, monthPart, dayPart] = value.split('-').map(Number);
+  return new Date(yearPart, monthPart - 1, dayPart);
+};
+
+const daysBetweenInclusive = (start: string, end: string) => {
+  const startTime = parseISODate(start).getTime();
+  const endTime = parseISODate(end).getTime();
+  return Math.floor((endTime - startTime) / 86_400_000) + 1;
+};
+
+const getDatesInRange = (start: string, end: string) => {
+  const dates: string[] = [];
+  let cursor = parseISODate(start);
+  const endDate = parseISODate(end);
+  while (cursor <= endDate) {
+    dates.push(toISODate(cursor));
+    cursor = addDays(cursor, 1);
+  }
+  return dates;
+};
+
+const getEventProjectIds = (event: Event, taskById: Map<string, Task>, tasksByLinkedEvent: Map<string, Task[]>) => {
+  const projectIds = new Set<string>();
+  event.linkedTaskIds.forEach(taskId => {
+    const task = taskById.get(taskId);
+    if (task?.projectId) projectIds.add(task.projectId);
+  });
+  (tasksByLinkedEvent.get(event.id) ?? []).forEach(task => {
+    if (task.projectId) projectIds.add(task.projectId);
+  });
+  return projectIds;
+};
+
+const sortProjectsForExport = (a: Project, b: Project) => {
+  const byOrder = a.order - b.order;
+  if (byOrder !== 0) return byOrder;
+  return a.name.localeCompare(b.name);
+};
 
 export const GridView = () => {
-  const { events, categories, calendars, activeCalendarId, switchCalendar } = useAppData();
+  const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
 
   const today = useMemo(() => new Date(), []);
@@ -40,11 +100,21 @@ export const GridView = () => {
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
-  const [exportPixelRatio, setExportPixelRatio] = useState(1);
+  const exportPixelRatio = 1;
+  const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
+  const [exportFilters, setExportFilters] = useState<GridExportFilters>(() => ({
+    datePreset: 'current',
+    customStart: toISODate(today),
+    customEnd: toISODate(today),
+    categoryMode: 'all',
+    selectedCategoryIds: [],
+    projectId: 'all',
+  }));
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
+  const targetedExportRef = useRef<HTMLDivElement>(null);
   const didScrollRef = useRef(false);
 
   const todayStr   = toISODate(today);
@@ -56,8 +126,53 @@ export const GridView = () => {
   const activeCalendar = calendars.find(c => c.id === activeCalendarId);
 
   const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
+  const sortedProjects = useMemo(() => [...projects].sort(sortProjectsForExport), [projects]);
+
+  const taskById = useMemo(() => new Map(tasks.map(task => [task.id, task])), [tasks]);
+  const tasksByLinkedEvent = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    tasks.forEach(task => {
+      task.linkedEventIds.forEach(eventId => {
+        const linkedTasks = map.get(eventId) ?? [];
+        linkedTasks.push(task);
+        map.set(eventId, linkedTasks);
+      });
+    });
+    return map;
+  }, [tasks]);
+
+  const getExportDateRange = useCallback(() => {
+    if (exportFilters.datePreset === 'custom') {
+      return { start: exportFilters.customStart, end: exportFilters.customEnd };
+    }
+    if (exportFilters.datePreset === 'current') {
+      return { start: `${year}-01-01`, end: `${year}-12-31` };
+    }
+    const days = exportFilters.datePreset === 'next7' ? 7 : exportFilters.datePreset === 'next14' ? 14 : 30;
+    return { start: todayStr, end: toISODate(addDays(today, days - 1)) };
+  }, [exportFilters.customEnd, exportFilters.customStart, exportFilters.datePreset, today, todayStr, year]);
+
+  const selectedCategorySet = useMemo(() => new Set(exportFilters.selectedCategoryIds), [exportFilters.selectedCategoryIds]);
+
+  const exportFilteredEvents = useMemo(() => {
+    const { start, end } = getExportDateRange();
+    if (!start || !end || start > end) return [];
+    return events.filter(event => {
+      if (event.date < start || event.date > end) return false;
+      if (exportFilters.categoryMode === 'selected' && !selectedCategorySet.has(event.category)) return false;
+      if (exportFilters.projectId !== 'all') {
+        const eventProjectIds = getEventProjectIds(event, taskById, tasksByLinkedEvent);
+        if (!eventProjectIds.has(exportFilters.projectId)) return false;
+      }
+      return true;
+    });
+  }, [events, exportFilters.categoryMode, exportFilters.projectId, getExportDateRange, selectedCategorySet, taskById, tasksByLinkedEvent]);
+
+  const eventsForGrid = exporting ? exportFilteredEvents : events;
 
   const sortEventsForCell = useCallback((a: Event, b: Event) => {
+    const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
+    if (byPriority !== 0) return byPriority;
     const aAllDay = !a.startTime;
     const bAllDay = !b.startTime;
     if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
@@ -72,14 +187,14 @@ export const GridView = () => {
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
-    events.forEach(e => {
+    eventsForGrid.forEach(e => {
       const arr = map.get(e.date) ?? [];
       arr.push(e);
       map.set(e.date, arr);
     });
     map.forEach(arr => arr.sort(sortEventsForCell));
     return map;
-  }, [events, sortEventsForCell]);
+  }, [eventsForGrid, sortEventsForCell]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>
@@ -89,6 +204,65 @@ export const GridView = () => {
       return next;
     });
   const dim = (catId: string) => isFocusActive && !focusedCats.has(catId);
+
+  const setDatePreset = (datePreset: ExportDatePreset) => {
+    setExportFilters(prev => ({ ...prev, datePreset }));
+  };
+
+  const toggleExportCategory = (id: string) => {
+    setExportFilters(prev => {
+      const selected = new Set(prev.selectedCategoryIds);
+      selected.has(id) ? selected.delete(id) : selected.add(id);
+      return { ...prev, categoryMode: 'selected', selectedCategoryIds: Array.from(selected) };
+    });
+  };
+
+  const exportRange = getExportDateRange();
+  const isDefaultExportFilter =
+    exportFilters.datePreset === 'current' &&
+    exportFilters.categoryMode === 'all' &&
+    exportFilters.projectId === 'all';
+  const isTargetedDateExport = exportFilters.datePreset !== 'current';
+  const exportDayCount = exportRange.start && exportRange.end && exportRange.start <= exportRange.end
+    ? daysBetweenInclusive(exportRange.start, exportRange.end)
+    : 0;
+  const exportFilterSummary = `${exportRange.start || 'Start'} → ${exportRange.end || 'End'} · ${exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`} · ${exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project'}`;
+
+  const targetedExportDays = useMemo(() => {
+    if (!exportRange.start || !exportRange.end || exportRange.start > exportRange.end) return [];
+    const eventMap = new Map<string, Event[]>();
+    exportFilteredEvents.forEach(event => {
+      const dateEvents = eventMap.get(event.date) ?? [];
+      dateEvents.push(event);
+      eventMap.set(event.date, dateEvents);
+    });
+    eventMap.forEach(dateEvents => dateEvents.sort(sortEventsForCell));
+
+    return getDatesInRange(exportRange.start, exportRange.end).map(date => {
+      const dateObj = parseISODate(date);
+      return {
+        date,
+        label: `${MONTHS[dateObj.getMonth()]} ${dateObj.getDate()}`,
+        weekday: DOW_SHORT[dateObj.getDay()],
+        events: eventMap.get(date) ?? [],
+      };
+    });
+  }, [exportFilteredEvents, exportRange.end, exportRange.start, sortEventsForCell]);
+
+  const targetedExportWeeks = useMemo(() => {
+    if (!targetedExportDays.length) return [];
+    const leadingBlanks = parseISODate(targetedExportDays[0].date).getDay();
+    const cells: (typeof targetedExportDays[number] | null)[] = [
+      ...Array.from({ length: leadingBlanks }, () => null),
+      ...targetedExportDays,
+    ];
+    while (cells.length % TARGETED_EXPORT_COLS !== 0) cells.push(null);
+    const weeks: (typeof targetedExportDays[number] | null)[][] = [];
+    for (let i = 0; i < cells.length; i += TARGETED_EXPORT_COLS) {
+      weeks.push(cells.slice(i, i + TARGETED_EXPORT_COLS));
+    }
+    return weeks;
+  }, [targetedExportDays]);
 
   useEffect(() => {
     if (didScrollRef.current) return;
@@ -111,26 +285,62 @@ export const GridView = () => {
   // download we render the PNG and show it in an in-app preview the user can
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
-    const table = tableRef.current;
     const container = scrollRef.current;
-    if (!table || !container) return;
+    if (!container) return;
+    const { start, end } = getExportDateRange();
+    if (!start || !end || start > end) {
+      toast.error('Choose a valid export date range.', { id: 'export' });
+      return;
+    }
+    if (!isTargetedDateExport && (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`))) {
+      toast.error(`Full selected year export uses the selected ${year} grid. Choose a targeted range for other dates.`, { id: 'export' });
+      return;
+    }
+    if (exportFilters.categoryMode === 'selected' && exportFilters.selectedCategoryIds.length === 0) {
+      toast.error('Select at least one tag/category, or switch back to all tags.', { id: 'export' });
+      return;
+    }
+    if (exportFilteredEvents.length === 0 && !isDefaultExportFilter) {
+      toast.error('No events match those image export filters.', { id: 'export' });
+      return;
+    }
+    if (isTargetedDateExport && exportDayCount > TARGETED_EXPORT_MAX_DAYS) {
+      toast.error(`Targeted image export supports up to ${TARGETED_EXPORT_MAX_DAYS} days. Use Full selected year for longer ranges.`, { id: 'export' });
+      return;
+    }
     setExporting(true);
-    toast.loading(`Generating ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
+    toast.loading('Creating grid image…', { id: 'export' });
 
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
     const prevH = container.style.height;
-    container.style.overflow = 'visible';
-    container.style.width  = table.scrollWidth + 'px';
-    container.style.height = table.scrollHeight + 'px';
+    const useTargetedLayout = isTargetedDateExport;
+
+    if (!useTargetedLayout) {
+      container.style.overflow = 'visible';
+    }
+
+    await new Promise(requestAnimationFrame);
+
+    const captureNode = useTargetedLayout ? targetedExportRef.current : tableRef.current;
+    if (!captureNode) {
+      toast.error('Export failed — try again', { id: 'export' });
+      setExporting(false);
+      return;
+    }
+
+    if (!useTargetedLayout) {
+      container.style.width  = captureNode.scrollWidth + 'px';
+      container.style.height = captureNode.scrollHeight + 'px';
+    }
 
     await new Promise(requestAnimationFrame);
 
     const opts = {
       pixelRatio: exportPixelRatio,
       backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
-      width: table.scrollWidth,
-      height: table.scrollHeight,
+      width: captureNode.scrollWidth,
+      height: captureNode.scrollHeight,
       cacheBust: true,
     };
 
@@ -138,10 +348,10 @@ export const GridView = () => {
       // Safari frequently renders a blank/partial image on the first pass
       // (fonts/styles not yet inlined). Rendering a few times fixes it.
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      let dataUrl = await toPng(table, opts);
+      let dataUrl = await toPng(captureNode, opts);
       if (isSafari) {
-        await toPng(table, opts);
-        dataUrl = await toPng(table, opts);
+        await toPng(captureNode, opts);
+        dataUrl = await toPng(captureNode, opts);
       }
 
       // Try the native share sheet first (best path on iOS — "Save Image").
@@ -171,7 +381,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio]);
+  }, [theme, exportFileName, exportPixelRatio, exportDayCount, exportFilteredEvents.length, exportFilters.categoryMode, exportFilters.selectedCategoryIds.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -253,44 +463,27 @@ export const GridView = () => {
 
         <div className="flex-1" />
 
-        {/* Mobile-friendly export controls */}
+        {/* Compact grid image export controls */}
         <div className="flex items-center gap-1">
-          <div className="hidden sm:flex items-center rounded-lg bg-muted p-0.5">
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => setExportPixelRatio(1)}
-              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 1 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
-            >
-              Fast
-            </button>
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => setExportPixelRatio(2)}
-              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 2 ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
-            >
-              Sharp
-            </button>
-          </div>
           <button
             onClick={handleExport}
             disabled={exporting}
             className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
             data-testid="button-export"
-            title="Export grid as PNG"
+            title="Create grid image"
           >
             <Image size={12} />
-            {exporting ? 'Working…' : `Export ${exportPixelRatio === 1 ? 'Fast' : 'Sharp'}`}
+            {exporting ? 'Working…' : 'Create Grid Image'}
           </button>
           <button
             type="button"
             disabled={exporting}
-            onClick={() => setExportPixelRatio(exportPixelRatio === 1 ? 2 : 1)}
-            className="sm:hidden px-2 py-1.5 rounded-lg text-[10px] font-bold bg-muted text-muted-foreground disabled:opacity-50"
-            title="Toggle export quality"
+            onClick={() => setExportOptionsOpen(open => !open)}
+            className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50 ${exportOptionsOpen ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
+            title="Choose image export range and filters"
+            data-testid="button-export-options"
           >
-            {exportPixelRatio === 1 ? 'Fast' : 'Sharp'}
+            Options
           </button>
         </div>
 
@@ -303,6 +496,100 @@ export const GridView = () => {
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
       </div>
+
+      {exportOptionsOpen && (
+        <div className="flex-none border-b border-border bg-card/95 px-3 py-3 space-y-3" data-testid="panel-export-options">
+          <div className="space-y-1">
+            <div className="text-xs font-bold text-foreground">Export Grid Image</div>
+            <div className="text-[11px] text-muted-foreground">Creates a readable grid image from the selected date range and filters. Notes are not included.</div>
+            <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Date range</div>
+              <div className="flex flex-wrap gap-1">
+                {[
+                  ['current', 'Full selected year'],
+                  ['next7', 'Next 7'],
+                  ['next14', 'Next 14'],
+                  ['next30', 'Next 30'],
+                  ['custom', 'Custom'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setDatePreset(id as ExportDatePreset)}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.datePreset === id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/70'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {exportFilters.datePreset === 'custom' && (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="date"
+                    value={exportFilters.customStart}
+                    onChange={e => setExportFilters(prev => ({ ...prev, customStart: e.target.value }))}
+                    className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                    data-testid="input-export-start"
+                  />
+                  <input
+                    type="date"
+                    value={exportFilters.customEnd}
+                    onChange={e => setExportFilters(prev => ({ ...prev, customEnd: e.target.value }))}
+                    className="h-8 rounded-md border border-border bg-background px-2 text-xs"
+                    data-testid="input-export-end"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tags / categories</div>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => setExportFilters(prev => ({ ...prev, categoryMode: 'all', selectedCategoryIds: [] }))}
+                  className={`rounded-full px-2 py-1 text-[10px] font-bold ${exportFilters.categoryMode === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+                >
+                  All
+                </button>
+                {categories.map(category => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => toggleExportCategory(category.id)}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.categoryMode === 'selected' && selectedCategorySet.has(category.id) ? 'text-white' : 'bg-muted text-muted-foreground'}`}
+                    style={exportFilters.categoryMode === 'selected' && selectedCategorySet.has(category.id) ? { backgroundColor: category.color } : undefined}
+                  >
+                    {category.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Project</div>
+              <select
+                value={exportFilters.projectId}
+                onChange={e => setExportFilters(prev => ({ ...prev, projectId: e.target.value }))}
+                className="h-8 w-full rounded-md border border-border bg-background px-2 text-xs"
+                data-testid="select-export-project"
+              >
+                <option value="all">All projects</option>
+                {sortedProjects.map(project => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Project focus includes events linked to tasks in that project.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Color legend (clickable focus toggles) ── */}
       <div className="flex-none px-3 py-1.5 flex items-center gap-2 border-b border-border bg-card/50 overflow-x-auto">
@@ -370,13 +657,14 @@ export const GridView = () => {
 
           <tbody>
             {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+              const isExpandedExport = exporting;
               const rowEventMax = MONTHS.reduce((max, _, mIdx) => {
                 const maxDay = getDaysForMonth(mIdx);
                 if (day > maxDay) return max;
                 const dateStr = `${year}-${String(mIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 return Math.max(max, gridData.get(dateStr)?.length ?? 0);
               }, 0);
-              const rowHeight = exporting ? Math.max(ROW_H, EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1)) : ROW_H;
+              const rowHeight = isExpandedExport ? Math.max(ROW_H, EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1)) : ROW_H;
               return (
               <tr key={day} style={{ height: rowHeight }}>
                 <td
@@ -409,8 +697,8 @@ export const GridView = () => {
                   const dow      = DOW_SHORT[dateObj.getDay()];
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                   const dayEvents = gridData.get(dateStr) ?? [];
-                  const visEvents = exporting ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
-                  const overflow  = exporting ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
+                  const visEvents = isExpandedExport ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
+                  const overflow  = isExpandedExport ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
 
                   let cellBg: string;
                   if (isToday) {
@@ -450,14 +738,14 @@ export const GridView = () => {
                         {dow}
                       </div>
 
-                      <div className={exporting ? 'flex flex-col gap-px' : 'flex flex-col gap-px overflow-hidden'}>
+                      <div className={isExpandedExport ? 'flex flex-col gap-px' : 'flex flex-col gap-px overflow-hidden'}>
                         {visEvents.map(evt => (
                           <div
                             key={evt.id}
                             className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity"
                             style={{
                               backgroundColor: evt.color,
-                              height: exporting ? EVENT_PILL_H : 10,
+                              height: isExpandedExport ? EVENT_PILL_H : 10,
                               opacity: dim(evt.category) ? 0.18 : 1,
                             }}
                             data-testid={`event-pill-${evt.id}`}
@@ -490,6 +778,95 @@ export const GridView = () => {
           </tbody>
         </table>
       </div>
+
+      {exporting && isTargetedDateExport && (
+        <div
+          ref={targetedExportRef}
+          className="fixed top-0 -left-[10000px] bg-background text-foreground"
+          style={{ width: 1120, padding: 28 }}
+          data-testid="targeted-export-grid"
+        >
+          <div className="mb-5 flex items-end justify-between gap-6 border-b border-border pb-4">
+            <div>
+              <div className="text-2xl font-extrabold tracking-tight">{activeCalendar?.name ?? 'LifeGrid'} grid image</div>
+              <div className="mt-1 text-sm font-semibold text-muted-foreground">{exportRange.start} → {exportRange.end} · {exportDayCount} day{exportDayCount === 1 ? '' : 's'}</div>
+            </div>
+            <div className="text-right text-xs font-semibold text-muted-foreground">
+              <div>{exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} selected tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`}</div>
+              <div>{exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project focus'}</div>
+            </div>
+          </div>
+
+          <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
+            <thead>
+              <tr>
+                {DOW_SHORT.map(day => (
+                  <th key={day} className="border-b border-r border-border bg-card px-2 py-2 text-left text-xs font-extrabold uppercase tracking-widest text-muted-foreground last:border-r-0">
+                    {day}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {targetedExportWeeks.map((week, weekIdx) => {
+                const weekMax = Math.max(0, ...week.map(day => day?.events.length ?? 0));
+                const expandedCellHeight = Math.max(124, 54 + weekMax * 20);
+                const cellHeight = expandedCellHeight;
+                return (
+                  <tr key={weekIdx}>
+                    {week.map((day, dayIdx) => {
+                      if (!day) {
+                        return (
+                          <td
+                            key={`blank-${weekIdx}-${dayIdx}`}
+                            className="border-b border-r border-border bg-muted/25 align-top last:border-r-0"
+                            style={{ height: cellHeight }}
+                          />
+                        );
+                      }
+                      const visibleEvents = day.events;
+                      const overflow = 0;
+                      return (
+                        <td
+                          key={day.date}
+                          className="border-b border-r border-border align-top last:border-r-0"
+                          style={{ height: cellHeight, padding: 8 }}
+                        >
+                          <div className="mb-2.5 flex items-baseline justify-between gap-2">
+                            <span className="text-sm font-extrabold text-foreground">{day.label}</span>
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">{day.weekday}</span>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {visibleEvents.map(evt => (
+                              <div
+                                key={evt.id}
+                                className="flex items-center gap-1.5 overflow-hidden rounded-md px-2 py-1.5 shadow-sm"
+                                style={{ backgroundColor: evt.color }}
+                              >
+                                {evt.startTime && (
+                                  <span className="shrink-0 tabular-nums text-white/80" style={{ fontSize: 11, lineHeight: 1.1 }}>
+                                    {evt.startTime}
+                                  </span>
+                                )}
+                                <span className="truncate font-bold text-white" style={{ fontSize: 11, lineHeight: 1.1 }}>
+                                  {evt.title}
+                                </span>
+                              </div>
+                            ))}
+                            {overflow > 0 && (
+                              <div className="px-1 text-[9px] font-bold text-muted-foreground">+{overflow} more</div>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Add-event FAB */}
       <button

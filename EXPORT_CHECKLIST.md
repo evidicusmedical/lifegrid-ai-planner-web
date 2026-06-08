@@ -4,6 +4,17 @@ Follow these steps in order. Each section is independent — you can do them on 
 
 ---
 
+## v0.4 export notes
+
+- JSON backup filenames now include calendar name, date, and time for easier sorting.
+- PNG grid export uses one **Create Grid Image** flow: choose date range, categories/tags, optional project, then create the image.
+- Full selected year preserves the existing year-grid PNG; Next 7/14/30 and Custom ranges render focused date-windowed grid images.
+- PNG exports include date/day labels, event time/title, and category color only. Notes, AI notes, source notes, internal IDs, and hidden metadata are not included.
+- Readable TXT export includes v0.4 planning metadata, but it is still **not restorable**; use JSON backup for restore.
+- Deferred: TXT/AI export using the same filters, true availability/privacy masking, editable presets, multi-calendar export, People/calendar intake, and full external calendar import.
+
+---
+
 ## Part 1 — Back up your calendar data (do this first)
 
 Your events, tasks, and people live in the browser, not in the code. A code export does NOT include them.
@@ -12,7 +23,7 @@ Your events, tasks, and people live in the browser, not in the code. A code expo
 - [ ] Tap the **Settings** tab (gear icon, bottom right)
 - [ ] Scroll to **Data & Backup**
 - [ ] Tap **Download JSON Backup**
-- [ ] Confirm a `.json` file was saved to your device
+- [ ] Confirm a `.json` file was saved to your device with a name like `lifegrid_json_backup_my-calendar_2026-06-08_1430.json`
 - [ ] Open the file and confirm it contains your events/tasks (it should be readable text)
 - [ ] Store the `.json` file somewhere safe (iCloud, Google Drive, email to yourself)
 
@@ -132,7 +143,7 @@ This folder is what you upload to Netlify, Vercel, Cloudflare Pages, or GitHub P
 - Run `pnpm --filter @workspace/lifegrid run typecheck`.
 - Run `pnpm --filter @workspace/lifegrid run build`.
 - Confirm grid cell sorting: no-time/all-day first, timed events by start time, category order as secondary sort.
-- Confirm PNG export disables controls, shows progress, and expands rows to include all events.
+- Confirm **Create Grid Image** supports Full selected year plus Next 7/14/30/custom ranges, category/tag filters, optional project focus, progress feedback, and expanded rows/cells without rendering notes or hidden metadata.
 - Confirm the AI Planner defaults to AI Admin Assistant / compact context mode for routine planning.
 - Confirm JSON patch mode prompts for minimal raw JSON with `completed_task_ids`, project/category assignments, and notes.
 - Confirm Settings separates restorable JSON backup from readable `.txt` and calendar-only `.ics` exports.

@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ---
 
+## v0.4.2 — Targeted Grid Image Export
+
+- Added a simplified one-flow **Create Grid Image** experience: choose a date range, categories/tags, optional project focus, then create the PNG.
+- Removed the non-editable export preset shortcut buttons (Full Grid, Share Schedule, Availability, Project Focus) to reduce duplicate controls and cognitive load.
+- Date-windowed PNG exports now focus on the selected range for Next 7, Next 14, Next 30, and Custom ranges; Full selected year preserves the existing year-grid export.
+- Grid image exports include date labels, day-of-week labels, event time/title, and category color only. Notes, AI notes, source notes, internal IDs, and hidden metadata are not included.
+- Export filters currently apply to PNG grid images only; TXT/AI export reuse of these filters, privacy/availability masking, editable presets, multi-calendar export, People/calendar intake, and full external calendar import remain deferred.
+
+---
+
+## v0.4 — June 2026
+
+### Final polish pass
+
+- Added an AI-ready planning model with first-class projects, task due-date classification, task triage status, event display priority, and project-aware AI patch v2 import/export.
+- Improved JSON backup download filenames to `lifegrid_json_backup_[calendar-name]_[YYYY-MM-DD]_[HHmm].json` with sanitized calendar names.
+- Simplified the Event sheet by removing user-facing per-event grid/export visibility toggles; `showInGrid` and `showInExport` remain normalized internal fields reserved for future filtering.
+- Restored intuitive export behavior: the normal grid no longer hides events by per-event flags, TXT/ICS exports include normal calendar/grid events, and PNG export expands rows during image creation.
+- Updated readable TXT export with project status/order/aliases, task due-date type, task triage status, and event display priority.
+- Deferred full export preset editing, privacy/availability masking, People/calendar import, and multi-calendar AI comparison/export to later releases.
+
+---
+
 ## v0.2 — June 2026
 
 ### Features Added (T001–T008)

@@ -78,15 +78,6 @@ export const GridView = () => {
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
   const [exportMode, setExportMode] = useState<'expanded' | 'visible'>('expanded');
-  const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
-  const [exportFilters, setExportFilters] = useState<GridExportFilters>(() => ({
-    datePreset: 'current',
-    customStart: toISODate(today),
-    customEnd: toISODate(today),
-    categoryMode: 'all',
-    selectedCategoryIds: [],
-    projectId: 'all',
-  }));
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -260,7 +251,7 @@ export const GridView = () => {
       return;
     }
     setExporting(true);
-    toast.loading(`Generating filtered ${exportMode === 'expanded' ? 'expanded' : 'visible'} grid image…`, { id: 'export' });
+    toast.loading(`Generating ${exportMode === 'expanded' ? 'expanded' : 'visible'} ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
@@ -316,7 +307,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio, exportMode, exportFilteredEvents.length, exportFilters.categoryMode, exportFilters.selectedCategoryIds.length, getExportDateRange, isDefaultExportFilter, year]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -446,17 +437,7 @@ export const GridView = () => {
             title="Export grid as PNG"
           >
             <Image size={12} />
-            {exporting ? 'Working…' : 'Create Image'}
-          </button>
-          <button
-            type="button"
-            disabled={exporting}
-            onClick={() => setExportOptionsOpen(open => !open)}
-            className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-colors disabled:opacity-50 ${exportOptionsOpen ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}
-            title="Choose image export range and filters"
-            data-testid="button-export-options"
-          >
-            Options
+            {exporting ? 'Working…' : `Export ${exportMode === 'expanded' ? 'Expanded' : 'Visible'}`}
           </button>
           <button
             type="button"

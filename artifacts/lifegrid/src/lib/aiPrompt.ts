@@ -1,5 +1,4 @@
 import { AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority, TaskDueDateType, TaskTriageStatus } from '../types';
-import { AppData, Event, Task, Category, EventDisplayPriority, TaskDueDateType, TaskTriageStatus } from '../types';
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextYear = () => new Date().getFullYear() + 1;
@@ -1022,6 +1021,44 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
   if ('triageStatus'   in u && VALID_TRIAGE_STATUS.has(u.triageStatus)) out.triageStatus = u.triageStatus;
   if ('parentTaskId'   in u) out.parentTaskId = u.parentTaskId ? String(u.parentTaskId) : null;
   if ('linkedEventIds' in u) out.linkedEventIds = normalizeIds(u.linkedEventIds ?? []);
+  return out;
+}
+
+const VALID_PROJECT_STATUS = new Set<ProjectStatus>(['active', 'paused', 'completed', 'archived']);
+
+function normalizeProjects(arr: any[]): Project[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(p => p && typeof p === 'object')
+    .map((p, i) => ({
+      id:      String(p.id ?? `imp-proj-${Date.now()}-${i}`),
+      name:    String(p.name ?? 'Untitled Project'),
+      color:   String(p.color ?? '#6b7280'),
+      order:   typeof p.order === 'number' ? p.order : i,
+      aliases: Array.isArray(p.aliases) ? p.aliases.map(String) : [],
+      status:  VALID_PROJECT_STATUS.has(p.status) ? p.status : 'active',
+      notes:   p.notes ?? null,
+    } as Project));
+}
+
+function warnSimilarProjectAdds(adds: Project[], existing: Project[], warnings: string[]): void {
+  const existingNames = existing.map(p => p.name.toLowerCase());
+  adds.forEach(p => {
+    const lower = p.name.toLowerCase();
+    if (existingNames.includes(lower)) {
+      warnings.push(`Project add may duplicate existing project: "${p.name}"`);
+    }
+  });
+}
+
+function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
+  const out: any = { id: String(u.id) };
+  if (u.name    !== undefined) out.name    = String(u.name);
+  if (u.color   !== undefined) out.color   = String(u.color);
+  if (u.order   !== undefined && typeof u.order === 'number') out.order = u.order;
+  if (u.aliases !== undefined && Array.isArray(u.aliases)) out.aliases = u.aliases.map(String);
+  if (u.status  !== undefined && VALID_PROJECT_STATUS.has(u.status)) out.status = u.status;
+  if ('notes'   in u) out.notes = u.notes ?? null;
   return out;
 }
 

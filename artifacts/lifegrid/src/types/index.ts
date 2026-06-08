@@ -1,5 +1,9 @@
 export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'blocked';
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
+export type TaskDueDateType = 'real-deadline' | 'target-date' | 'someday-backlog' | 'needs-clarification' | 'project-subtask';
+export type TaskTriageStatus = 'ready' | 'needs-review' | 'blocked' | 'waiting' | 'duplicate-candidate' | 'needs-scheduling' | 'scheduled' | 'backlog';
+export type EventDisplayPriority = 1 | 2 | 3 | 4 | 5;
 
 // Categories and people are now user-defined. These string aliases are kept
 // for readability — values reference a Category.id / Person.id.
@@ -29,6 +33,10 @@ export interface Project {
   id: string;
   name: string;
   color: string;
+  order: number;
+  aliases: string[];
+  status: ProjectStatus;
+  notes: string | null;
 }
 
 export interface Event {
@@ -40,6 +48,12 @@ export interface Event {
   endTime: string | null; // HH:MM
   color: string;
   notes: string | null;
+  displayPriority: EventDisplayPriority;
+  showInGrid: boolean;
+  showInExport: boolean;
+  linkedTaskIds: string[];
+  aiNotes: string | null;
+  sourceNotes: string | null;
   // Links recurring / multi-day siblings — all share the same group ID.
   recurringGroupId?: string;
 }
@@ -58,6 +72,10 @@ export interface Task {
   schedulingNotes?: string | null;
   // Optional parent project / major event.
   projectId?: string | null;
+  dueDateType: TaskDueDateType;
+  triageStatus: TaskTriageStatus;
+  parentTaskId: string | null;
+  linkedEventIds: string[];
   // Links recurring task siblings.
   recurringGroupId?: string;
 }
@@ -98,6 +116,11 @@ export interface Store {
 }
 
 export interface ImportUpdate {
+  projects?: {
+    add?: Project[];
+    update?: (Partial<Project> & { id: string })[];
+    delete?: string[];
+  };
   events?: {
     add?: Event[];
     update?: (Partial<Event> & { id: string })[];
@@ -107,5 +130,6 @@ export interface ImportUpdate {
     add?: Task[];
     update?: (Partial<Task> & { id: string })[];
     delete?: string[];
+    complete?: string[];
   };
 }

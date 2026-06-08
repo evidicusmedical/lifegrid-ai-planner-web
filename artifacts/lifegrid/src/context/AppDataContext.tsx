@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store } from '../types';
+import {
+  AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store,
+  EventDisplayPriority, ProjectStatus, TaskDueDateType, TaskTriageStatus,
+} from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
 
 interface AppContextType extends AppData {
@@ -72,21 +75,43 @@ const uid = () =>
     : `id-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 // ─── Ensure an AppData blob has all required collections ──────────────────────
+const PROJECT_STATUSES = new Set<ProjectStatus>(['active', 'paused', 'completed', 'archived']);
+const TASK_DUE_DATE_TYPES = new Set<TaskDueDateType>(['real-deadline', 'target-date', 'someday-backlog', 'needs-clarification', 'project-subtask']);
+const TASK_TRIAGE_STATUSES = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
+const EVENT_DISPLAY_PRIORITIES = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
+
+const stringArray = (value: any): string[] =>
+  Array.isArray(value)
+    ? [...new Set(value.filter(v => typeof v === 'string').map(v => v.trim()).filter(Boolean))]
+    : [];
+
+const normalizeProject = (p: any, index: number): Project => ({
+  id: String(p?.id ?? `proj-${Date.now()}-${index}`),
+  name: String(p?.name ?? 'Untitled Project'),
+  color: typeof p?.color === 'string' ? p.color : '#059669',
+  order: Number.isFinite(Number(p?.order)) ? Number(p.order) : index,
+  aliases: stringArray(p?.aliases),
+  status: PROJECT_STATUSES.has(p?.status) ? p.status : 'active',
+  notes: typeof p?.notes === 'string' && p.notes.trim() ? p.notes : null,
+});
+
 const normalizeAppData = (raw: any): AppData => {
+  const categories: Category[] = Array.isArray(raw?.categories) && raw.categories.length
+    ? raw.categories
+    : DEFAULT_CATEGORIES.map(c => ({ ...c }));
+
   const data: AppData = {
     events: Array.isArray(raw?.events) ? raw.events : [],
     tasks: Array.isArray(raw?.tasks) ? raw.tasks : [],
     personEvents: Array.isArray(raw?.personEvents) ? raw.personEvents : [],
-    categories: Array.isArray(raw?.categories) && raw.categories.length
-      ? raw.categories
-      : DEFAULT_CATEGORIES.map(c => ({ ...c })),
+    categories,
     // People may be intentionally empty — only fall back to defaults when the
     // field is entirely missing/invalid (fresh install / legacy migration).
     people: Array.isArray(raw?.people)
       ? raw.people
       : DEFAULT_PEOPLE.map(p => ({ ...p })),
     // Projects are optional — existing data migrates with empty list.
-    projects: Array.isArray(raw?.projects) ? raw.projects : [],
+    projects: Array.isArray(raw?.projects) ? raw.projects.map(normalizeProject) : [],
   };
   // Make sure every event/task category exists; fall back to "other".
   const catIds = new Set(data.categories.map(c => c.id));
@@ -94,13 +119,56 @@ const normalizeAppData = (raw: any): AppData => {
     data.categories.push({ id: 'other', label: 'Other', color: '#6b7280' });
     catIds.add('other');
   }
-  data.events = data.events.map(e => ({ ...e, category: catIds.has(e.category) ? e.category : 'other' }));
-  data.tasks = data.tasks.map(t => ({
-    ...t,
-    category: catIds.has(t.category) ? t.category : 'other',
-    schedulingNotes: t.schedulingNotes ?? null,
-    projectId: t.projectId ?? null,
-  }));
+  const eventIds = new Set(data.events.map(e => e.id).filter(Boolean));
+  const taskIds = new Set(data.tasks.map(t => t.id).filter(Boolean));
+  const projectIds = new Set(data.projects.map(p => p.id));
+
+  data.events = data.events.map(e => {
+    const startTime = e.startTime ?? null;
+    const rawPriority = Number(e.displayPriority);
+    const displayPriority = EVENT_DISPLAY_PRIORITIES.has(rawPriority as EventDisplayPriority)
+      ? rawPriority as EventDisplayPriority
+      : (startTime ? 2 : 4);
+    return {
+      ...e,
+      category: catIds.has(e.category) ? e.category : 'other',
+      startTime,
+      endTime: e.endTime ?? null,
+      notes: e.notes ?? null,
+      displayPriority,
+      showInGrid: typeof e.showInGrid === 'boolean' ? e.showInGrid : true,
+      showInExport: typeof e.showInExport === 'boolean' ? e.showInExport : true,
+      linkedTaskIds: stringArray(e.linkedTaskIds).filter(id => taskIds.has(id)),
+      aiNotes: typeof e.aiNotes === 'string' && e.aiNotes.trim() ? e.aiNotes : null,
+      sourceNotes: typeof e.sourceNotes === 'string' && e.sourceNotes.trim() ? e.sourceNotes : null,
+    };
+  });
+  data.tasks = data.tasks.map(t => {
+    const dueDate = t.dueDate ?? null;
+    const projectId = t.projectId && projectIds.has(t.projectId) ? t.projectId : null;
+    const dueDateType: TaskDueDateType = TASK_DUE_DATE_TYPES.has(t.dueDateType)
+      ? t.dueDateType
+      : (!dueDate ? 'someday-backlog' : projectId ? 'project-subtask' : 'target-date');
+    const triageStatus: TaskTriageStatus = TASK_TRIAGE_STATUSES.has(t.triageStatus)
+      ? t.triageStatus
+      : (t.status === 'blocked' ? 'blocked' : t.status === 'done' ? 'backlog' : dueDate ? 'ready' : 'backlog');
+    const parentTaskId = typeof t.parentTaskId === 'string' && t.parentTaskId !== t.id && taskIds.has(t.parentTaskId)
+      ? t.parentTaskId
+      : null;
+    return {
+      ...t,
+      category: catIds.has(t.category) ? t.category : 'other',
+      dueDate,
+      nextAction: t.nextAction ?? null,
+      notes: t.notes ?? null,
+      schedulingNotes: t.schedulingNotes ?? null,
+      projectId,
+      dueDateType,
+      triageStatus,
+      parentTaskId,
+      linkedEventIds: stringArray(t.linkedEventIds).filter(id => eventIds.has(id)),
+    };
+  });
   // Make sure every person-event person exists.
   const personIds = new Set(data.people.map(p => p.id));
   data.personEvents = data.personEvents.map(pe => ({
@@ -334,12 +402,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const explicitColor = typeof up?.color === 'string' && up.color.trim();
       return { ...merged, category, color: explicitColor ? up.color : catColor(category) };
     };
-    const sanitizeTask = (merged: Task): Task => ({
+    const sanitizeTask = (merged: Task, projectIds: Set<string>): Task => ({
       ...merged,
       category: catIds.has(merged.category) ? merged.category : 'other',
+      projectId: merged.projectId && projectIds.has(merged.projectId) ? merged.projectId : null,
     });
 
-    const next = { ...d };
+    const next: AppData = {
+      ...d,
+      projects: [...d.projects],
+      events: [...d.events],
+      tasks: [...d.tasks],
+    };
+
+    // Apply project operations first so task projectId values can be sanitized
+    // against the final project set. Deleting a project keeps tasks and detaches
+    // them, matching manual project deletion behavior.
+    if (update.projects) {
+      if (Array.isArray(update.projects.add)) next.projects = [...next.projects, ...update.projects.add];
+      if (Array.isArray(update.projects.update)) {
+        next.projects = next.projects.map(p => {
+          const up = update.projects.update.find((u: any) => u.id === p.id);
+          return up ? { ...p, ...up } : p;
+        });
+      }
+      if (Array.isArray(update.projects.delete)) {
+        const deletedIds = new Set(update.projects.delete);
+        next.projects = next.projects.filter(p => !deletedIds.has(p.id));
+        next.tasks = next.tasks.map(t => t.projectId && deletedIds.has(t.projectId) ? { ...t, projectId: null } : t);
+      }
+    }
+
+    const projectIds = new Set(next.projects.map(p => p.id));
+
     if (update.events) {
       if (Array.isArray(update.events.add)) next.events = [...next.events, ...update.events.add];
       if (Array.isArray(update.events.update)) {
@@ -353,11 +448,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     if (update.tasks) {
-      if (Array.isArray(update.tasks.add)) next.tasks = [...next.tasks, ...update.tasks.add];
+      if (Array.isArray(update.tasks.add)) {
+        next.tasks = [...next.tasks, ...update.tasks.add.map((t: Task) => sanitizeTask(t, projectIds))];
+      }
       if (Array.isArray(update.tasks.update)) {
         next.tasks = next.tasks.map(t => {
           const up = update.tasks.update.find((u: any) => u.id === t.id);
-          return up ? sanitizeTask({ ...t, ...up }) : t;
+          return up ? sanitizeTask({ ...t, ...up }, projectIds) : t;
         });
       }
       if (Array.isArray(update.tasks.delete)) {

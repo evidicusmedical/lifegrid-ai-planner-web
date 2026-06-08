@@ -15,12 +15,12 @@ LifeGrid is a personal life-planning calendar app designed to run entirely insid
 - Horizontal scrolling yearly grid showing events colour-coded by category
 - Five main tabs: Grid, Tasks, People, AI, Settings
 - Events with optional times, multi-day ranges, recurring series
-- Task tracker with status, priority, due date, owner, next action, and scheduling notes (these notes export to AI so it understands constraints)
+- Task tracker with status, priority, due date, owner, next action, due-date classification, triage status, and scheduling notes (these notes export to AI so it understands constraints)
 - People / family-member schedules shown as separate rows on the grid
 - AI export: generates a structured plain-text summary of your calendar for a chosen date range, which you copy/paste into ChatGPT or Claude — multiple prompt styles available
-- AI import: paste back the AI's JSON reply to bulk-add/update events and tasks
+- AI import: paste back the AI's JSON reply to bulk-add/update projects, events, and tasks using the project-aware LifeGrid patch v2 schema
 - Calendar versioning — create named "versions" so you can compare before/after an AI import
-- Settings: manage custom categories (colour + label), people, calendar versions, JSON backup/restore, and theme toggle (light/dark)
+- Settings: manage custom categories (colour + label), people, calendar versions, JSON backup/restore with timestamped `lifegrid_json_backup_[calendar-name]_[YYYY-MM-DD]_[HHmm].json` filenames, and theme toggle (light/dark)
 - PNG export of the grid view
 - Recurring events/tasks (daily, weekly, bi-weekly, monthly) and multi-day events — all linked so you can delete the whole series at once
 
@@ -30,6 +30,15 @@ LifeGrid is a personal life-planning calendar app designed to run entirely insid
 - **PWA with offline support** — a Workbox service worker precaches all assets on first visit. After that, the app loads fully offline. Install it to your home screen on iOS/Android for a native-app feel (see Settings → Install & use offline)
 - The AI features require you to manually copy/paste prompts to and from an external AI — there is no direct API connection to ChatGPT or Claude
 - No push notifications or reminders
+
+---
+
+## v0.4 final notes
+
+- LifeGrid now has an AI-ready planning model: projects are first-class objects, tasks include due-date type and triage status, and events include display priority plus internal visibility metadata.
+- The AI Planner supports project-aware patch v2 imports/exports while preserving older AI patch compatibility.
+- The Event sheet intentionally does **not** expose per-event `showInGrid` / `showInExport` controls in v0.4; those fields are reserved internally for future Export Studio filtering.
+- Export filtering/presets, People/calendar import, and multi-calendar AI comparison/export are deferred to v0.4.1/v0.5.
 
 ---
 

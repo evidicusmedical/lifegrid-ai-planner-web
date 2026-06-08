@@ -116,6 +116,11 @@ export interface Store {
 }
 
 export interface ImportUpdate {
+  projects?: {
+    add?: Project[];
+    update?: (Partial<Project> & { id: string })[];
+    delete?: string[];
+  };
   events?: {
     add?: Event[];
     update?: (Partial<Event> & { id: string })[];
@@ -125,5 +130,6 @@ export interface ImportUpdate {
     add?: Task[];
     update?: (Partial<Task> & { id: string })[];
     delete?: string[];
+    complete?: string[];
   };
 }

@@ -1,3 +1,4 @@
+import { AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority, TaskDueDateType, TaskTriageStatus } from '../types';
 import { AppData, Event, Task, Category, EventDisplayPriority, TaskDueDateType, TaskTriageStatus } from '../types';
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -18,25 +19,91 @@ const catColorMap = (categories: Category[]): Record<string, string> => {
 const encodeCategoryOrder = (data: AppData): string =>
   data.categories.map((c, i) => `  ${i + 1}. ${c.id} (${c.label}, ${c.color})`).join('\n') || '  (none)';
 
+const projectExportObjects = (data: AppData) =>
+  data.projects
+    .slice()
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name))
+    .map(p => {
+      const linked = data.tasks.filter(t => t.projectId === p.id);
+      return {
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        order: p.order ?? 0,
+        aliases: p.aliases ?? [],
+        status: p.status ?? 'active',
+        notes: p.notes ?? null,
+        taskCount: linked.length,
+        completedTaskCount: linked.filter(t => t.status === 'done').length,
+      };
+    });
+
 const encodeProjects = (data: AppData): string => {
-  if (data.projects.length === 0) return '  (none)';
-  return data.projects.map(p => {
-    const linked = data.tasks.filter(t => t.projectId === p.id);
-    const done = linked.filter(t => t.status === 'done').length;
-    return `  ${p.id}  ${p.name}  color:${p.color}  tasks:${done}/${linked.length} done`;
-  }).join('\n');
+  const projects = projectExportObjects(data);
+  if (projects.length === 0) return '  (none)';
+  return JSON.stringify(projects, null, 2);
 };
+
+const aiReviewInstructions = (): string => `
+AI REVIEW INSTRUCTIONS
+- Role: LifeGrid Admin Assistant.
+- Preserve existing commitments unless explicitly asked to change them.
+- Flag ambiguity in notes or warnings instead of guessing.
+- Only output changed, new, or deleted items; do not return the full unchanged dataset.
+- Do not delete items without stable IDs.
+- Respect dueDateType: real-deadline tasks are fixed unless I explicitly approve a move; target-date tasks are movable if overloaded; someday-backlog tasks are parkable; needs-clarification tasks require user review; project-subtask tasks belong under their larger workstream.
+- Treat tags/categories as one shared classification system.
+- Use project IDs when known. If project matching by name or alias is uncertain, add a warning instead of guessing.`;
+
+const eventExportObject = (e: Event) => ({
+  id: e.id,
+  date: e.date,
+  title: e.title,
+  category: e.category,
+  tag: e.category,
+  startTime: e.startTime ?? null,
+  endTime: e.endTime ?? null,
+  color: e.color,
+  notes: e.notes ?? null,
+  displayPriority: e.displayPriority ?? (e.startTime ? 2 : 4),
+  showInGrid: e.showInGrid !== false,
+  showInExport: e.showInExport !== false,
+  linkedTaskIds: e.linkedTaskIds ?? [],
+  aiNotes: e.aiNotes ?? null,
+  sourceNotes: e.sourceNotes ?? null,
+});
+
+const taskExportObject = (t: Task) => ({
+  id: t.id,
+  name: t.name,
+  category: t.category,
+  tag: t.category,
+  dueDate: t.dueDate ?? null,
+  dueDateType: t.dueDateType,
+  triageStatus: t.triageStatus,
+  status: t.status,
+  owner: t.owner,
+  priority: t.priority,
+  projectId: t.projectId ?? null,
+  parentTaskId: t.parentTaskId ?? null,
+  linkedEventIds: t.linkedEventIds ?? [],
+  nextAction: t.nextAction ?? null,
+  notes: t.notes ?? null,
+  schedulingNotes: t.schedulingNotes ?? null,
+});
 
 const adminAssistantIntro = (data: AppData, requestLabel: string, includeProjectsTags = true): string => `You are acting as my LifeGrid Admin Assistant. LifeGrid is a local-first personal planning app. I am pasting structured context exported from the app.
 
 You can help me plan, analyze, prioritize, coordinate, draft messages, and prepare calendar/task changes. Work conversationally: acknowledge that you received the context, ask clarifying questions as needed, preserve existing commitments, and help me think through decisions before proposing changes. When I say "Output the final LifeGrid raw JSON patch only," produce raw JSON without markdown fences or explanation, including only changed/new/deleted items rather than the unchanged full dataset. Flag ambiguity in notes instead of guessing.
+
+${aiReviewInstructions()}
 
 First, briefly acknowledge that you received the LifeGrid context. Then help with this request: ${requestLabel}. If I have not asked for a specific analysis yet, wait for my next instruction after acknowledging.
 ${includeProjectsTags ? `
 CATEGORY / TAG ORDER (shared IDs; preserve this saved order when possible)
 ${encodeCategoryOrder(data)}
 
-PROJECT STRUCTURE
+PROJECTS — first-class LifeGrid project objects
 ${encodeProjects(data)}
 ` : ''}`;
 
@@ -47,11 +114,21 @@ const schemaReference = (categories: Category[]): string => {
   const colorLines = categories.map(c => `${c.id}=${c.color}`).join('  ');
   const firstCat = ids[0] ?? 'other';
   return `
+${aiReviewInstructions()}
+
 ==================================================
-OUTPUT FORMAT — return ONLY this JSON, nothing else
+OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON, nothing else
 ==================================================
 
 {
+  "lifegridPatchVersion": 2,
+  "notes": [],
+  "warnings": [],
+  "projects": {
+    "add": [],
+    "update": [],
+    "delete": []
+  },
   "events": {
     "add": [
       {
@@ -59,10 +136,17 @@ OUTPUT FORMAT — return ONLY this JSON, nothing else
         "date": "YYYY-MM-DD",
         "title": "Short event name",
         "category": "${firstCat}",
+        "tag": "${firstCat}",
         "startTime": "09:00",
         "endTime": "10:00",
         "color": "${categories[0]?.color ?? '#6b7280'}",
-        "notes": null
+        "notes": null,
+        "displayPriority": 2,
+        "showInGrid": true,
+        "showInExport": true,
+        "linkedTaskIds": [],
+        "aiNotes": null,
+        "sourceNotes": null
       }
     ],
     "update": [],
@@ -74,44 +158,51 @@ OUTPUT FORMAT — return ONLY this JSON, nothing else
         "id": "task-001",
         "name": "Task name",
         "category": "${firstCat}",
+        "tag": "${firstCat}",
         "dueDate": "YYYY-MM-DD",
+        "dueDateType": "target-date",
+        "triageStatus": "ready",
         "status": "todo",
         "owner": "Me",
+        "priority": "medium",
+        "projectId": null,
+        "parentTaskId": null,
+        "linkedEventIds": [],
         "nextAction": "First step",
         "notes": null,
-        "schedulingNotes": null,
-        "priority": "medium",
-        "projectId": null
+        "schedulingNotes": null
       }
     ],
     "update": [],
-    "delete": []
+    "delete": [],
+    "complete": []
   }
 }
 
 FIELD RULES — follow exactly:
   date / dueDate : YYYY-MM-DD only (today is ${today()})
-  category       : ${catUnion}
+  category/tag   : ${catUnion}
   startTime      : "HH:MM" 24-hour, or null
   endTime        : "HH:MM" 24-hour, or null
-  status         : "todo" | "in-progress" | "done" | "blocked"
+  task status    : "todo" | "in-progress" | "done" | "blocked"
   priority       : "low" | "medium" | "high" | "urgent"
-  color          : hex that matches category — ${colorLines}
-  owner          : "Me" (default) or another person's name
-  schedulingNotes: optional constraints/dependencies text, or null
-  projectId      : optional project id from PROJECT STRUCTURE, or null
+  dueDateType    : "real-deadline" | "target-date" | "someday-backlog" | "needs-clarification" | "project-subtask"
+  triageStatus   : "ready" | "needs-review" | "blocked" | "waiting" | "duplicate-candidate" | "needs-scheduling" | "scheduled" | "backlog"
+  project status : "active" | "paused" | "completed" | "archived"
+  color          : hex that matches category when possible — ${colorLines}
+  projectId      : optional project id from PROJECTS, or null
 
 EXTRA RULES:
   - Use ONLY the category ids listed above. If nothing fits, use "other".
-  - To EDIT an existing event/task, put its exact "id" in the "update" array with only the changed fields.
-  - To REMOVE an existing event/task, put its exact "id" string in the "delete" array.
-  - Omit "update" and "delete" arrays if you have no entries for them
-  - If a year is missing from a date, use ${new Date().getFullYear()} (or ${nextYear()} if the date has already passed)
-  - Multi-day events: one entry per calendar day
-  - Recurring events: expand each occurrence individually for the next 3 months
-  - If no tasks are present in the source, omit the "tasks" key entirely
-  - Do NOT wrap the JSON in markdown code fences
-  - Do NOT include any text before or after the JSON
+  - To EDIT an existing project/event/task, put its exact "id" in the update array with only changed fields.
+  - To REMOVE an existing project/event/task, put its exact "id" string in the delete array.
+  - To complete tasks, prefer tasks.complete with stable task IDs.
+  - Omit arrays or leave them empty if there are no entries.
+  - If a year is missing from a date, use ${new Date().getFullYear()} (or ${nextYear()} if the date has already passed).
+  - Multi-day events: one entry per calendar day.
+  - Recurring events: expand each occurrence individually for the next 3 months.
+  - Do NOT wrap the JSON in markdown code fences.
+  - Do NOT include any text before or after the JSON.
 ==================================================
 `;
 };
@@ -120,35 +211,57 @@ const patchSchemaReference = (categories: Category[]): string => {
   const ids = categories.map(c => c.id);
   const catUnion = ids.map(i => `"${i}"`).join(' | ') || '"other"';
   return `
+${aiReviewInstructions()}
+
 ==================================================
-OUTPUT FORMAT — return ONLY this minimal JSON patch
+OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON
 ==================================================
 
 {
-  "new_events": [],
-  "updated_events": [
-    { "id": "existing-event-id", "date": "YYYY-MM-DD", "startTime": "09:00", "endTime": "10:00", "notes": "only changed fields" }
-  ],
-  "deleted_event_ids": [],
-  "new_tasks": [
-    { "id": "task-001", "name": "Task name", "category": "category-or-tag-id", "priority": "medium", "projectId": null }
-  ],
-  "updated_tasks": [
-    { "id": "existing-task-id", "category": "category-or-tag-id", "priority": "high", "projectId": "optional-project-id", "nextAction": "only changed fields" }
-  ],
-  "completed_task_ids": [],
-  "deleted_task_ids": [],
-  "notes": []
+  "lifegridPatchVersion": 2,
+  "notes": [],
+  "warnings": [],
+  "projects": {
+    "add": [],
+    "update": [],
+    "delete": []
+  },
+  "events": {
+    "add": [],
+    "update": [],
+    "delete": []
+  },
+  "tasks": {
+    "add": [],
+    "update": [],
+    "delete": [],
+    "complete": []
+  }
 }
+
+PROJECT FIELDS:
+  id, name, color, order, aliases, status ("active" | "paused" | "completed" | "archived"), notes
+
+EVENT FIELDS:
+  id, date, title, category/tag, startTime, endTime, color, notes,
+  displayPriority (1-5), showInGrid, showInExport, linkedTaskIds, aiNotes, sourceNotes
+
+TASK FIELDS:
+  id, name, category/tag, dueDate, dueDateType, triageStatus, status, owner, priority,
+  projectId, parentTaskId, linkedEventIds, nextAction, notes, schedulingNotes
 
 RULES:
   - Return raw JSON only. No markdown fences and no explanation.
-  - Do not repeat unchanged events or tasks.
-  - For simple task completion, use completed_task_ids instead of updated_tasks.
+  - Do not repeat unchanged projects, events, or tasks.
   - Category/tag must be one of: ${catUnion}. Tags and categories are the same LifeGrid classification system. Use "other" if needed.
-  - Include category/tag and projectId when assigning or changing work. Use projectId for known projects; otherwise use null or omit it.
-  - Ask/converse first if needed. When I say "Output the final LifeGrid raw JSON patch only," return this raw JSON object only.
-  - If something is ambiguous, add a short string to notes instead of guessing.
+  - For simple task completion, put stable task IDs in tasks.complete.
+  - Use exact stable IDs for update/delete. Do not delete items without stable IDs.
+  - Use project IDs when known. If matching by project name or alias is uncertain, add a warning instead of guessing.
+  - Do not move real-deadline tasks unless I explicitly approved the move.
+  - If something is ambiguous, add a short string to warnings or notes instead of guessing.
+
+Backward compatibility accepted by LifeGrid, but prefer patch v2:
+  new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, notes
 ==================================================
 `;
 };
@@ -549,6 +662,11 @@ ${schemaReference(data.categories)}`;
 
 // ─── Robust parser ────────────────────────────────────────────────────────────
 export interface ParsedUpdate {
+  projects?: {
+    add:    Project[];
+    update: Array<{ id: string } & Partial<Project>>;
+    delete: string[];
+  };
   events?: {
     add:    Event[];
     update: Array<{ id: string } & Partial<Event>>;
@@ -592,7 +710,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     .replace(/```\s*/g, '')
     .trim();
 
-  const dataKeyMatch = s.match(/\{\s*"(?:events|tasks|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
+  const dataKeyMatch = s.match(/\{\s*"(?:lifegridPatchVersion|projects|events|tasks|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
   if (start < 0) {
@@ -645,15 +763,19 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   // Build ID sets for unknown-ID warnings
   const existingEventIds = new Set(existingData?.events.map(e => e.id) ?? []);
   const existingTaskIds  = new Set(existingData?.tasks.map(t => t.id) ?? []);
+  const existingProjectIds = new Set(existingData?.projects.map(p => p.id) ?? []);
   const warnings: string[] = [];
+  if (Array.isArray(parsed.warnings)) warnings.push(...parsed.warnings.filter((w: any) => typeof w === 'string'));
+
 
   const result: ParsedUpdate = {};
+  if (Array.isArray(parsed.notes)) result.patchNotes = parsed.notes.filter((n: any) => typeof n === 'string');
 
   // Accept the v0.3.1 minimal patch shape and translate it into the
   // existing importer shape so applyImportUpdate remains backwards-compatible.
   const hasPatchKeys = [
     'new_events', 'updated_events', 'deleted_event_ids',
-    'new_tasks', 'updated_tasks', 'completed_task_ids', 'deleted_task_ids', 'notes',
+    'new_tasks', 'updated_tasks', 'completed_task_ids', 'deleted_task_ids',
   ].some(key => key in parsed);
   if (hasPatchKeys) {
     const completedTaskIds = normalizeIds(parsed.completed_task_ids ?? []);
@@ -672,9 +794,45 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
         delete: parsed.deleted_task_ids ?? [],
       },
       notes: parsed.notes,
+      warnings: parsed.warnings,
     };
     result.completedTaskIds = completedTaskIds;
     if (Array.isArray(parsed.notes)) result.patchNotes = parsed.notes.filter((n: any) => typeof n === 'string');
+  }
+
+  // Accept canonical v2 tasks.complete as a completion shortcut.
+  const canonicalCompletedTaskIds = normalizeIds(parsed.tasks?.complete ?? []);
+  if (canonicalCompletedTaskIds.length > 0) {
+    parsed.tasks = {
+      ...(parsed.tasks ?? {}),
+      update: [
+        ...(Array.isArray(parsed.tasks?.update) ? parsed.tasks.update : []),
+        ...canonicalCompletedTaskIds.map(id => ({ id, status: 'done' })),
+      ],
+    };
+    result.completedTaskIds = [...new Set([...(result.completedTaskIds ?? []), ...canonicalCompletedTaskIds])];
+  }
+
+  if (parsed.projects) {
+    const updateArr = Array.isArray(parsed.projects.update) ? parsed.projects.update : [];
+    const deleteArr = normalizeIds(parsed.projects.delete ?? []);
+    if (existingData) {
+      updateArr.forEach((u: any) => {
+        if (u?.id && !existingProjectIds.has(u.id)) warnings.push(`Project update ID not found: "${u.id}"`);
+      });
+      deleteArr.forEach((id: string) => {
+        if (!existingProjectIds.has(id)) warnings.push(`Project delete ID not found: "${id}"`);
+      });
+    }
+    const projectAdds = normalizeProjects(parsed.projects.add ?? []);
+    warnSimilarProjectAdds(projectAdds, existingData?.projects ?? [], warnings);
+    result.projects = {
+      add: projectAdds,
+      update: updateArr
+        .filter((u: any) => u && typeof u.id === 'string')
+        .map((u: any) => normalizeProjectUpdate(u)),
+      delete: deleteArr,
+    };
   }
 
   if (parsed.events) {
@@ -716,22 +874,38 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
         }
       });
     }
+    const projectIdsAfterAdds = new Set([...existingProjectIds, ...((result.projects?.add ?? []).map(p => p.id))]);
+    const taskAdds = normalizeTasks(parsed.tasks.add ?? [], validCats);
+    const taskUpdates = updateArr
+      .filter((u: any) => u && typeof u.id === 'string')
+      .map((u: any) => normalizeTaskUpdate(u, validCats));
+
+    taskAdds.forEach(t => {
+      if (t.projectId && !projectIdsAfterAdds.has(t.projectId)) warnings.push(`Task add references unknown projectId "${t.projectId}" for "${t.name}"`);
+    });
+    taskUpdates.forEach((u: { id: string } & Partial<Task>) => {
+      if (u.projectId && !projectIdsAfterAdds.has(u.projectId)) warnings.push(`Task update references unknown projectId "${u.projectId}" for task "${u.id}"`);
+      const existing = existingData?.tasks.find(t => t.id === u.id);
+      if (existing?.dueDateType === 'real-deadline' && u.dueDate !== undefined && u.dueDate !== existing.dueDate) {
+        warnings.push(`Real-deadline task "${existing.name}" (${existing.id}) dueDate change requested from ${existing.dueDate ?? 'none'} to ${u.dueDate ?? 'none'} — review before applying.`);
+      }
+    });
+
     result.tasks = {
-      add:    normalizeTasks(parsed.tasks.add ?? [], validCats),
-      update: updateArr
-        .filter((u: any) => u && typeof u.id === 'string')
-        .map((u: any) => normalizeTaskUpdate(u, validCats)),
+      add:    taskAdds,
+      update: taskUpdates,
       delete: deleteArr,
     };
   }
 
   const totalChanges =
+    (result.projects?.add.length ?? 0) + (result.projects?.update.length ?? 0) + (result.projects?.delete.length ?? 0) +
     (result.events?.add.length ?? 0) + (result.events?.update.length ?? 0) + (result.events?.delete.length ?? 0) +
     (result.tasks?.add.length ?? 0) + (result.tasks?.update.length ?? 0) + (result.tasks?.delete.length ?? 0);
 
-  if (totalChanges === 0 && !result.events && !result.tasks) {
+  if (totalChanges === 0 && !result.projects && !result.events && !result.tasks) {
     throw new Error(
-      'The JSON doesn\'t contain "events" or "tasks" keys.\n' +
+      'The JSON doesn\'t contain "projects", "events", or "tasks" keys.\n' +
       'Make sure you used the exact prompt from this app and pasted the complete AI response.'
     );
   }

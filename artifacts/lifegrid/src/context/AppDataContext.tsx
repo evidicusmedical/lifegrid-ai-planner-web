@@ -402,12 +402,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const explicitColor = typeof up?.color === 'string' && up.color.trim();
       return { ...merged, category, color: explicitColor ? up.color : catColor(category) };
     };
-    const sanitizeTask = (merged: Task): Task => ({
+    const sanitizeTask = (merged: Task, projectIds: Set<string>): Task => ({
       ...merged,
       category: catIds.has(merged.category) ? merged.category : 'other',
+      projectId: merged.projectId && projectIds.has(merged.projectId) ? merged.projectId : null,
     });
 
-    const next = { ...d };
+    const next: AppData = {
+      ...d,
+      projects: [...d.projects],
+      events: [...d.events],
+      tasks: [...d.tasks],
+    };
+
+    // Apply project operations first so task projectId values can be sanitized
+    // against the final project set. Deleting a project keeps tasks and detaches
+    // them, matching manual project deletion behavior.
+    if (update.projects) {
+      if (Array.isArray(update.projects.add)) next.projects = [...next.projects, ...update.projects.add];
+      if (Array.isArray(update.projects.update)) {
+        next.projects = next.projects.map(p => {
+          const up = update.projects.update.find((u: any) => u.id === p.id);
+          return up ? { ...p, ...up } : p;
+        });
+      }
+      if (Array.isArray(update.projects.delete)) {
+        const deletedIds = new Set(update.projects.delete);
+        next.projects = next.projects.filter(p => !deletedIds.has(p.id));
+        next.tasks = next.tasks.map(t => t.projectId && deletedIds.has(t.projectId) ? { ...t, projectId: null } : t);
+      }
+    }
+
+    const projectIds = new Set(next.projects.map(p => p.id));
+
     if (update.events) {
       if (Array.isArray(update.events.add)) next.events = [...next.events, ...update.events.add];
       if (Array.isArray(update.events.update)) {
@@ -421,11 +448,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     }
     if (update.tasks) {
-      if (Array.isArray(update.tasks.add)) next.tasks = [...next.tasks, ...update.tasks.add];
+      if (Array.isArray(update.tasks.add)) {
+        next.tasks = [...next.tasks, ...update.tasks.add.map((t: Task) => sanitizeTask(t, projectIds))];
+      }
       if (Array.isArray(update.tasks.update)) {
         next.tasks = next.tasks.map(t => {
           const up = update.tasks.update.find((u: any) => u.id === t.id);
-          return up ? sanitizeTask({ ...t, ...up }) : t;
+          return up ? sanitizeTask({ ...t, ...up }, projectIds) : t;
         });
       }
       if (Array.isArray(update.tasks.delete)) {

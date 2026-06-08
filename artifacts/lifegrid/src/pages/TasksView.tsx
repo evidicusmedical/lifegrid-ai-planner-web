@@ -140,6 +140,26 @@ const STATUS_BADGE_CLASS: Record<Task['status'], string> = {
   done: 'bg-green-500/10 text-green-700 dark:text-green-400',
 };
 
+
+const DUE_DATE_TYPE_LABELS: Record<string, string> = {
+  'real-deadline': 'Real deadline',
+  'target-date': 'Target date',
+  'someday-backlog': 'Someday',
+  'needs-clarification': 'Clarify date',
+  'project-subtask': 'Project subtask',
+};
+
+const TRIAGE_STATUS_LABELS: Record<string, string> = {
+  ready: 'Ready',
+  'needs-review': 'Needs review',
+  blocked: 'Blocked',
+  waiting: 'Waiting',
+  'duplicate-candidate': 'Possible duplicate',
+  'needs-scheduling': 'Needs scheduling',
+  scheduled: 'Scheduled',
+  backlog: 'Backlog',
+};
+
 const PriorityIcon = ({ priority }: { priority: TaskPriority }) => {
   switch (priority) {
     case 'urgent': return <AlertTriangle size={14} className="text-red-500" />;
@@ -417,6 +437,21 @@ export const TasksView = () => {
                       {task.schedulingNotes && (
                         <span className="flex items-center gap-1 text-[10px] text-primary/80 font-semibold">
                           <Link2 size={11} /> constraints
+                        </span>
+                      )}
+                      {task.dueDateType && task.dueDateType !== 'target-date' && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                          {DUE_DATE_TYPE_LABELS[task.dueDateType] ?? task.dueDateType}
+                        </span>
+                      )}
+                      {task.triageStatus && task.triageStatus !== 'ready' && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300">
+                          {TRIAGE_STATUS_LABELS[task.triageStatus] ?? task.triageStatus}
+                        </span>
+                      )}
+                      {task.linkedEventIds?.length > 0 && (
+                        <span className="flex items-center gap-1 text-[10px] text-primary/80 font-semibold">
+                          <Link2 size={11} /> {task.linkedEventIds.length} event{task.linkedEventIds.length !== 1 ? 's' : ''}
                         </span>
                       )}
                     </div>

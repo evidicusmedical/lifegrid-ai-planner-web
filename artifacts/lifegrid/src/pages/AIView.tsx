@@ -195,9 +195,9 @@ export const AIView = () => {
     }
     try {
       appData.applyImportUpdate(preview, applyAsVersion ? { newVersionName: versionName.trim() } : undefined);
-      const add = (preview.events?.add.length ?? 0) + (preview.tasks?.add.length ?? 0);
-      const upd = (preview.events?.update.length ?? 0) + (preview.tasks?.update.length ?? 0);
-      const del = (preview.events?.delete.length ?? 0) + (preview.tasks?.delete.length ?? 0);
+      const add = (preview.projects?.add.length ?? 0) + (preview.events?.add.length ?? 0) + (preview.tasks?.add.length ?? 0);
+      const upd = (preview.projects?.update.length ?? 0) + (preview.events?.update.length ?? 0) + (preview.tasks?.update.length ?? 0);
+      const del = (preview.projects?.delete.length ?? 0) + (preview.events?.delete.length ?? 0) + (preview.tasks?.delete.length ?? 0);
       toast.success(applyAsVersion ? `New version "${versionName.trim()}" created!` : 'Schedule updated!', {
         description: [add && `+${add} added`, upd && `~${upd} updated`, del && `−${del} removed`].filter(Boolean).join('  '),
       });
@@ -726,6 +726,9 @@ function FormatHints() {
 function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
   preview: ParsedUpdate; onApply: () => void; onCancel: () => void; applyLabel?: string;
 }) {
+  const prjAdd = preview.projects?.add ?? [];
+  const prjUpdate = preview.projects?.update ?? [];
+  const prjDelete = preview.projects?.delete ?? [];
   const evtAdd = preview.events?.add ?? [];
   const evtUpdate = preview.events?.update ?? [];
   const evtDelete = preview.events?.delete ?? [];
@@ -734,15 +737,16 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
   const tskDelete = preview.tasks?.delete ?? [];
   const completed = preview.completedTaskIds ?? [];
   const notes = preview.patchNotes ?? [];
-  const total = evtAdd.length + evtUpdate.length + evtDelete.length +
+  const total = prjAdd.length + prjUpdate.length + prjDelete.length +
+    evtAdd.length + evtUpdate.length + evtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
   const warnings = preview.warnings ?? [];
 
   const summaryParts = [
-    (evtAdd.length + tskAdd.length) > 0 && `+${evtAdd.length + tskAdd.length} added`,
-    (evtUpdate.length + tskUpdate.length) > 0 && `~${evtUpdate.length + tskUpdate.length} updated`,
+    (prjAdd.length + evtAdd.length + tskAdd.length) > 0 && `+${prjAdd.length + evtAdd.length + tskAdd.length} added`,
+    (prjUpdate.length + evtUpdate.length + tskUpdate.length) > 0 && `~${prjUpdate.length + evtUpdate.length + tskUpdate.length} updated`,
     completed.length > 0 && `✓${completed.length} completed`,
-    (evtDelete.length + tskDelete.length) > 0 && `−${evtDelete.length + tskDelete.length} removed`,
+    (prjDelete.length + evtDelete.length + tskDelete.length) > 0 && `−${prjDelete.length + evtDelete.length + tskDelete.length} removed`,
   ].filter(Boolean);
 
   return (
@@ -775,6 +779,9 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
           )}
         </div>
         <div className="p-3 space-y-1 max-h-60 overflow-y-auto">
+          {prjAdd.map((p, i) => <DiffRow key={`pa${i}`} op="add" label={`Project: ${p.name}`} cat={undefined} />)}
+          {prjUpdate.map((p, i) => <DiffRow key={`pu${i}`} op="update" label={`Update project: ${(p as any).name ?? p.id}`} />)}
+          {prjDelete.map((id, i) => <DiffRow key={`pd${i}`} op="delete" label={`Remove project: ${String(id).slice(0, 20)}`} />)}
           {evtAdd.map((e, i) => <DiffRow key={`ea${i}`} op="add" label={`${e.date} — ${e.title}`} cat={e.category} />)}
           {evtUpdate.map((e, i) => <DiffRow key={`eu${i}`} op="update" label={`Update: ${(e as any).title ?? e.id}`} />)}
           {evtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0, 20)}`} />)}

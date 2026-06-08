@@ -15,7 +15,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
-import { Task } from '../types';
+import { Task, TaskDueDateType, TaskTriageStatus } from '../types';
 import { X } from 'lucide-react';
 
 const schema = z.object({
@@ -29,9 +29,33 @@ const schema = z.object({
   schedulingNotes: z.string().nullable(),
   priority: z.enum(['low', 'medium', 'high', 'urgent']),
   projectId: z.string().nullable().optional(),
+  dueDateType: z.enum(['real-deadline', 'target-date', 'someday-backlog', 'needs-clarification', 'project-subtask']),
+  triageStatus: z.enum(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']),
+  parentTaskId: z.string().nullable(),
+  linkedEventIds: z.array(z.string()),
 });
 
 type FormData = z.infer<typeof schema>;
+
+
+const DUE_DATE_TYPE_OPTIONS: { value: TaskDueDateType; label: string }[] = [
+  { value: 'real-deadline', label: 'Real deadline' },
+  { value: 'target-date', label: 'Target date' },
+  { value: 'someday-backlog', label: 'Someday / backlog' },
+  { value: 'needs-clarification', label: 'Needs clarification' },
+  { value: 'project-subtask', label: 'Project subtask' },
+];
+
+const TRIAGE_STATUS_OPTIONS: { value: TaskTriageStatus; label: string }[] = [
+  { value: 'ready', label: 'Ready' },
+  { value: 'needs-review', label: 'Needs review' },
+  { value: 'blocked', label: 'Blocked' },
+  { value: 'waiting', label: 'Waiting' },
+  { value: 'duplicate-candidate', label: 'Duplicate candidate' },
+  { value: 'needs-scheduling', label: 'Needs scheduling' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'backlog', label: 'Backlog' },
+];
 
 const shiftDate = (date: string, days: number): string => {
   const d = new Date(date + 'T00:00:00');
@@ -76,7 +100,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
     defaultValues: {
       name: '', category: defaultCat, dueDate: '', status: 'todo',
       owner: 'Me', nextAction: '', notes: '', schedulingNotes: '', priority: 'medium',
-      projectId: null,
+      projectId: null, dueDateType: 'someday-backlog', triageStatus: 'backlog', parentTaskId: null, linkedEventIds: [],
     },
   });
 
@@ -97,12 +121,16 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
           schedulingNotes: initialData.schedulingNotes || '',
           priority: initialData.priority,
           projectId: initialData.projectId ?? null,
+          dueDateType: initialData.dueDateType ?? (initialData.dueDate ? (initialData.projectId ? 'project-subtask' : 'target-date') : 'someday-backlog'),
+          triageStatus: initialData.triageStatus ?? (initialData.status === 'blocked' ? 'blocked' : initialData.status === 'done' ? 'backlog' : initialData.dueDate ? 'ready' : 'backlog'),
+          parentTaskId: initialData.parentTaskId ?? null,
+          linkedEventIds: initialData.linkedEventIds ?? [],
         });
       } else {
         form.reset({
           name: '', category: defaultCat, dueDate: '', status: 'todo',
           owner: 'Me', nextAction: '', notes: '', schedulingNotes: '', priority: 'medium',
-          projectId: null,
+          projectId: null, dueDateType: 'someday-backlog', triageStatus: 'backlog', parentTaskId: null, linkedEventIds: [],
         });
       }
     }
@@ -117,6 +145,8 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
       notes: data.notes || null,
       schedulingNotes: data.schedulingNotes || null,
       projectId: data.projectId || null,
+      parentTaskId: data.parentTaskId || null,
+      linkedEventIds: data.linkedEventIds ?? [],
     };
 
     if (initialData) {
@@ -292,6 +322,50 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                     )}
                   />
                 )}
+
+                {/* Advanced planning */}
+                <details className="rounded-xl border border-border bg-muted/20 p-3 group">
+                  <summary className="cursor-pointer list-none text-sm font-semibold text-foreground flex items-center justify-between">
+                    Advanced planning
+                    <span className="text-[10px] text-muted-foreground group-open:hidden">Show</span>
+                  </summary>
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    <FormField
+                      control={form.control}
+                      name="dueDateType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Due date type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              {DUE_DATE_TYPE_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>Classifies whether this date is fixed, flexible, or backlog.</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="triageStatus"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Triage status</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              {TRIAGE_STATUS_OPTIONS.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>Helps AI and review workflows sort what needs attention.</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </details>
 
                 {/* Repeat (new tasks only) */}
                 {!initialData && (

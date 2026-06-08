@@ -56,7 +56,7 @@ Your **calendar data** is stored in `localStorage` on your device. The service w
 Since LifeGrid is entirely local, your data is only on the device where you use it.
 
 **Recommended practice:**
-- Go to **Settings → Data & backup** and tap **Download backup (.json)** weekly
+- Go to **Settings → Data & backup** and tap **Download backup (.json)** weekly; v0.4 backup files are named like `lifegrid_json_backup_[calendar-name]_[YYYY-MM-DD]_[HHmm].json`
 - Store the file somewhere safe (iCloud, Google Drive, email to yourself)
 - To restore: tap **Restore from backup** and select the `.json` file
 

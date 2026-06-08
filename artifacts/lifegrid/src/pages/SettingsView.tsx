@@ -25,6 +25,14 @@ const PRESET_COLORS = [
 const slug = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `id-${Date.now()}`;
 
+const backupTimestampParts = (date = new Date()) => ({
+  date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+  time: `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`,
+});
+
+const safeFilenamePart = (value: string): string =>
+  value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'calendar';
+
 export const SettingsView = () => {
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto">
@@ -571,7 +579,19 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
     sortedEvents.forEach(e => {
       const time = e.startTime ? `  ${e.startTime}${e.endTime ? `–${e.endTime}` : ''}` : '';
       const cat = app.categories.find(c => c.id === e.category)?.label ?? e.category;
-      lines.push(`${e.date}${time}  [${cat}]  ${e.title}${e.notes ? `  // ${e.notes}` : ''}`);
+      lines.push(`${e.date}${time}  [${cat}]  ${e.title}  priority:${e.displayPriority ?? 4}${e.notes ? `  // ${e.notes}` : ''}`);
+    });
+  }
+
+  if (app.projects.length > 0) {
+    lines.push('', '═══════════════════════════════════════', 'PROJECTS', '═══════════════════════════════════════');
+    [...app.projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)).forEach(p => {
+      const taskCount = app.tasks.filter(t => t.projectId === p.id).length;
+      const doneCount = app.tasks.filter(t => t.projectId === p.id && t.status === 'done').length;
+      let row = `${p.order ?? 0}. ${p.name}  status:${p.status ?? 'active'}  tasks:${doneCount}/${taskCount}`;
+      if (p.aliases?.length) row += `  aliases:${p.aliases.join(', ')}`;
+      if (p.notes) row += `  // ${p.notes}`;
+      lines.push(row);
     });
   }
 
@@ -584,7 +604,7 @@ function buildTextExport(app: ReturnType<typeof useAppData>): string {
   } else {
     sortedTasks.forEach(t => {
       const cat = app.categories.find(c => c.id === t.category)?.label ?? t.category;
-      let row = `[${t.priority.toUpperCase().padEnd(6)}] ${t.name}  due:${t.dueDate ?? 'none'}  status:${t.status}  [${cat}]`;
+      let row = `[${t.priority.toUpperCase().padEnd(6)}] ${t.name}  due:${t.dueDate ?? 'none'}  dueType:${t.dueDateType ?? 'target-date'}  triage:${t.triageStatus ?? 'ready'}  status:${t.status}  [${cat}]`;
       if (t.nextAction) row += `  → ${t.nextAction}`;
       if (t.notes) row += `  // ${t.notes}`;
       if (t.schedulingNotes) row += `  ⚙ ${t.schedulingNotes}`;
@@ -722,7 +742,8 @@ function DataManager() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `lifegrid-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const ts = backupTimestampParts();
+    a.download = `lifegrid_json_backup_${safeFilenamePart(activeCalendar.name)}_${ts.date}_${ts.time}.json`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success('Backup downloaded');

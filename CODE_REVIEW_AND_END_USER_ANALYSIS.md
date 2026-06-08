@@ -1,7 +1,17 @@
 # LifeGrid AI Planner — Code Review & End-User Analysis
 
 > Reviewed June 2026 against codebase at HEAD (`main`).  
-> App version: 0.2 + v0.2.1 reliability/PWA pass.
+> App version: v0.4 final polish pass.
+
+---
+
+## v0.4 review addendum
+
+- The data model is now AI-ready: projects are first-class, task due dates are classified, tasks have triage status, and events have display priority.
+- AI import/export now supports a project-aware LifeGrid patch v2 shape while retaining older flat/nested patch compatibility.
+- JSON backup filenames now include sanitized calendar name, local date, and local HHmm time.
+- The confusing per-event grid/export visibility controls were removed from the Event sheet UI. `showInGrid` and `showInExport` remain internal normalized fields reserved for future Export Studio filtering.
+- Deferred items remain: export filtering/presets, full Export Studio, People/calendar intake, Google/Outlook/ICS import, and multi-calendar AI comparison/export.
 
 ---
 

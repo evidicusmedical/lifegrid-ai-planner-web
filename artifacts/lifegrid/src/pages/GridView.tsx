@@ -24,7 +24,7 @@ const DAY_COL_W = 32;
 const MONTH_COL_W = 110;
 const ROW_H = 52;
 const HEADER_H = 44;
-const MAX_VISIBLE_EVENTS = 4;
+const MAX_VISIBLE_EVENTS = 5;
 const EVENT_PILL_H = 10;
 const EXPORT_ROW_BASE_H = 16;
 
@@ -41,6 +41,7 @@ export const GridView = () => {
   const [exporting, setExporting] = useState(false);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
+  const [exportMode, setExportMode] = useState<'expanded' | 'visible'>('expanded');
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
@@ -117,7 +118,7 @@ export const GridView = () => {
     const container = scrollRef.current;
     if (!table || !container) return;
     setExporting(true);
-    toast.loading(`Generating ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
+    toast.loading(`Generating ${exportMode === 'expanded' ? 'expanded' : 'visible'} ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
     const prevOverflow = container.style.overflow;
     const prevW = container.style.width;
@@ -173,7 +174,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -257,6 +258,26 @@ export const GridView = () => {
 
         {/* Mobile-friendly export controls */}
         <div className="flex items-center gap-1">
+          <div className="hidden md:flex items-center rounded-lg bg-muted p-0.5">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportMode('visible')}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportMode === 'visible' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+              title="Export the grid as currently visible, with overflow indicators"
+            >
+              Visible
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => setExportMode('expanded')}
+              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportMode === 'expanded' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'}`}
+              title="Expand rows during export to include all events"
+            >
+              Expanded
+            </button>
+          </div>
           <div className="hidden sm:flex items-center rounded-lg bg-muted p-0.5">
             <button
               type="button"
@@ -283,7 +304,7 @@ export const GridView = () => {
             title="Export grid as PNG"
           >
             <Image size={12} />
-            {exporting ? 'Working…' : `Export ${exportPixelRatio === 1 ? 'Fast' : 'Sharp'}`}
+            {exporting ? 'Working…' : `Export ${exportMode === 'expanded' ? 'Expanded' : 'Visible'}`}
           </button>
           <button
             type="button"
@@ -293,6 +314,15 @@ export const GridView = () => {
             title="Toggle export quality"
           >
             {exportPixelRatio === 1 ? 'Fast' : 'Sharp'}
+          </button>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => setExportMode(exportMode === 'expanded' ? 'visible' : 'expanded')}
+            className="md:hidden px-2 py-1.5 rounded-lg text-[10px] font-bold bg-muted text-muted-foreground disabled:opacity-50"
+            title="Toggle export mode"
+          >
+            {exportMode === 'expanded' ? 'Expanded' : 'Visible'}
           </button>
         </div>
 
@@ -372,13 +402,14 @@ export const GridView = () => {
 
           <tbody>
             {Array.from({ length: 31 }, (_, i) => i + 1).map(day => {
+              const isExpandedExport = exporting && exportMode === 'expanded';
               const rowEventMax = MONTHS.reduce((max, _, mIdx) => {
                 const maxDay = getDaysForMonth(mIdx);
                 if (day > maxDay) return max;
                 const dateStr = `${year}-${String(mIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 return Math.max(max, gridData.get(dateStr)?.length ?? 0);
               }, 0);
-              const rowHeight = exporting ? Math.max(ROW_H, EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1)) : ROW_H;
+              const rowHeight = isExpandedExport ? Math.max(ROW_H, EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1)) : ROW_H;
               return (
               <tr key={day} style={{ height: rowHeight }}>
                 <td
@@ -411,8 +442,8 @@ export const GridView = () => {
                   const dow      = DOW_SHORT[dateObj.getDay()];
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                   const dayEvents = gridData.get(dateStr) ?? [];
-                  const visEvents = exporting ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
-                  const overflow  = exporting ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
+                  const visEvents = isExpandedExport ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
+                  const overflow  = isExpandedExport ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
 
                   let cellBg: string;
                   if (isToday) {
@@ -452,14 +483,14 @@ export const GridView = () => {
                         {dow}
                       </div>
 
-                      <div className={exporting ? 'flex flex-col gap-px' : 'flex flex-col gap-px overflow-hidden'}>
+                      <div className={isExpandedExport ? 'flex flex-col gap-px' : 'flex flex-col gap-px overflow-hidden'}>
                         {visEvents.map(evt => (
                           <div
                             key={evt.id}
                             className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity"
                             style={{
                               backgroundColor: evt.color,
-                              height: exporting ? EVENT_PILL_H : 10,
+                              height: isExpandedExport ? EVENT_PILL_H : 10,
                               opacity: dim(evt.category) ? 0.18 : 1,
                             }}
                             data-testid={`event-pill-${evt.id}`}

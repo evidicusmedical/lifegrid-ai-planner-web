@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ---
 
+## v0.4 — June 2026
+
+### Final polish pass
+
+- Added an AI-ready planning model with first-class projects, task due-date classification, task triage status, event display priority, and project-aware AI patch v2 import/export.
+- Improved JSON backup download filenames to `lifegrid_json_backup_[calendar-name]_[YYYY-MM-DD]_[HHmm].json` with sanitized calendar names.
+- Simplified the Event sheet by removing user-facing per-event grid/export visibility toggles; `showInGrid` and `showInExport` remain normalized internal fields reserved for a future Export Studio.
+- Restored intuitive export behavior: the normal grid no longer hides events by per-event flags, TXT/ICS exports include normal calendar/grid events, and PNG export can choose Visible or Expanded mode.
+- Updated readable TXT export with project status/order/aliases, task due-date type, task triage status, and event display priority.
+- Deferred export filtering/presets, full Export Studio, People/calendar import, and multi-calendar AI comparison/export to v0.4.1/v0.5.
+
+---
+
 ## v0.2 — June 2026
 
 ### Features Added (T001–T008)

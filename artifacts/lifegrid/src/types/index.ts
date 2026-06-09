@@ -4,6 +4,15 @@ export type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type TaskDueDateType = 'real-deadline' | 'target-date' | 'someday-backlog' | 'needs-clarification' | 'project-subtask';
 export type TaskTriageStatus = 'ready' | 'needs-review' | 'blocked' | 'waiting' | 'duplicate-candidate' | 'needs-scheduling' | 'scheduled' | 'backlog';
 export type EventDisplayPriority = 1 | 2 | 3 | 4 | 5;
+export type EventKind =
+  | 'fixed-appointment'
+  | 'shift'
+  | 'travel'
+  | 'day-type'
+  | 'flexible-work-block'
+  | 'reminder'
+  | 'placeholder'
+  | 'protected-time';
 
 // Categories and people are now user-defined. These string aliases are kept
 // for readability — values reference a Category.id / Person.id.
@@ -51,6 +60,7 @@ export interface Event {
   displayPriority: EventDisplayPriority;
   showInGrid: boolean;
   showInExport: boolean;
+  eventKind?: EventKind;
   linkedTaskIds: string[];
   aiNotes: string | null;
   sourceNotes: string | null;

@@ -1,0 +1,75 @@
+Review the Codex PR titled “Add AI import preflight review tasks” before merging.
+
+Important:
+Do not add features.
+Do not merge until verification is complete.
+Do not overwrite current main.
+
+Context:
+Current GitHub/Replit main previously included:
+- ac63f2a Published your App
+- b931d65 Merge PR #8 / Parse review-only AI reorganization proposals
+- Replit fix for missing aiPrompt.ts type declarations after PR #8
+- Clean typecheck/build
+
+Concern:
+The Codex Pass 3 workspace reported no origin remote, so it may not have started from latest main. We need to verify the PR does not regress the Replit type fix or overwrite current main changes.
+
+Tasks:
+1. Inspect the PR titled:
+   Add AI import preflight review tasks
+
+2. Confirm whether it is mergeable into current main.
+
+3. Confirm it preserves the aiPrompt.ts type declarations/constants that Replit added after PR #8:
+   - MergeIntoDayTypeProposal
+   - ConvertTimedBlockToTaskProposal
+   - CandidateDeleteProposal
+   - ReviewItemProposal
+   - ReviewItemType
+   - ReviewItemSeverity
+   - ProposalStatus
+   - VALID_CANDIDATE_CONFIDENCE
+   - VALID_REVIEW_TYPES
+   - VALID_REVIEW_SEVERITIES
+
+4. Confirm it does not remove or regress:
+   - EventKind
+   - eventKind parsing
+   - stable IDs in AI prompt-visible event/task rows
+   - review-only proposal parsing
+   - targeted grid image export
+   - simplified grid export controls
+
+5. Confirm the PR only implements:
+   - AI import preflight/readable review UI
+   - review cards for reviewItems/candidateDeletes/merge/convert proposals
+   - unchecked-by-default option to create review tasks
+   - generated review tasks added only when user opts in
+
+6. Confirm the PR does NOT implement:
+   - event deletion
+   - candidate delete auto-apply
+   - mergeIntoDayType apply logic
+   - convertTimedBlockToTask apply logic
+   - automatic event-to-task conversion
+   - full duplicate resolver
+   - localStorage key changes
+
+7. Run against the merge result or PR branch:
+   pnpm --filter @workspace/lifegrid run typecheck
+   pnpm --filter @workspace/lifegrid run build
+   git diff --check
+
+8. Report:
+   - PR number if available
+   - whether PR is based on latest main
+   - whether the Replit aiPrompt.ts type fix is preserved
+   - files changed
+   - typecheck result
+   - build result
+   - git diff check result
+   - whether it is safe to merge
+   - any conflicts or regressions found
+
+Do not merge until reporting back.

@@ -1,9 +1,4 @@
-import {
-  AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority,
-  EventKind, TaskDueDateType, TaskTriageStatus, MergeIntoDayTypeProposal,
-  ConvertTimedBlockToTaskProposal, CandidateDeleteProposal, ReviewItemProposal,
-  ReviewItemSeverity, ReviewItemType,
-} from '../types';
+import { AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority, EventKind, TaskDueDateType, TaskTriageStatus } from '../types';
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextYear = () => new Date().getFullYear() + 1;
@@ -281,12 +276,6 @@ TASK FIELDS:
   id, name, category/tag, dueDate, dueDateType, triageStatus, status, owner, priority,
   projectId, parentTaskId, linkedEventIds, nextAction, notes, schedulingNotes, recurringGroupId
 
-REVIEW-ONLY REORGANIZATION PROPOSALS:
-  events.mergeIntoDayType: stable-ID proposals to merge a source event into a day-type event's notes; parsed for review only until user confirmation.
-  events.convertTimedBlockToTask: stable-ID proposals to create a task from a source event; parsed for review only until user confirmation.
-  events.candidateDeletes: title/date/time match evidence only; never auto-applied and never converted to events.delete.
-  reviewItems.add: review-only findings for unsafe or ambiguous items. Supported types: possible-duplicate, conflict, overloaded-day, missing-prep, ambiguous-recommendation, no-stable-id, needs-user-review. Severity: low, medium, high.
-
 RULES:
   - Return raw JSON only. No markdown fences and no explanation.
   - Do not repeat unchanged projects, events, or tasks.
@@ -295,8 +284,6 @@ RULES:
   - Use exact stable IDs for update/delete. Do not delete items without stable IDs.
   - Never delete by title/date/time matching. Title/date/time matches are review-only evidence for later safe reorganization support.
   - Treat missing eventKind as unknown and not safe to delete.
-  - Transformation proposals require stable source/target IDs and remain review-only until user confirmation.
-  - Put unsafe or ambiguous findings in reviewItems.add or warnings instead of direct update/delete arrays.
   - Use project IDs when known. If matching by project name or alias is uncertain, add a warning instead of guessing.
   - Do not move real-deadline tasks unless I explicitly approved the move.
   - If something is ambiguous, add a short string to warnings or notes instead of guessing.
@@ -1010,17 +997,6 @@ const VALID_DUE_DATE_TYPE = new Set<TaskDueDateType>(['real-deadline', 'target-d
 const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
 const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
 const VALID_EVENT_KIND = EVENT_KIND_SET;
-const VALID_REVIEW_SEVERITIES = new Set<ReviewItemSeverity>(['low', 'medium', 'high']);
-const VALID_REVIEW_TYPES = new Set<ReviewItemType>([
-  'possible-duplicate',
-  'conflict',
-  'overloaded-day',
-  'missing-prep',
-  'ambiguous-recommendation',
-  'no-stable-id',
-  'needs-user-review',
-]);
-const VALID_CANDIDATE_CONFIDENCE = new Set(['low', 'medium', 'high']);
 
 function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
   if (!Array.isArray(arr)) return [];

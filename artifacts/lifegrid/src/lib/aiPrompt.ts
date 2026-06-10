@@ -1,7 +1,25 @@
-import { AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority, TaskDueDateType, TaskTriageStatus } from '../types';
+import {
+  AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority,
+  EventKind, TaskDueDateType, TaskTriageStatus, MergeIntoDayTypeProposal,
+  ConvertTimedBlockToTaskProposal, CandidateDeleteProposal, ReviewItemProposal,
+  ReviewItemSeverity, ReviewItemType,
+} from '../types';
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextYear = () => new Date().getFullYear() + 1;
+
+const EVENT_KIND_VALUES = [
+  'fixed-appointment',
+  'shift',
+  'travel',
+  'day-type',
+  'flexible-work-block',
+  'reminder',
+  'placeholder',
+  'protected-time',
+] as const;
+const EVENT_KIND_SET = new Set<EventKind>(EVENT_KIND_VALUES);
+const EVENT_KIND_RULE = EVENT_KIND_VALUES.map(k => `"${k}"`).join(' | ');
 
 // ─── Category color map (used by validation / diff preview fallback) ──────────
 export const CATEGORY_COLOR: Record<string, string> = {
@@ -67,9 +85,11 @@ const eventExportObject = (e: Event) => ({
   displayPriority: e.displayPriority ?? (e.startTime ? 2 : 4),
   showInGrid: e.showInGrid !== false,
   showInExport: e.showInExport !== false,
+  eventKind: e.eventKind ?? null,
   linkedTaskIds: e.linkedTaskIds ?? [],
   aiNotes: e.aiNotes ?? null,
   sourceNotes: e.sourceNotes ?? null,
+  recurringGroupId: e.recurringGroupId ?? null,
 });
 
 const taskExportObject = (t: Task) => ({
@@ -89,6 +109,7 @@ const taskExportObject = (t: Task) => ({
   nextAction: t.nextAction ?? null,
   notes: t.notes ?? null,
   schedulingNotes: t.schedulingNotes ?? null,
+  recurringGroupId: t.recurringGroupId ?? null,
 });
 
 const adminAssistantIntro = (data: AppData, requestLabel: string, includeProjectsTags = true): string => `You are acting as my LifeGrid Admin Assistant. LifeGrid is a local-first personal planning app. I am pasting structured context exported from the app.
@@ -143,6 +164,7 @@ OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON, nothing else
         "displayPriority": 2,
         "showInGrid": true,
         "showInExport": true,
+        "eventKind": "fixed-appointment",
         "linkedTaskIds": [],
         "aiNotes": null,
         "sourceNotes": null
@@ -188,13 +210,16 @@ FIELD RULES — follow exactly:
   dueDateType    : "real-deadline" | "target-date" | "someday-backlog" | "needs-clarification" | "project-subtask"
   triageStatus   : "ready" | "needs-review" | "blocked" | "waiting" | "duplicate-candidate" | "needs-scheduling" | "scheduled" | "backlog"
   project status : "active" | "paused" | "completed" | "archived"
+  eventKind      : optional ${EVENT_KIND_RULE}; omit if unknown
   color          : hex that matches category when possible — ${colorLines}
   projectId      : optional project id from PROJECTS, or null
 
 EXTRA RULES:
   - Use ONLY the category ids listed above. If nothing fits, use "other".
-  - To EDIT an existing project/event/task, put its exact "id" in the update array with only changed fields.
-  - To REMOVE an existing project/event/task, put its exact "id" string in the delete array.
+  - To EDIT an existing project/event/task, put its exact stable "id" in the update array with only changed fields.
+  - To REMOVE an existing project/event/task, put its exact stable "id" string in the delete array.
+  - Never delete by title/date/time matching. Title/date/time matches are review-only evidence for later safe reorganization support.
+  - If eventKind is missing, treat it as unknown and not safe to delete.
   - To complete tasks, prefer tasks.complete with stable task IDs.
   - Omit arrays or leave them empty if there are no entries.
   - If a year is missing from a date, use ${new Date().getFullYear()} (or ${nextYear()} if the date has already passed).
@@ -228,13 +253,19 @@ OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON
   "events": {
     "add": [],
     "update": [],
-    "delete": []
+    "delete": [],
+    "mergeIntoDayType": [],
+    "convertTimedBlockToTask": [],
+    "candidateDeletes": []
   },
   "tasks": {
     "add": [],
     "update": [],
     "delete": [],
     "complete": []
+  },
+  "reviewItems": {
+    "add": []
   }
 }
 
@@ -243,11 +274,18 @@ PROJECT FIELDS:
 
 EVENT FIELDS:
   id, date, title, category/tag, startTime, endTime, color, notes,
-  displayPriority (1-5), showInGrid, showInExport, linkedTaskIds, aiNotes, sourceNotes
+  displayPriority (1-5), showInGrid, showInExport, eventKind, linkedTaskIds, aiNotes, sourceNotes, recurringGroupId
+  eventKind is optional: ${EVENT_KIND_RULE}. Missing eventKind means unknown and is not safe to delete.
 
 TASK FIELDS:
   id, name, category/tag, dueDate, dueDateType, triageStatus, status, owner, priority,
-  projectId, parentTaskId, linkedEventIds, nextAction, notes, schedulingNotes
+  projectId, parentTaskId, linkedEventIds, nextAction, notes, schedulingNotes, recurringGroupId
+
+REVIEW-ONLY REORGANIZATION PROPOSALS:
+  events.mergeIntoDayType: stable-ID proposals to merge a source event into a day-type event's notes; parsed for review only until user confirmation.
+  events.convertTimedBlockToTask: stable-ID proposals to create a task from a source event; parsed for review only until user confirmation.
+  events.candidateDeletes: title/date/time match evidence only; never auto-applied and never converted to events.delete.
+  reviewItems.add: review-only findings for unsafe or ambiguous items. Supported types: possible-duplicate, conflict, overloaded-day, missing-prep, ambiguous-recommendation, no-stable-id, needs-user-review. Severity: low, medium, high.
 
 RULES:
   - Return raw JSON only. No markdown fences and no explanation.
@@ -255,6 +293,10 @@ RULES:
   - Category/tag must be one of: ${catUnion}. Tags and categories are the same LifeGrid classification system. Use "other" if needed.
   - For simple task completion, put stable task IDs in tasks.complete.
   - Use exact stable IDs for update/delete. Do not delete items without stable IDs.
+  - Never delete by title/date/time matching. Title/date/time matches are review-only evidence for later safe reorganization support.
+  - Treat missing eventKind as unknown and not safe to delete.
+  - Transformation proposals require stable source/target IDs and remain review-only until user confirmation.
+  - Put unsafe or ambiguous findings in reviewItems.add or warnings instead of direct update/delete arrays.
   - Use project IDs when known. If matching by project name or alias is uncertain, add a warning instead of guessing.
   - Do not move real-deadline tasks unless I explicitly approved the move.
   - If something is ambiguous, add a short string to warnings or notes instead of guessing.
@@ -266,6 +308,21 @@ Backward compatibility accepted by LifeGrid, but prefer patch v2:
 };
 
 // ─── Compact event encoding (collapses repeated titles to cut prompt size) ────
+const eventLinkSummary = (e: Event): string => [
+  `id:${e.id}`,
+  `kind:${e.eventKind ?? 'unknown'}`,
+  (e.linkedTaskIds?.length ? `linkedTaskIds:${JSON.stringify(e.linkedTaskIds)}` : ''),
+  (e.recurringGroupId ? `recurringGroupId:${e.recurringGroupId}` : ''),
+].filter(Boolean).join('  ');
+
+const taskLinkSummary = (t: Task): string => [
+  `id:${t.id}`,
+  `project:${t.projectId ?? 'none'}`,
+  (t.parentTaskId ? `parentTaskId:${t.parentTaskId}` : ''),
+  (t.linkedEventIds?.length ? `linkedEventIds:${JSON.stringify(t.linkedEventIds)}` : ''),
+  (t.recurringGroupId ? `recurringGroupId:${t.recurringGroupId}` : ''),
+].filter(Boolean).join('  ');
+
 const encodeEventsCompact = (events: Event[]): string => {
   if (events.length === 0) return '  (none)';
   const byTitle = new Map<string, Event[]>();
@@ -279,17 +336,19 @@ const encodeEventsCompact = (events: Event[]): string => {
   const singles: Event[] = [];
   byTitle.forEach((arr, title) => {
     if (arr.length > 3) {
-      const dates = arr.map(e => e.date).sort();
-      lines.push(`  ${title} ×${arr.length}  [${arr[0].category}]  (${dates[0]} … ${dates[dates.length - 1]})`);
+      const sorted = arr.slice().sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+      const dates = sorted.map(e => e.date);
+      const refs = sorted.map(e => `${e.id}@${e.date}${e.startTime ? `T${e.startTime}` : ''}`).join(', ');
+      lines.push(`  ${title} ×${arr.length}  [${arr[0].category}]  (${dates[0]} … ${dates[dates.length - 1]})  kind:${arr[0].eventKind ?? 'unknown'}  ids:${refs}`);
     } else {
       singles.push(...arr);
     }
   });
 
   singles
-    .sort((a, b) => a.date.localeCompare(b.date))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? '').localeCompare(b.startTime ?? '') || a.id.localeCompare(b.id))
     .forEach(e => {
-      lines.push(`  ${e.date}  ${e.startTime ?? '     '}  [${e.category}]  ${e.title}`);
+      lines.push(`  ${e.date}  ${e.startTime ?? '     '}  [${e.category}]  ${e.title}  ${eventLinkSummary(e)}`);
     });
 
   return lines.sort().join('\n');
@@ -299,9 +358,9 @@ const encodeEventsDetailed = (events: Event[]): string => {
   if (events.length === 0) return '  (none)';
   return events
     .slice()
-    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? '').localeCompare(b.startTime ?? ''))
+    .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime ?? '').localeCompare(b.startTime ?? '') || a.id.localeCompare(b.id))
     .map(e =>
-      `  ${e.date}  ${e.startTime ?? '     '}${e.endTime ? `-${e.endTime}` : ''}  [${e.category}]  ${e.title}` +
+      `  ${e.date}  ${e.startTime ?? '     '}${e.endTime ? `-${e.endTime}` : ''}  [${e.category}]  ${e.title}  ${eventLinkSummary(e)}` +
       (e.notes ? `  // ${e.notes}` : '')
     )
     .join('\n');
@@ -312,11 +371,12 @@ const encodeTasks = (tasks: Task[]): string => {
   const rank: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
   return tasks
     .slice()
-    .sort((a, b) => (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9))
+    .sort((a, b) => (rank[a.priority] ?? 9) - (rank[b.priority] ?? 9) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     .map(t =>
       `  [${t.priority.toUpperCase().padEnd(6)}] ${t.name}` +
+      `  ${taskLinkSummary(t)}` +
       `  due:${t.dueDate ?? 'none'}  status:${t.status}  owner:${t.owner}` +
-      `  tag/category:${t.category || 'untagged'}  project:${t.projectId ?? 'none'}` +
+      `  tag/category:${t.category || 'untagged'}` +
       (t.nextAction ? `  → ${t.nextAction}` : '') +
       (t.schedulingNotes ? `  ⚙ constraints: ${t.schedulingNotes}` : '')
     )
@@ -676,6 +736,14 @@ export interface ParsedUpdate {
     update: Array<{ id: string } & Partial<Task>>;
     delete: string[];
   };
+  transformationProposals?: {
+    mergeIntoDayType: MergeIntoDayTypeProposal[];
+    convertTimedBlockToTask: ConvertTimedBlockToTaskProposal[];
+    candidateDeletes: CandidateDeleteProposal[];
+  };
+  reviewItems?: {
+    add: ReviewItemProposal[];
+  };
   completedTaskIds?: string[];
   patchNotes?: string[];
   warnings?: string[];
@@ -709,7 +777,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     .replace(/```\s*/g, '')
     .trim();
 
-  const dataKeyMatch = s.match(/\{\s*"(?:lifegridPatchVersion|projects|events|tasks|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
+  const dataKeyMatch = s.match(/\{\s*"(?:lifegridPatchVersion|projects|events|tasks|reviewItems|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
   if (start < 0) {
@@ -897,14 +965,36 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     };
   }
 
+  if (parsed.events) {
+    const mergeIntoDayType = normalizeMergeIntoDayTypeProposals(parsed.events.mergeIntoDayType ?? [], existingEventIds, warnings);
+    const convertTimedBlockToTask = normalizeConvertTimedBlockToTaskProposals(parsed.events.convertTimedBlockToTask ?? [], existingEventIds, validCats, warnings);
+    const candidateDeletes = normalizeCandidateDeleteProposals(parsed.events.candidateDeletes ?? [], warnings);
+    if (mergeIntoDayType.length || convertTimedBlockToTask.length || candidateDeletes.length) {
+      result.transformationProposals = {
+        mergeIntoDayType,
+        convertTimedBlockToTask,
+        candidateDeletes,
+      };
+    }
+  }
+
+  const reviewItemAdds = normalizeReviewItems(parsed.reviewItems?.add ?? []);
+  if (reviewItemAdds.length) result.reviewItems = { add: reviewItemAdds };
+
   const totalChanges =
     (result.projects?.add.length ?? 0) + (result.projects?.update.length ?? 0) + (result.projects?.delete.length ?? 0) +
     (result.events?.add.length ?? 0) + (result.events?.update.length ?? 0) + (result.events?.delete.length ?? 0) +
     (result.tasks?.add.length ?? 0) + (result.tasks?.update.length ?? 0) + (result.tasks?.delete.length ?? 0);
 
-  if (totalChanges === 0 && !result.projects && !result.events && !result.tasks) {
+  const totalReviewOnly =
+    (result.transformationProposals?.mergeIntoDayType.length ?? 0) +
+    (result.transformationProposals?.convertTimedBlockToTask.length ?? 0) +
+    (result.transformationProposals?.candidateDeletes.length ?? 0) +
+    (result.reviewItems?.add.length ?? 0);
+
+  if (totalChanges === 0 && totalReviewOnly === 0 && !result.projects && !result.events && !result.tasks && !result.reviewItems) {
     throw new Error(
-      'The JSON doesn\'t contain "projects", "events", or "tasks" keys.\n' +
+      'The JSON doesn\'t contain "projects", "events", "tasks", "reviewItems", or supported reorganization proposal keys.\n' +
       'Make sure you used the exact prompt from this app and pasted the complete AI response.'
     );
   }
@@ -919,6 +1009,18 @@ const VALID_PRI = new Set(['low', 'medium', 'high', 'urgent']);
 const VALID_DUE_DATE_TYPE = new Set<TaskDueDateType>(['real-deadline', 'target-date', 'someday-backlog', 'needs-clarification', 'project-subtask']);
 const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
 const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
+const VALID_EVENT_KIND = EVENT_KIND_SET;
+const VALID_REVIEW_SEVERITIES = new Set<ReviewItemSeverity>(['low', 'medium', 'high']);
+const VALID_REVIEW_TYPES = new Set<ReviewItemType>([
+  'possible-duplicate',
+  'conflict',
+  'overloaded-day',
+  'missing-prep',
+  'ambiguous-recommendation',
+  'no-stable-id',
+  'needs-user-review',
+]);
+const VALID_CANDIDATE_CONFIDENCE = new Set(['low', 'medium', 'high']);
 
 function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
   if (!Array.isArray(arr)) return [];
@@ -943,6 +1045,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
           : (e.startTime ? 2 : 4),
         showInGrid: typeof e.showInGrid === 'boolean' ? e.showInGrid : true,
         showInExport: typeof e.showInExport === 'boolean' ? e.showInExport : true,
+        ...(VALID_EVENT_KIND.has(e.eventKind) ? { eventKind: e.eventKind } : {}),
         linkedTaskIds: normalizeIds(e.linkedTaskIds ?? []),
         aiNotes: e.aiNotes ?? null,
         sourceNotes: e.sourceNotes ?? null,
@@ -995,6 +1098,7 @@ function normalizeEventUpdate(
   if ('displayPriority' in u && VALID_EVENT_PRIORITY.has(Number(u.displayPriority) as EventDisplayPriority)) out.displayPriority = Number(u.displayPriority);
   if ('showInGrid' in u) out.showInGrid = Boolean(u.showInGrid);
   if ('showInExport' in u) out.showInExport = Boolean(u.showInExport);
+  if ('eventKind' in u && VALID_EVENT_KIND.has(u.eventKind)) out.eventKind = u.eventKind;
   if ('linkedTaskIds' in u) out.linkedTaskIds = normalizeIds(u.linkedTaskIds ?? []);
   if ('aiNotes' in u) out.aiNotes = u.aiNotes ?? null;
   if ('sourceNotes' in u) out.sourceNotes = u.sourceNotes ?? null;
@@ -1060,6 +1164,127 @@ function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
   if (u.status  !== undefined && VALID_PROJECT_STATUS.has(u.status)) out.status = u.status;
   if ('notes'   in u) out.notes = u.notes ?? null;
   return out;
+}
+
+
+function normalizeMergeIntoDayTypeProposals(arr: any[], existingEventIds: Set<string>, warnings: string[]): MergeIntoDayTypeProposal[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(p => p && typeof p === 'object')
+    .map((p, i) => {
+      const sourceEventId = typeof p.sourceEventId === 'string' && p.sourceEventId.trim() ? p.sourceEventId.trim() : null;
+      const targetDayTypeEventId = typeof p.targetDayTypeEventId === 'string' && p.targetDayTypeEventId.trim() ? p.targetDayTypeEventId.trim() : null;
+      const blockingReasons: string[] = [];
+      if (!sourceEventId) blockingReasons.push('Missing sourceEventId');
+      else if (!existingEventIds.has(sourceEventId)) blockingReasons.push(`Unknown sourceEventId "${sourceEventId}"`);
+      if (!targetDayTypeEventId) blockingReasons.push('Missing targetDayTypeEventId');
+      else if (!existingEventIds.has(targetDayTypeEventId)) blockingReasons.push(`Unknown targetDayTypeEventId "${targetDayTypeEventId}"`);
+      if (blockingReasons.length) warnings.push(`mergeIntoDayType proposal ${i + 1} is blocked/review-only: ${blockingReasons.join('; ')}`);
+      return {
+        sourceEventId,
+        targetDayTypeEventId,
+        mergeMode: typeof p.mergeMode === 'string' && p.mergeMode.trim() ? p.mergeMode.trim() : 'append-to-notes',
+        noteSection: typeof p.noteSection === 'string' && p.noteSection.trim() ? p.noteSection.trim() : null,
+        deleteSourceAfterMerge: Boolean(p.deleteSourceAfterMerge),
+        preserveSourceInAuditTrail: p.preserveSourceInAuditTrail !== false,
+        reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim() : null,
+        status: blockingReasons.length ? 'blocked-review-only' : 'parsed',
+        blockingReasons,
+      } as MergeIntoDayTypeProposal;
+    });
+}
+
+function normalizeConvertTimedBlockToTaskProposals(
+  arr: any[], existingEventIds: Set<string>, validCats: Set<string>, warnings: string[]
+): ConvertTimedBlockToTaskProposal[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(p => p && typeof p === 'object')
+    .map((p, i) => {
+      const sourceEventId = typeof p.sourceEventId === 'string' && p.sourceEventId.trim() ? p.sourceEventId.trim() : null;
+      const newTask = normalizeProposedTask(p.newTask ?? {}, validCats);
+      const blockingReasons: string[] = [];
+      if (!sourceEventId) blockingReasons.push('Missing sourceEventId');
+      else if (!existingEventIds.has(sourceEventId)) blockingReasons.push(`Unknown sourceEventId "${sourceEventId}"`);
+      if (!newTask.name) blockingReasons.push('Missing newTask.name');
+      if (blockingReasons.length) warnings.push(`convertTimedBlockToTask proposal ${i + 1} is blocked/review-only: ${blockingReasons.join('; ')}`);
+      return {
+        sourceEventId,
+        newTask,
+        deleteSourceAfterConvert: Boolean(p.deleteSourceAfterConvert),
+        reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim() : null,
+        status: blockingReasons.length ? 'blocked-review-only' : 'parsed',
+        blockingReasons,
+      } as ConvertTimedBlockToTaskProposal;
+    });
+}
+
+function normalizeProposedTask(raw: any, validCats: Set<string>): Partial<Task> & { name?: string } {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Partial<Task> & { name?: string } = {};
+  if (typeof raw.name === 'string' && raw.name.trim()) out.name = raw.name.trim();
+  const rawCat = raw.category ?? raw.tag ?? (Array.isArray(raw.tags) ? raw.tags[0] : undefined);
+  if (validCats.has(rawCat)) out.category = rawCat;
+  if (raw.dueDate !== undefined) out.dueDate = fixDate(String(raw.dueDate));
+  if (raw.status !== undefined && VALID_STA.has(raw.status)) out.status = raw.status;
+  if (raw.priority !== undefined && VALID_PRI.has(raw.priority)) out.priority = raw.priority;
+  if (raw.dueDateType !== undefined && VALID_DUE_DATE_TYPE.has(raw.dueDateType)) out.dueDateType = raw.dueDateType;
+  if (raw.triageStatus !== undefined && VALID_TRIAGE_STATUS.has(raw.triageStatus)) out.triageStatus = raw.triageStatus;
+  if (raw.owner !== undefined) out.owner = String(raw.owner ?? 'Me');
+  if ('notes' in raw) out.notes = raw.notes ?? null;
+  if ('nextAction' in raw) out.nextAction = raw.nextAction ?? null;
+  if ('schedulingNotes' in raw) out.schedulingNotes = raw.schedulingNotes ?? null;
+  if ('projectId' in raw) out.projectId = raw.projectId ? String(raw.projectId) : null;
+  if ('parentTaskId' in raw) out.parentTaskId = raw.parentTaskId ? String(raw.parentTaskId) : null;
+  if ('linkedEventIds' in raw) out.linkedEventIds = normalizeIds(raw.linkedEventIds ?? []);
+  return out;
+}
+
+function normalizeCandidateDeleteProposals(arr: any[], warnings: string[]): CandidateDeleteProposal[] {
+  if (!Array.isArray(arr)) return [];
+  const proposals = arr
+    .filter(p => p && typeof p === 'object')
+    .map(p => {
+      const match = p.match && typeof p.match === 'object' ? p.match : {};
+      const confidence = VALID_CANDIDATE_CONFIDENCE.has(p.confidence) ? p.confidence : 'unknown';
+      return {
+        match: {
+          date: match.date ? fixDate(String(match.date)) : null,
+          title: typeof match.title === 'string' && match.title.trim() ? match.title.trim() : null,
+          startTime: fixTime(match.startTime),
+          endTime: fixTime(match.endTime),
+        },
+        confidence,
+        requiresUserReview: p.requiresUserReview !== false,
+        reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim() : null,
+        status: 'review-only',
+      } as CandidateDeleteProposal;
+    });
+  if (proposals.length) warnings.push(`${proposals.length} candidate delete proposal${proposals.length === 1 ? '' : 's'} parsed as review-only. Candidate deletes are never auto-applied.`);
+  return proposals;
+}
+
+function normalizeReviewItems(arr: any[]): ReviewItemProposal[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(item => item && typeof item === 'object')
+    .map((item, i) => {
+      const type: ReviewItemType = VALID_REVIEW_TYPES.has(item.type) ? item.type : 'needs-user-review';
+      const severity: ReviewItemSeverity = VALID_REVIEW_SEVERITIES.has(item.severity) ? item.severity : 'medium';
+      const triageStatus: TaskTriageStatus = VALID_TRIAGE_STATUS.has(item.triageStatus) ? item.triageStatus : 'needs-review';
+      return {
+        id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `review-${Date.now()}-${i}`,
+        type,
+        severity,
+        date: item.date ? fixDate(String(item.date)) : null,
+        title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : 'AI review item',
+        description: typeof item.description === 'string' && item.description.trim() ? item.description.trim() : null,
+        recommendedAction: typeof item.recommendedAction === 'string' && item.recommendedAction.trim() ? item.recommendedAction.trim() : null,
+        affectedItemRefs: normalizeIds(item.affectedItemRefs ?? []),
+        canAutoFix: Boolean(item.canAutoFix),
+        triageStatus,
+      };
+    });
 }
 
 // ─── Date / time helpers ──────────────────────────────────────────────────────

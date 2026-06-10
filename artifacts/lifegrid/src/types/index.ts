@@ -4,6 +4,73 @@ export type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type TaskDueDateType = 'real-deadline' | 'target-date' | 'someday-backlog' | 'needs-clarification' | 'project-subtask';
 export type TaskTriageStatus = 'ready' | 'needs-review' | 'blocked' | 'waiting' | 'duplicate-candidate' | 'needs-scheduling' | 'scheduled' | 'backlog';
 export type EventDisplayPriority = 1 | 2 | 3 | 4 | 5;
+export type EventKind =
+  | 'fixed-appointment'
+  | 'shift'
+  | 'travel'
+  | 'day-type'
+  | 'flexible-work-block'
+  | 'reminder'
+  | 'placeholder'
+  | 'protected-time';
+
+export type TransformationProposalStatus = 'parsed' | 'blocked-review-only' | 'review-only';
+export type ReviewItemSeverity = 'low' | 'medium' | 'high';
+export type ReviewItemType =
+  | 'possible-duplicate'
+  | 'conflict'
+  | 'overloaded-day'
+  | 'missing-prep'
+  | 'ambiguous-recommendation'
+  | 'no-stable-id'
+  | 'needs-user-review';
+
+export interface MergeIntoDayTypeProposal {
+  sourceEventId: string | null;
+  targetDayTypeEventId: string | null;
+  mergeMode: string;
+  noteSection: string | null;
+  deleteSourceAfterMerge: boolean;
+  preserveSourceInAuditTrail: boolean;
+  reason: string | null;
+  status: TransformationProposalStatus;
+  blockingReasons: string[];
+}
+
+export interface ConvertTimedBlockToTaskProposal {
+  sourceEventId: string | null;
+  newTask: Partial<Task> & { name?: string };
+  deleteSourceAfterConvert: boolean;
+  reason: string | null;
+  status: TransformationProposalStatus;
+  blockingReasons: string[];
+}
+
+export interface CandidateDeleteProposal {
+  match: {
+    date: string | null;
+    title: string | null;
+    startTime: string | null;
+    endTime: string | null;
+  };
+  confidence: 'low' | 'medium' | 'high' | 'unknown';
+  requiresUserReview: boolean;
+  reason: string | null;
+  status: 'review-only';
+}
+
+export interface ReviewItemProposal {
+  id: string;
+  type: ReviewItemType;
+  severity: ReviewItemSeverity;
+  date: string | null;
+  title: string;
+  description: string | null;
+  recommendedAction: string | null;
+  affectedItemRefs: string[];
+  canAutoFix: boolean;
+  triageStatus: TaskTriageStatus;
+}
 
 // Categories and people are now user-defined. These string aliases are kept
 // for readability — values reference a Category.id / Person.id.
@@ -51,6 +118,7 @@ export interface Event {
   displayPriority: EventDisplayPriority;
   showInGrid: boolean;
   showInExport: boolean;
+  eventKind?: EventKind;
   linkedTaskIds: string[];
   aiNotes: string | null;
   sourceNotes: string | null;

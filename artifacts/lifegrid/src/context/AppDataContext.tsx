@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store,
-  EventDisplayPriority, ProjectStatus, TaskDueDateType, TaskTriageStatus,
+  EventDisplayPriority, EventKind, ProjectStatus, TaskDueDateType, TaskTriageStatus,
 } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
 
@@ -79,6 +79,16 @@ const PROJECT_STATUSES = new Set<ProjectStatus>(['active', 'paused', 'completed'
 const TASK_DUE_DATE_TYPES = new Set<TaskDueDateType>(['real-deadline', 'target-date', 'someday-backlog', 'needs-clarification', 'project-subtask']);
 const TASK_TRIAGE_STATUSES = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
 const EVENT_DISPLAY_PRIORITIES = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
+const EVENT_KINDS = new Set<EventKind>([
+  'fixed-appointment',
+  'shift',
+  'travel',
+  'day-type',
+  'flexible-work-block',
+  'reminder',
+  'placeholder',
+  'protected-time',
+]);
 
 const stringArray = (value: any): string[] =>
   Array.isArray(value)
@@ -138,6 +148,7 @@ const normalizeAppData = (raw: any): AppData => {
       displayPriority,
       showInGrid: typeof e.showInGrid === 'boolean' ? e.showInGrid : true,
       showInExport: typeof e.showInExport === 'boolean' ? e.showInExport : true,
+      eventKind: typeof e.eventKind === 'string' && EVENT_KINDS.has(e.eventKind as EventKind) ? e.eventKind as EventKind : undefined,
       linkedTaskIds: stringArray(e.linkedTaskIds).filter(id => taskIds.has(id)),
       aiNotes: typeof e.aiNotes === 'string' && e.aiNotes.trim() ? e.aiNotes : null,
       sourceNotes: typeof e.sourceNotes === 'string' && e.sourceNotes.trim() ? e.sourceNotes : null,

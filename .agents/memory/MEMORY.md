@@ -4,3 +4,4 @@
 - [LifeGrid Radix Sheet X-button](lifegrid-sheet-x-fix.md) — suppress Radix SheetContent built-in X with `[&>button:first-of-type]:hidden` on SheetContent className; do NOT edit ui/sheet.tsx.
 - [LifeGrid AIView onboard card](lifegrid-aiview-onboard.md) — "Build a starter schedule" card must always render; use contextual copy not conditional render, so the card shows even when data exists.
 - [LifeGrid v0.3.2 AI prompt architecture](lifegrid-aiprompt-v032.md) — compact mode is now the primary range-aware admin prompt; PlanningOptions extended; adminAssistantIntro takes includeProjectsTags param; normalize* accept tag/tags aliases.
+- [LifeGrid v0.4.3 Pass 3 preflight UI](lifegrid-pass3-preflight.md) — DiffPreview rewritten with preflight summary, 4 proposal card types, review tasks toggle; proposal types exported from aiPrompt.ts; safety constraints enforced.

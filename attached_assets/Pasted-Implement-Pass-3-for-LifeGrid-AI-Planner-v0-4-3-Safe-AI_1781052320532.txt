@@ -1,0 +1,175 @@
+Implement Pass 3 for LifeGrid AI Planner v0.4.3 — Safe AI Reorganization Foundation.
+
+Start from current Replit/GitHub main.
+
+Before making changes:
+1. Run:
+   git status
+   git log --oneline -8
+2. Confirm the working tree is clean.
+3. Confirm current main includes commit c376750b or later.
+4. Confirm aiPrompt.ts still contains/preserves:
+   - MergeIntoDayTypeProposal
+   - ConvertTimedBlockToTaskProposal
+   - CandidateDeleteProposal
+   - ReviewItemProposal
+   - ReviewItemType
+   - ReviewItemSeverity
+   - ProposalStatus
+   - VALID_CANDIDATE_CONFIDENCE
+   - VALID_REVIEW_TYPES
+   - VALID_REVIEW_SEVERITIES
+5. If these checks fail, stop and report.
+
+Pass 3 goal:
+Improve the AI import preview so warnings, review items, and review-only reorganization proposals are visible and actionable, without applying transformations.
+
+Add:
+1. A readable preflight/review section in AIView.
+2. Clear grouping for:
+   - Safe direct changes
+   - Review items
+   - Candidate deletes
+   - Merge-into-day-type proposals
+   - Convert-timed-block-to-task proposals
+   - Warnings
+3. An unchecked-by-default option:
+   “Create review tasks for unresolved AI review items”
+
+Safety constraints:
+- Do not implement mergeIntoDayType apply logic.
+- Do not implement convertTimedBlockToTask apply logic.
+- Do not delete events.
+- Do not auto-delete candidateDeletes.
+- Do not auto-merge events.
+- Do not auto-convert events to tasks, except creating review tasks that describe the proposal when the user opts in.
+- Do not implement full duplicate resolver.
+- Do not add backend/auth/cloud sync/API integrations.
+- Do not change localStorage key.
+- Preserve JSON backup/restore compatibility.
+- Preserve current AI patch v2 direct add/update/delete behavior.
+- Avoid broad refactors.
+
+Required UI behavior:
+
+1. In AIView import preview, add a preflight summary section.
+
+Suggested labels:
+- Safe changes ready to import
+- Review needed
+- AI reorganization proposals
+- Candidate deletes — review only
+- Warnings
+
+2. Show counts for:
+- project adds/updates/deletes
+- event adds/updates/deletes
+- task adds/updates/deletes/completions
+- reviewItems.add
+- candidateDeletes
+- mergeIntoDayType proposals
+- convertTimedBlockToTask proposals
+- warnings
+
+3. For reviewItems.add, show readable cards with:
+- title
+- type
+- severity
+- date if present
+- description
+- recommendedAction
+- affectedItemRefs if present
+
+4. For candidateDeletes, show readable cards with:
+- matched date/title/start/end
+- confidence
+- reason
+- clear note: “No event will be deleted automatically.”
+
+5. For mergeIntoDayType proposals, show readable cards with:
+- sourceEventId
+- targetDayTypeEventId
+- reason
+- status/blocking details if present
+- clear note: “This proposal is review-only in v0.4.3 Pass 3. No merge will be applied.”
+
+6. For convertTimedBlockToTask proposals, show readable cards with:
+- sourceEventId
+- new task name
+- due date if present
+- priority if present
+- reason
+- status/blocking details if present
+- clear note: “This proposal is review-only in v0.4.3 Pass 3. No event will be converted automatically.”
+
+7. Add the option:
+“Create review tasks for unresolved AI review items”
+
+Behavior:
+- Unchecked by default.
+- If selected, applying the import adds normal LifeGrid tasks describing unresolved review-only items.
+- If not selected, applying the import only applies existing safe direct changes as before.
+- Creating review tasks should not apply event transformations.
+
+Review task creation rules:
+- Create tasks for reviewItems.add.
+- Create tasks for candidateDeletes.
+- Create tasks for mergeIntoDayType and convertTimedBlockToTask proposals only as review tasks, not transformations.
+- Task fields:
+  - name: clear review title
+  - category: safe existing fallback category
+  - dueDate: review item date or candidate match date when present
+  - status: todo
+  - priority: map severity/confidence safely
+  - dueDateType: needs-clarification if no clear date, otherwise target-date
+  - triageStatus: needs-review
+  - projectId: null
+  - notes: include description, recommended action, affected refs, source IDs, reason, and clear statement that no event was automatically changed
+  - linkedEventIds: include affected/source stable event IDs only when present
+
+LifeGrid System project:
+- Defer automatic LifeGrid System project creation for this pass.
+- Use projectId: null for generated review tasks.
+
+Apply behavior:
+- Existing safe direct changes still apply as before when user clicks Apply.
+- If “Create review tasks” is selected, add generated review tasks to tasks.add before applying.
+- Do not insert reviewItems into persistent state as a new collection.
+- Do not treat review task creation as transformation apply.
+- candidateDeletes remain review-only.
+
+No-direct-change behavior:
+- If pasted patch contains only reviewItems/candidateDeletes/proposals and no direct changes, preview must not look empty.
+- It should allow review task creation if selected.
+- It should clearly say there are no direct schedule changes unless review tasks are created.
+
+Patch schema/prompt wording:
+Update wording as needed:
+- reviewItems.add can be converted into normal review tasks by the user.
+- candidateDeletes are never auto-applied.
+- transformation proposals remain review-only until a later safe transformation pass.
+- AI should place unsafe/ambiguous findings in reviewItems.add or warnings.
+
+Testing:
+Run:
+pnpm --filter @workspace/lifegrid run typecheck
+pnpm --filter @workspace/lifegrid run build
+git diff --check
+
+If all pass:
+- Commit with:
+  Add AI import preflight review tasks
+
+Final report:
+- starting HEAD
+- files changed
+- confirmation Replit type fix preserved
+- preflight UI changes
+- review task creation behavior
+- confirmation LifeGrid System project creation is deferred
+- confirmation no merge/delete/convert transformation logic was added
+- confirmation candidateDeletes remain review-only
+- typecheck result
+- build result
+- git diff check result
+- commit hash

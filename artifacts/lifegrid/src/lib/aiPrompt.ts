@@ -1145,9 +1145,9 @@ function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
 
 // ─── Proposal types (review-only / transformation proposals from AI) ──────────
 
-type ProposalStatus = 'parsed' | 'blocked-review-only' | 'review-only';
+export type ProposalStatus = 'parsed' | 'blocked-review-only' | 'review-only';
 
-interface MergeIntoDayTypeProposal {
+export interface MergeIntoDayTypeProposal {
   sourceEventId: string | null;
   targetDayTypeEventId: string | null;
   mergeMode: string;
@@ -1159,7 +1159,7 @@ interface MergeIntoDayTypeProposal {
   blockingReasons: string[];
 }
 
-interface ConvertTimedBlockToTaskProposal {
+export interface ConvertTimedBlockToTaskProposal {
   sourceEventId: string | null;
   newTask: Partial<Task> & { name?: string };
   deleteSourceAfterConvert: boolean;
@@ -1168,7 +1168,7 @@ interface ConvertTimedBlockToTaskProposal {
   blockingReasons: string[];
 }
 
-interface CandidateDeleteProposal {
+export interface CandidateDeleteProposal {
   match: {
     date: string | null;
     title: string | null;
@@ -1181,7 +1181,7 @@ interface CandidateDeleteProposal {
   status: ProposalStatus;
 }
 
-type ReviewItemType =
+export type ReviewItemType =
   | 'needs-user-review'
   | 'scheduling-conflict'
   | 'overdue'
@@ -1189,9 +1189,9 @@ type ReviewItemType =
   | 'coverage-gap'
   | 'suggestion';
 
-type ReviewItemSeverity = 'high' | 'medium' | 'low';
+export type ReviewItemSeverity = 'high' | 'medium' | 'low';
 
-interface ReviewItemProposal {
+export interface ReviewItemProposal {
   id: string;
   type: ReviewItemType;
   severity: ReviewItemSeverity;

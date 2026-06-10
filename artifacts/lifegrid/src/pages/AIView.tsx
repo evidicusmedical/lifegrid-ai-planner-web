@@ -12,7 +12,12 @@ import {
   CATEGORY_COLOR,
   estimateTokens,
   COMPACT_THRESHOLD_TOKENS,
+  MergeIntoDayTypeProposal,
+  ConvertTimedBlockToTaskProposal,
+  CandidateDeleteProposal,
+  ReviewItemProposal,
 } from '../lib/aiPrompt';
+import { Task, Category } from '../types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -91,6 +96,9 @@ export const AIView = () => {
   // Apply-to-new-version toggle
   const [applyAsVersion, setApplyAsVersion] = useState(false);
   const [versionName, setVersionName] = useState('');
+
+  // Review tasks toggle — unchecked by default
+  const [createReviewTasks, setCreateReviewTasks] = useState(false);
 
   // Prompt size estimate
   const [promptTokens, setPromptTokens] = useState<number | null>(null);
@@ -194,10 +202,24 @@ export const AIView = () => {
       return;
     }
     try {
-      appData.applyImportUpdate(preview, applyAsVersion ? { newVersionName: versionName.trim() } : undefined);
-      const add = (preview.projects?.add.length ?? 0) + (preview.events?.add.length ?? 0) + (preview.tasks?.add.length ?? 0);
-      const upd = (preview.projects?.update.length ?? 0) + (preview.events?.update.length ?? 0) + (preview.tasks?.update.length ?? 0);
-      const del = (preview.projects?.delete.length ?? 0) + (preview.events?.delete.length ?? 0) + (preview.tasks?.delete.length ?? 0);
+      let effectivePreview = preview;
+      if (createReviewTasks) {
+        const rtasks = buildReviewTasks(preview, appData.categories);
+        if (rtasks.length > 0) {
+          effectivePreview = {
+            ...preview,
+            tasks: {
+              add: [...(preview.tasks?.add ?? []), ...rtasks],
+              update: preview.tasks?.update ?? [],
+              delete: preview.tasks?.delete ?? [],
+            },
+          };
+        }
+      }
+      appData.applyImportUpdate(effectivePreview, applyAsVersion ? { newVersionName: versionName.trim() } : undefined);
+      const add = (effectivePreview.projects?.add.length ?? 0) + (effectivePreview.events?.add.length ?? 0) + (effectivePreview.tasks?.add.length ?? 0);
+      const upd = (effectivePreview.projects?.update.length ?? 0) + (effectivePreview.events?.update.length ?? 0) + (effectivePreview.tasks?.update.length ?? 0);
+      const del = (effectivePreview.projects?.delete.length ?? 0) + (effectivePreview.events?.delete.length ?? 0) + (effectivePreview.tasks?.delete.length ?? 0);
       toast.success(applyAsVersion ? `New version "${versionName.trim()}" created!` : 'Schedule updated!', {
         description: [add && `+${add} added`, upd && `~${upd} updated`, del && `−${del} removed`].filter(Boolean).join('  '),
       });
@@ -209,6 +231,7 @@ export const AIView = () => {
     setMode('choose'); setRawInput(''); setPrompt(''); setImportJson('');
     setPreview(null); setError(null); setCopied(false);
     setApplyAsVersion(false); setVersionName(''); setImportSource('text');
+    setCreateReviewTasks(false);
     setPromptType('compact'); setRangePreset('next30'); setUseRange(true); setRangeStart(toISODate(new Date())); setRangeEnd(toISODate(addDays(new Date(), 30)));
     setIncludeTasks(true); setIncludePeople(true); setIncludeCompletedTasks(false); setIncludeProjectsTags(true);
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
@@ -244,7 +267,9 @@ export const AIView = () => {
           preview={preview}
           applyLabel={applyAsVersion ? 'Create Version' : undefined}
           onApply={handleApply}
-          onCancel={() => { setPreview(null); setImportJson(''); setError(null); }}
+          onCancel={() => { setPreview(null); setImportJson(''); setError(null); setCreateReviewTasks(false); }}
+          createReviewTasks={createReviewTasks}
+          setCreateReviewTasks={setCreateReviewTasks}
         />
       </div>
     );
@@ -723,8 +748,100 @@ function FormatHints() {
   );
 }
 
-function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
+// ─── Build review tasks from proposal types ──────────────────────────────────
+const _uid = () => Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
+
+function buildReviewTasks(preview: ParsedUpdate, cats: Category[]): Task[] {
+  const fallbackCat = cats[0]?.id ?? 'other';
+  const tasks: Task[] = [];
+
+  for (const item of preview.reviewItems?.add ?? []) {
+    const parts = [
+      item.description && `Description: ${item.description}`,
+      item.recommendedAction && `Recommended action: ${item.recommendedAction}`,
+      item.affectedItemRefs.length > 0 && `Affected refs: ${item.affectedItemRefs.join(', ')}`,
+      `Type: ${item.type} | Severity: ${item.severity}`,
+      'Note: No event was automatically changed.',
+    ].filter(Boolean) as string[];
+    tasks.push({
+      id: _uid(), name: `[Review] ${item.title}`, category: fallbackCat,
+      dueDate: item.date ?? null, status: 'todo', owner: 'Me',
+      nextAction: item.recommendedAction ?? null, notes: parts.join('\n'),
+      priority: item.severity === 'high' ? 'urgent' : item.severity === 'low' ? 'low' : 'medium',
+      dueDateType: item.date ? 'target-date' : 'needs-clarification',
+      triageStatus: 'needs-review', parentTaskId: null,
+      linkedEventIds: item.affectedItemRefs, projectId: null,
+    });
+  }
+
+  for (const cd of preview.transformationProposals?.candidateDeletes ?? []) {
+    const matchTitle = cd.match.title ?? 'unknown event';
+    const parts = [
+      cd.match.date && `Event date: ${cd.match.date}`,
+      cd.match.startTime && `Start: ${cd.match.startTime}`,
+      cd.match.endTime && `End: ${cd.match.endTime}`,
+      cd.reason && `Reason: ${cd.reason}`,
+      `Confidence: ${cd.confidence}`,
+      'Note: No event was automatically deleted. Candidate deletes are always review-only.',
+    ].filter(Boolean) as string[];
+    tasks.push({
+      id: _uid(), name: `[Review] Candidate delete: "${matchTitle}"`, category: fallbackCat,
+      dueDate: cd.match.date ?? null, status: 'todo', owner: 'Me',
+      nextAction: 'Manually review and delete if appropriate.', notes: parts.join('\n'),
+      priority: cd.confidence === 'high' ? 'high' : 'medium',
+      dueDateType: cd.match.date ? 'target-date' : 'needs-clarification',
+      triageStatus: 'needs-review', parentTaskId: null, linkedEventIds: [], projectId: null,
+    });
+  }
+
+  for (const mp of preview.transformationProposals?.mergeIntoDayType ?? []) {
+    const parts = [
+      mp.sourceEventId && `Source event ID: ${mp.sourceEventId}`,
+      mp.targetDayTypeEventId && `Target day-type event ID: ${mp.targetDayTypeEventId}`,
+      mp.reason && `Reason: ${mp.reason}`,
+      mp.blockingReasons.length > 0 && `Blocking: ${mp.blockingReasons.join('; ')}`,
+      `Merge mode: ${mp.mergeMode}`,
+      'Note: This proposal is review-only. No merge was applied automatically.',
+    ].filter(Boolean) as string[];
+    const linkedIds = [mp.sourceEventId, mp.targetDayTypeEventId].filter(Boolean) as string[];
+    tasks.push({
+      id: _uid(), name: `[Review] Merge into day-type: ${mp.sourceEventId ?? 'unknown'}`, category: fallbackCat,
+      dueDate: null, status: 'todo', owner: 'Me',
+      nextAction: 'Review and manually apply the merge if appropriate.', notes: parts.join('\n'),
+      priority: 'medium', dueDateType: 'needs-clarification',
+      triageStatus: 'needs-review', parentTaskId: null, linkedEventIds: linkedIds, projectId: null,
+    });
+  }
+
+  for (const cp of preview.transformationProposals?.convertTimedBlockToTask ?? []) {
+    const proposedName = (cp.newTask as any)?.name ?? cp.sourceEventId ?? 'unknown';
+    const parts = [
+      cp.sourceEventId && `Source event ID: ${cp.sourceEventId}`,
+      `Proposed task name: ${proposedName}`,
+      (cp.newTask as any)?.dueDate && `Due date: ${(cp.newTask as any).dueDate}`,
+      (cp.newTask as any)?.priority && `Priority: ${(cp.newTask as any).priority}`,
+      cp.reason && `Reason: ${cp.reason}`,
+      cp.blockingReasons.length > 0 && `Blocking: ${cp.blockingReasons.join('; ')}`,
+      'Note: This proposal is review-only. No event was automatically converted.',
+    ].filter(Boolean) as string[];
+    tasks.push({
+      id: _uid(), name: `[Review] Convert to task: "${proposedName}"`, category: fallbackCat,
+      dueDate: (cp.newTask as any)?.dueDate ?? null, status: 'todo', owner: 'Me',
+      nextAction: 'Review and manually create the task if appropriate.', notes: parts.join('\n'),
+      priority: (cp.newTask as any)?.priority === 'urgent' ? 'urgent'
+        : (cp.newTask as any)?.priority === 'high' ? 'high' : 'medium',
+      dueDateType: (cp.newTask as any)?.dueDate ? 'target-date' : 'needs-clarification',
+      triageStatus: 'needs-review', parentTaskId: null,
+      linkedEventIds: cp.sourceEventId ? [cp.sourceEventId] : [], projectId: null,
+    });
+  }
+
+  return tasks;
+}
+
+function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks, setCreateReviewTasks }: {
   preview: ParsedUpdate; onApply: () => void; onCancel: () => void; applyLabel?: string;
+  createReviewTasks: boolean; setCreateReviewTasks: (v: boolean) => void;
 }) {
   const prjAdd = preview.projects?.add ?? [];
   const prjUpdate = preview.projects?.update ?? [];
@@ -746,17 +863,56 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
     evtAdd.length + evtUpdate.length + evtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
   const warnings = preview.warnings ?? [];
-
-  const summaryParts = [
-    (prjAdd.length + evtAdd.length + tskAdd.length) > 0 && `+${prjAdd.length + evtAdd.length + tskAdd.length} added`,
-    (prjUpdate.length + evtUpdate.length + tskUpdate.length) > 0 && `~${prjUpdate.length + evtUpdate.length + tskUpdate.length} updated`,
-    completed.length > 0 && `✓${completed.length} completed`,
-    (prjDelete.length + evtDelete.length + tskDelete.length) > 0 && `−${prjDelete.length + evtDelete.length + tskDelete.length} removed`,
-    reviewOnlyTotal > 0 && `${reviewOnlyTotal} review-only`,
-  ].filter(Boolean);
+  const canApply = total > 0 || (createReviewTasks && reviewOnlyTotal > 0);
+  const reviewTaskCount = createReviewTasks ? reviewOnlyTotal : 0;
+  const applyButtonLabel = (() => {
+    if (applyLabel) return applyLabel;
+    if (total === 0 && reviewTaskCount > 0) return `Create ${reviewTaskCount} Review Task${reviewTaskCount !== 1 ? 's' : ''}`;
+    if (reviewTaskCount > 0) return `Apply ${total} Change${total !== 1 ? 's' : ''} + ${reviewTaskCount} Review Task${reviewTaskCount !== 1 ? 's' : ''}`;
+    return `Apply ${total > 0 ? `${total} ` : ''}Change${total !== 1 ? 's' : ''}`;
+  })();
 
   return (
     <div className="space-y-3 animate-in fade-in slide-in-from-bottom-2">
+
+      {/* Preflight summary */}
+      <div className="bg-muted/30 border border-border rounded-lg p-2.5 space-y-1.5">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-foreground/70 mb-0.5">AI Import Preflight</p>
+        {total > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-green-600 dark:text-green-400">
+            <CheckCircle2 size={10} />
+            {total} safe change{total !== 1 ? 's' : ''} ready to apply
+            {(prjAdd.length + evtAdd.length + tskAdd.length) > 0 && <span className="opacity-70">+{prjAdd.length + evtAdd.length + tskAdd.length} added</span>}
+            {(prjUpdate.length + evtUpdate.length + tskUpdate.length) > 0 && <span className="opacity-70">~{prjUpdate.length + evtUpdate.length + tskUpdate.length} updated</span>}
+            {completed.length > 0 && <span className="opacity-70">✓{completed.length} completed</span>}
+            {(prjDelete.length + evtDelete.length + tskDelete.length) > 0 && <span className="opacity-70">−{prjDelete.length + evtDelete.length + tskDelete.length} removed</span>}
+          </div>
+        )}
+        {reviewItems.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+            <AlertCircle size={10} /> {reviewItems.length} review item{reviewItems.length !== 1 ? 's' : ''}
+          </div>
+        )}
+        {candidateDeletes.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-400">
+            <Trash2 size={10} /> {candidateDeletes.length} candidate delete{candidateDeletes.length !== 1 ? 's' : ''} — review only, never auto-applied
+          </div>
+        )}
+        {(mergeProposals.length + convertProposals.length) > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-400">
+            <RotateCcw size={10} /> {mergeProposals.length + convertProposals.length} reorganization proposal{(mergeProposals.length + convertProposals.length) !== 1 ? 's' : ''} — review only
+          </div>
+        )}
+        {warnings.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-amber-600 dark:text-amber-400">
+            <AlertCircle size={10} /> {warnings.length} warning{warnings.length !== 1 ? 's' : ''}
+          </div>
+        )}
+        {total === 0 && reviewOnlyTotal === 0 && warnings.length === 0 && (
+          <p className="text-[10px] text-muted-foreground">No changes or proposals found.</p>
+        )}
+      </div>
+
       {/* Warnings */}
       {warnings.length > 0 && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 space-y-1">
@@ -768,6 +924,8 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
           ))}
         </div>
       )}
+
+      {/* AI Notes */}
       {notes.length > 0 && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 space-y-1">
           <p className="text-[10px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wide">AI notes</p>
@@ -777,29 +935,57 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
         </div>
       )}
 
+      {/* Review items */}
+      {reviewItems.length > 0 && (
+        <ProposalSection title={`Review needed — ${reviewItems.length} item${reviewItems.length !== 1 ? 's' : ''}`} color="amber">
+          {reviewItems.map((item, i) => <ReviewItemCard key={i} item={item} />)}
+        </ProposalSection>
+      )}
+
+      {/* Candidate deletes */}
+      {candidateDeletes.length > 0 && (
+        <ProposalSection title={`Candidate deletes — ${candidateDeletes.length} item${candidateDeletes.length !== 1 ? 's' : ''} — never auto-applied`} color="violet">
+          {candidateDeletes.map((cd, i) => <CandidateDeleteCard key={i} item={cd} />)}
+        </ProposalSection>
+      )}
+
+      {/* Merge proposals */}
+      {mergeProposals.length > 0 && (
+        <ProposalSection title={`Merge-into-day-type — ${mergeProposals.length} proposal${mergeProposals.length !== 1 ? 's' : ''}`} color="violet">
+          {mergeProposals.map((mp, i) => <MergeProposalCard key={i} item={mp} />)}
+        </ProposalSection>
+      )}
+
+      {/* Convert proposals */}
+      {convertProposals.length > 0 && (
+        <ProposalSection title={`Convert-to-task — ${convertProposals.length} proposal${convertProposals.length !== 1 ? 's' : ''}`} color="violet">
+          {convertProposals.map((cp, i) => <ConvertProposalCard key={i} item={cp} />)}
+        </ProposalSection>
+      )}
+
+      {/* Create review tasks toggle */}
       {reviewOnlyTotal > 0 && (
-        <div className="bg-violet-500/10 border border-violet-500/30 rounded-lg p-2.5 space-y-1">
-          <p className="text-[10px] font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
-            Review-only AI reorganization proposals — not applied
-          </p>
-          <p className="text-[10px] text-violet-700 dark:text-violet-400">
-            {mergeProposals.length} merge into day-type · {convertProposals.length} convert to task · {candidateDeletes.length} candidate delete · {reviewItems.length} review item{reviewItems.length !== 1 ? 's' : ''}
-          </p>
-          {candidateDeletes.length > 0 && (
-            <p className="text-[10px] text-violet-700 dark:text-violet-400">Candidate deletes are review evidence only and are never auto-applied.</p>
-          )}
+        <div className="bg-muted/30 border border-border rounded-lg p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <Label className="text-xs font-semibold">Create review tasks for unresolved AI review items</Label>
+              <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                Adds {reviewOnlyTotal} task{reviewOnlyTotal !== 1 ? 's' : ''} to your task list describing each item. No events will be changed.
+              </p>
+            </div>
+            <Switch checked={createReviewTasks} onCheckedChange={setCreateReviewTasks} data-testid="switch-create-review-tasks" />
+          </div>
         </div>
       )}
+
+      {/* Direct changes list */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="px-3 py-2 bg-muted/20 border-b border-border flex items-center gap-2 flex-wrap">
           <CheckCircle2 size={13} className="text-green-500" />
           <span className="text-xs font-semibold">{total} change{total !== 1 ? 's' : ''} ready to apply</span>
-          {summaryParts.length > 0 && (
-            <span className="text-[10px] text-muted-foreground ml-1">{summaryParts.join('  ')}</span>
-          )}
         </div>
         <div className="p-3 space-y-1 max-h-60 overflow-y-auto">
-          {prjAdd.map((p, i) => <DiffRow key={`pa${i}`} op="add" label={`Project: ${p.name}`} cat={undefined} />)}
+          {prjAdd.map((p, i) => <DiffRow key={`pa${i}`} op="add" label={`Project: ${p.name}`} />)}
           {prjUpdate.map((p, i) => <DiffRow key={`pu${i}`} op="update" label={`Update project: ${(p as any).name ?? p.id}`} />)}
           {prjDelete.map((id, i) => <DiffRow key={`pd${i}`} op="delete" label={`Remove project: ${String(id).slice(0, 20)}`} />)}
           {evtAdd.map((e, i) => <DiffRow key={`ea${i}`} op="add" label={`${e.date} — ${e.title}`} cat={e.category} />)}
@@ -807,29 +993,33 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
           {evtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0, 20)}`} />)}
           {tskAdd.map((t, i) => <DiffRow key={`ta${i}`} op="add" label={`Task: ${t.name}`} cat={t.category} isTask />)}
           {tskUpdate.map((t, i) => (
-            <DiffRow
-              key={`tu${i}`}
-              op="update"
+            <DiffRow key={`tu${i}`} op="update"
               label={completed.includes(t.id) ? `Complete task: ${t.id}` : `Update task: ${(t as any).name ?? t.id}`}
-              isTask
-            />
+              isTask />
           ))}
           {tskDelete.map((id, i) => <DiffRow key={`td${i}`} op="delete" label={`Remove task: ${String(id).slice(0, 20)}`} isTask />)}
-          {total === 0 && reviewOnlyTotal === 0 && <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>}
-          {total === 0 && reviewOnlyTotal > 0 && <p className="text-xs text-center text-muted-foreground py-2">No direct changes to apply. Review-only proposals were parsed but require a future confirmation flow.</p>}
+          {total === 0 && reviewOnlyTotal === 0 && (
+            <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>
+          )}
+          {total === 0 && reviewOnlyTotal > 0 && (
+            <p className="text-xs text-center text-muted-foreground py-2">
+              No direct schedule changes.{!createReviewTasks ? ' Enable "Create review tasks" above to add review tasks.' : ''}
+            </p>
+          )}
         </div>
       </div>
+
       <div className="flex gap-2">
         <Button onClick={onCancel} variant="outline" size="sm" className="flex-1">Cancel</Button>
         <Button
           onClick={onApply}
           size="sm"
-          disabled={total === 0}
+          disabled={!canApply}
           className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1"
           data-testid="button-apply"
         >
           <CheckCircle2 size={13} />
-          {applyLabel ?? `Apply ${total > 0 ? `${total} ` : ''}Change${total !== 1 ? 's' : ''}`}
+          {applyButtonLabel}
         </Button>
       </div>
     </div>
@@ -852,6 +1042,93 @@ function DiffRow({ op, label, cat, isTask }: {
       {color && <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: color }} />}
       {isTask && !cat && <span className="text-[8px] font-bold bg-muted text-muted-foreground px-1 rounded shrink-0">TASK</span>}
       <span className="truncate font-medium text-foreground">{label}</span>
+    </div>
+  );
+}
+
+// ─── Proposal section + card sub-components ──────────────────────────────────
+
+function ProposalSection({ title, color, children }: { title: string; color: 'amber' | 'violet'; children: React.ReactNode }) {
+  const bg = color === 'amber' ? 'border-amber-500/30 bg-amber-500/5' : 'border-violet-500/30 bg-violet-500/5';
+  const tc = color === 'amber' ? 'text-amber-700 dark:text-amber-400' : 'text-violet-700 dark:text-violet-400';
+  return (
+    <div className={`rounded-lg border p-2.5 space-y-2 ${bg}`}>
+      <p className={`text-[10px] font-bold uppercase tracking-wide ${tc}`}>{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function ReviewItemCard({ item }: { item: ReviewItemProposal }) {
+  const sevColor = item.severity === 'high'
+    ? 'bg-red-500/15 text-red-700 dark:text-red-400'
+    : item.severity === 'low'
+    ? 'bg-blue-500/15 text-blue-700 dark:text-blue-400'
+    : 'bg-amber-500/15 text-amber-700 dark:text-amber-400';
+  return (
+    <div className="bg-card/80 border border-border rounded-md p-2 space-y-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${sevColor}`}>{item.severity}</span>
+        <span className="text-[9px] px-1.5 py-0.5 bg-muted text-muted-foreground rounded-full">{item.type.replace(/-/g, ' ')}</span>
+        {item.date && <span className="text-[9px] text-muted-foreground">{item.date}</span>}
+      </div>
+      <p className="text-[11px] font-semibold text-foreground">{item.title}</p>
+      {item.description && <p className="text-[10px] text-muted-foreground leading-snug">{item.description}</p>}
+      {item.recommendedAction && <p className="text-[10px] text-foreground/70 leading-snug">→ {item.recommendedAction}</p>}
+      {item.affectedItemRefs.length > 0 && (
+        <p className="text-[9px] text-muted-foreground/70">
+          Refs: {item.affectedItemRefs.slice(0, 4).join(', ')}{item.affectedItemRefs.length > 4 ? ` +${item.affectedItemRefs.length - 4} more` : ''}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CandidateDeleteCard({ item }: { item: CandidateDeleteProposal }) {
+  const dateTime = [item.match.date, item.match.startTime && `${item.match.startTime}–${item.match.endTime ?? '?'}`].filter(Boolean).join(' · ');
+  return (
+    <div className="bg-card/80 border border-border rounded-md p-2 space-y-1">
+      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-700 dark:text-violet-400 uppercase">
+        confidence: {item.confidence}
+      </span>
+      <p className="text-[11px] font-semibold text-foreground">{item.match.title ?? 'unknown event'}</p>
+      {dateTime && <p className="text-[10px] text-muted-foreground">{dateTime}</p>}
+      {item.reason && <p className="text-[10px] text-muted-foreground leading-snug">{item.reason}</p>}
+      <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">No event will be deleted automatically.</p>
+    </div>
+  );
+}
+
+function MergeProposalCard({ item }: { item: MergeIntoDayTypeProposal }) {
+  return (
+    <div className="bg-card/80 border border-border rounded-md p-2 space-y-1">
+      <p className="text-[10px] text-muted-foreground">Source: <span className="font-mono text-[9px]">{item.sourceEventId ?? '—'}</span></p>
+      <p className="text-[10px] text-muted-foreground">Target: <span className="font-mono text-[9px]">{item.targetDayTypeEventId ?? '—'}</span></p>
+      {item.reason && <p className="text-[10px] text-foreground/70 leading-snug">{item.reason}</p>}
+      {item.blockingReasons.length > 0 && (
+        <p className="text-[9px] text-amber-600 dark:text-amber-400">Blocking: {item.blockingReasons.join('; ')}</p>
+      )}
+      <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">This proposal is review-only in v0.4.3 Pass 3. No merge will be applied.</p>
+    </div>
+  );
+}
+
+function ConvertProposalCard({ item }: { item: ConvertTimedBlockToTaskProposal }) {
+  const proposedName = (item.newTask as any)?.name ?? item.sourceEventId ?? '—';
+  const dueDate = (item.newTask as any)?.dueDate;
+  const priority = (item.newTask as any)?.priority;
+  return (
+    <div className="bg-card/80 border border-border rounded-md p-2 space-y-1">
+      <p className="text-[11px] font-semibold text-foreground">{proposedName}</p>
+      <p className="text-[10px] text-muted-foreground">Source: <span className="font-mono text-[9px]">{item.sourceEventId ?? '—'}</span></p>
+      {(dueDate || priority) && (
+        <p className="text-[10px] text-muted-foreground">{[dueDate && `Due: ${dueDate}`, priority && `Priority: ${priority}`].filter(Boolean).join(' · ')}</p>
+      )}
+      {item.reason && <p className="text-[10px] text-foreground/70 leading-snug">{item.reason}</p>}
+      {item.blockingReasons.length > 0 && (
+        <p className="text-[9px] text-amber-600 dark:text-amber-400">Blocking: {item.blockingReasons.join('; ')}</p>
+      )}
+      <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">This proposal is review-only in v0.4.3 Pass 3. No event will be converted automatically.</p>
     </div>
   );
 }

@@ -1143,6 +1143,74 @@ function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
 }
 
 
+// ─── Proposal types (review-only / transformation proposals from AI) ──────────
+
+type ProposalStatus = 'parsed' | 'blocked-review-only' | 'review-only';
+
+interface MergeIntoDayTypeProposal {
+  sourceEventId: string | null;
+  targetDayTypeEventId: string | null;
+  mergeMode: string;
+  noteSection: string | null;
+  deleteSourceAfterMerge: boolean;
+  preserveSourceInAuditTrail: boolean;
+  reason: string | null;
+  status: ProposalStatus;
+  blockingReasons: string[];
+}
+
+interface ConvertTimedBlockToTaskProposal {
+  sourceEventId: string | null;
+  newTask: Partial<Task> & { name?: string };
+  deleteSourceAfterConvert: boolean;
+  reason: string | null;
+  status: ProposalStatus;
+  blockingReasons: string[];
+}
+
+interface CandidateDeleteProposal {
+  match: {
+    date: string | null;
+    title: string | null;
+    startTime: string | null;
+    endTime: string | null;
+  };
+  confidence: string;
+  requiresUserReview: boolean;
+  reason: string | null;
+  status: ProposalStatus;
+}
+
+type ReviewItemType =
+  | 'needs-user-review'
+  | 'scheduling-conflict'
+  | 'overdue'
+  | 'duplicate-candidate'
+  | 'coverage-gap'
+  | 'suggestion';
+
+type ReviewItemSeverity = 'high' | 'medium' | 'low';
+
+interface ReviewItemProposal {
+  id: string;
+  type: ReviewItemType;
+  severity: ReviewItemSeverity;
+  date: string | null;
+  title: string;
+  description: string | null;
+  recommendedAction: string | null;
+  affectedItemRefs: string[];
+  canAutoFix: boolean;
+  triageStatus: TaskTriageStatus;
+}
+
+const VALID_CANDIDATE_CONFIDENCE = new Set(['high', 'medium', 'low', 'unknown']);
+const VALID_REVIEW_TYPES = new Set<ReviewItemType>([
+  'needs-user-review', 'scheduling-conflict', 'overdue',
+  'duplicate-candidate', 'coverage-gap', 'suggestion',
+]);
+const VALID_REVIEW_SEVERITIES = new Set<ReviewItemSeverity>(['high', 'medium', 'low']);
+
 function normalizeMergeIntoDayTypeProposals(arr: any[], existingEventIds: Set<string>, warnings: string[]): MergeIntoDayTypeProposal[] {
   if (!Array.isArray(arr)) return [];
   return arr

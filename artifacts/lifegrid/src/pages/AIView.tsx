@@ -46,7 +46,7 @@ interface Draft {
   mode: Mode; rawInput: string; prompt: string; importJson: string;
   promptType: PromptType; useRange: boolean; rangeStart: string; rangeEnd: string;
   rangePreset: DateRangePreset; includeTasks: boolean; includePeople: boolean; includeCompletedTasks: boolean; includeProjectsTags: boolean;
-  importSource: ImportSource; savedAt: number;
+  targetProjectId: string; importSource: ImportSource; savedAt: number;
 }
 const loadDraft = (): Partial<Draft> => {
   try {
@@ -91,6 +91,7 @@ export const AIView = () => {
   const [includePeople, setIncludePeople] = useState(draft.includePeople ?? true);
   const [includeCompletedTasks, setIncludeCompletedTasks] = useState(draft.includeCompletedTasks ?? false);
   const [includeProjectsTags, setIncludeProjectsTags] = useState(draft.includeProjectsTags ?? true);
+  const [targetProjectId, setTargetProjectId] = useState<string>(draft.targetProjectId ?? '');
 
   // Import: text paste vs. photo/screenshot upload to the AI
   const [importSource, setImportSource] = useState<ImportSource>(draft.importSource ?? 'text');
@@ -121,10 +122,10 @@ export const AIView = () => {
     const hasWork = mode !== 'choose' || rawInput.trim() || prompt || importJson.trim();
     try {
       if (!hasWork) { localStorage.removeItem(DRAFT_KEY); return; }
-      const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, importSource, savedAt: Date.now() };
+      const d: Draft = { mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, targetProjectId, importSource, savedAt: Date.now() };
       localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
     } catch { /* quota */ }
-  }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, importSource]);
+  }, [mode, rawInput, prompt, importJson, promptType, useRange, rangeStart, rangeEnd, rangePreset, includeTasks, includePeople, includeCompletedTasks, includeProjectsTags, targetProjectId, importSource]);
 
   const buildPrompt = () => {
     if (mode === 'optimize')
@@ -136,6 +137,7 @@ export const AIView = () => {
         includePeople,
         includeCompletedTasks,
         includeProjectsTags,
+        targetProjectId: targetProjectId || null,
       });
     if (mode === 'import')
       return importSource === 'image' ? generateImagePrompt(appData) : generateImportPrompt(rawInput, appData);
@@ -270,6 +272,7 @@ export const AIView = () => {
     setApprovedProposalIds(new Set());
     setPromptType('compact'); setRangePreset('next30'); setUseRange(true); setRangeStart(toISODate(new Date())); setRangeEnd(toISODate(addDays(new Date(), 30)));
     setIncludeTasks(true); setIncludePeople(true); setIncludeCompletedTasks(false); setIncludeProjectsTags(true);
+    setTargetProjectId('');
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
   };
 
@@ -505,6 +508,28 @@ export const AIView = () => {
                   );
                 })}
               </div>
+
+              {promptType === 'project-reorg' && (
+                <div className="mt-4 pt-3 border-t border-border/50 animate-in fade-in space-y-2">
+                  <Label className="text-xs font-semibold">Target project (optional)</Label>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Use this to ask AI to create, pause, resume, or reorganize a project using your current LifeGrid context. AI should return a JSON patch for review.
+                  </p>
+                  <select
+                    value={targetProjectId}
+                    onChange={e => { setTargetProjectId(e.target.value); setPrompt(''); setCopied(false); setPromptTokens(null); }}
+                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs text-foreground appearance-none cursor-pointer"
+                    data-testid="select-target-project"
+                  >
+                    <option value="">— New project / all projects —</option>
+                    {appData.projects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.status !== 'active' ? ` (${p.status})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </details>
           </StepBlock>
         )}

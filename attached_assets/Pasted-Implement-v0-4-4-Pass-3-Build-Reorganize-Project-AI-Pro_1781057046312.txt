@@ -1,0 +1,142 @@
+Implement v0.4.4 Pass 3 — Build/Reorganize Project AI Prompt Mode.
+
+Current state:
+- v0.4.4 Pass 1 added approval UI for AI transformation proposals.
+- v0.4.4 Pass 2 added safe application of approved mergeIntoDayType and convertTimedBlockToTask proposals.
+- candidateDeletes remain review-only.
+- Direct event deletes are hardened in preview and at apply time.
+- Stable IDs and eventKind exist.
+- AI patch v2 direct add/update/delete behavior is preserved.
+- Manual safety tests passed:
+  - safe merge deletes only flexible-work-block source
+  - protected merge keeps protected source
+  - convert-to-task creates task and deletes only safe flexible source
+  - candidateDeletes never delete
+  - direct protected deletes are blocked
+
+Goal:
+Add an AI prompt mode/template that helps the user build or reorganize a complex project using LifeGrid JSON patches.
+
+This mode should support use cases like:
+- learning to fly and getting certified
+- starting a complex hobby
+- preparing for credentialing
+- planning a move
+- reorganizing an existing project around competing priorities
+- pausing/deprioritizing an existing project and shifting tasks/events safely
+
+Do not:
+- add direct AI API integration
+- add backend/auth/cloud sync
+- change localStorage key
+- add auto-apply
+- add a full scheduling optimizer
+- add external calendar import
+- weaken transformation safety rules
+- let candidateDeletes apply
+- allow title/date/time delete matching
+- silently delete events or tasks
+
+Required behavior:
+
+1. Add a new AI prompt mode:
+   Build / Reorganize Project
+
+Suggested label:
+🏗️ Build / Reorganize Project
+
+Suggested description:
+“Create or restructure a project with tasks, milestones, schedule blocks, and review items.”
+
+2. Add project targeting if low-risk:
+- When this mode is selected in AIView, show a project selector.
+- Options:
+  - New project / all projects
+  - Existing project list
+- If an existing project is selected, the prompt should focus on that project.
+- If no existing project is selected, the prompt should support creating a new project.
+
+3. Add any necessary state to AIView:
+- targetProjectId or selectedProjectId for this mode.
+- Reset it appropriately when clearing/resetting import state if needed.
+- Do not break existing modes.
+
+4. Update prompt generation in aiPrompt.ts:
+- Add a prompt type or mode for project reorganization.
+- Include selected project context if available.
+- Include active project list.
+- Include relevant tasks with stable IDs.
+- Include relevant events with stable IDs and eventKind.
+- Include categories/tags.
+- Include current date range/context if existing AI prompt options already provide it.
+- Include explicit safety rules.
+- Include JSON patch output instructions.
+
+5. Prompt instructions should tell AI:
+
+You are helping build or reorganize a LifeGrid project.
+
+When creating a new project:
+- Use projects.add.
+- Add project notes explaining purpose, assumptions, and scope.
+- Create tasks.add for milestones and next actions.
+- Create flexible events.add for planned work blocks.
+- Use eventKind: flexible-work-block for flexible schedule blocks.
+- Use reviewItems.add for uncertain requirements, assumptions, dependencies, or items needing user review.
+- Use dueDateType and triageStatus where useful.
+- Use projectId consistently across tasks.
+- Link events to related tasks when possible using linkedTaskIds / linkedEventIds.
+
+When reorganizing an existing project:
+- Use stable IDs for tasks.update and events.update.
+- Move or reprioritize flexible items when appropriate.
+- Use tasks.update to mark items backlog, waiting, blocked, ready, or done as appropriate.
+- Use events.update for flexible-work-block, reminder, or placeholder items only when moving schedule blocks.
+- Do not move/delete fixed-appointment, shift, travel, protected-time, day-type, or unknown eventKind items.
+- Use mergeIntoDayType or convertTimedBlockToTask only when appropriate and only with stable IDs.
+- Use candidateDeletes only as review-only suggestions.
+- Put ambiguous issues into reviewItems.add or warnings.
+- Do not delete any event or task unless it is clearly safe, stable-ID-based, and low-risk.
+- Prefer reviewItems.add over risky destructive edits.
+
+Output requirements:
+- Return LifeGrid JSON patch only.
+- No prose outside JSON.
+- Use current patch v2 format plus supported review/transformation proposal sections.
+- Use stable IDs for update/delete/transform proposals.
+- Use reviewItems.add for uncertain findings.
+- candidateDeletes are review-only and never auto-applied.
+
+6. If possible, add a short helper text in the AIView UI when this mode is selected:
+“Use this to ask AI to create, pause, resume, or reorganize a project using your current LifeGrid context. AI should return a JSON patch for review.”
+
+7. Keep import behavior unchanged:
+- This pass is prompt generation only.
+- Do not create project/task/event changes directly.
+- Do not change applyImportUpdate.
+- Do not change applyTransformations.
+- Do not change delete hardening.
+
+8. Testing:
+Run:
+pnpm --filter @workspace/lifegrid run typecheck
+pnpm --filter @workspace/lifegrid run build
+git diff --check
+
+9. If all pass:
+Commit with:
+Add project reorganization AI prompt mode
+
+Final report should include:
+- files changed
+- prompt mode added
+- project selector behavior
+- prompt content summary
+- safety instructions included
+- JSON patch output rules included
+- confirmation no direct AI/API/backend logic added
+- confirmation import/apply behavior unchanged
+- typecheck result
+- build result
+- git diff check result
+- commit hash

@@ -373,14 +373,15 @@ const encodeTasks = (tasks: Task[]): string => {
 // ─── Prompt types & their objective blocks ───────────────────────────────────
 export type PromptType =
   | 'compact' | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
-  | 'tasks-only' | 'availability' | 'projects' | 'messages' | 'patch';
+  | 'tasks-only' | 'availability' | 'projects' | 'messages' | 'patch' | 'project-reorg';
 
 export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; description: string; badge?: string }[] = [
   { id: 'compact',      emoji: '🧭', title: 'Admin planning',        description: 'Default: share compact LifeGrid context and ask the AI admin assistant to help.', badge: 'Fast' },
   { id: 'availability', emoji: '📅', title: 'Free time / meetings',  description: 'Find open slots, coordinate meetings, and schedule focus blocks.', badge: 'Focused' },
   { id: 'tasks-only',   emoji: '✅', title: 'Task prioritization',   description: 'Sort tasks, clarify next actions, and identify urgent work.', badge: 'Focused' },
-  { id: 'projects',     emoji: '🧱', title: 'Project breakdown',     description: 'Break large projects into small actionable subtasks.' },
-  { id: 'messages',     emoji: '✉️', title: 'Draft messages',        description: 'Draft emails/texts based on your schedule and tasks.' },
+  { id: 'projects',      emoji: '🧱', title: 'Project breakdown',            description: 'Break large projects into small actionable subtasks.' },
+  { id: 'project-reorg', emoji: '🏗️', title: 'Build / Reorganize Project', description: 'Create or restructure a project with tasks, milestones, schedule blocks, and review items.', badge: 'New' },
+  { id: 'messages',      emoji: '✉️', title: 'Draft messages',               description: 'Draft emails/texts based on your schedule and tasks.' },
   { id: 'patch',        emoji: '🧩', title: 'Bulk updates / JSON',   description: 'Minimal raw JSON only: changed fields, completions, and deletes.', badge: 'Fast' },
   { id: 'analyze',      emoji: '🔍', title: 'Full schedule review',  description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
   { id: 'freetime',     emoji: '🟢', title: 'Free-time scan',        description: 'Open slots and gaps where new things could be scheduled.' },
@@ -446,6 +447,11 @@ List each conflict clearly, then propose "update"/"delete"/"add" fixes.`,
 2. Match each pending/incomplete task to a realistic time slot
 3. Suggest "add" events as focus blocks or appointments
 4. Keep suggestions practical — don't overschedule`,
+  'project-reorg': `Build or reorganize a LifeGrid project:
+1. Create a project with tasks, milestones, and schedule blocks — or restructure an existing one
+2. Use reviewItems.add for uncertain requirements, assumptions, dependencies, and decisions
+3. Only update flexible-work-block, reminder, or placeholder events; protect all fixed events
+4. Put risky deletion suggestions in candidateDeletes (review-only, never auto-applied)`,
 };
 
 export interface PlanningOptions {
@@ -456,6 +462,7 @@ export interface PlanningOptions {
   includePeople?: boolean;
   includeCompletedTasks?: boolean;
   includeProjectsTags?: boolean;
+  targetProjectId?: string | null; // for project-reorg mode
 }
 
 // ─── 1. PLANNING PROMPT — analyze schedule, optionally scoped to a date range ─
@@ -463,6 +470,7 @@ export const generatePlanningPrompt = (data: AppData, opts: PlanningOptions = {}
   const {
     promptType = 'compact', focusStart, focusEnd,
     includeTasks = true, includePeople = true, includeCompletedTasks = false, includeProjectsTags = true,
+    targetProjectId,
   } = opts;
 
   // ── Primary LifeGrid Admin prompt: broad, efficient, and range-aware ──
@@ -588,6 +596,94 @@ PENDING TASKS — ${pendingTasks.length}
 ==================================================
 ${encodeTasks(pendingTasks)}
 ${schemaReference(data.categories)}`;
+  }
+
+  // ── Project build / reorganize mode ──
+  if (promptType === 'project-reorg') {
+    const t = today();
+    const targetProject = targetProjectId ? (data.projects.find(p => p.id === targetProjectId) ?? null) : null;
+    const isBuilding = !targetProject;
+
+    const projectTasks = targetProject
+      ? data.tasks.filter(task => task.projectId === targetProject.id && task.status !== 'done')
+      : [];
+    const otherIncompleteTasks = data.tasks.filter(task =>
+      task.status !== 'done' && (!targetProject || task.projectId !== targetProject.id)
+    );
+    const moveableKinds = new Set(['flexible-work-block', 'reminder', 'placeholder']);
+    const moveableEvents = data.events.filter(e => e.eventKind && moveableKinds.has(e.eventKind));
+    const fixedEvents = data.events.filter(e => !e.eventKind || !moveableKinds.has(e.eventKind));
+    const linkedFixedEvents = targetProject
+      ? fixedEvents.filter(e => e.linkedTaskIds?.some(tid => projectTasks.some(pt => pt.id === tid)))
+      : [];
+    const unlinkedFixedEvents = fixedEvents.filter(e => !linkedFixedEvents.some(lfe => lfe.id === e.id));
+
+    const taskSection = targetProject
+      ? `==================================================
+TASKS IN THIS PROJECT — ${projectTasks.length} incomplete
+==================================================
+${encodeTasks(projectTasks)}
+
+==================================================
+OTHER INCOMPLETE TASKS — context only, do not reorganize unless asked (${otherIncompleteTasks.length})
+==================================================
+${encodeTasks(otherIncompleteTasks)}`
+      : `==================================================
+ALL INCOMPLETE TASKS — context for new project planning (${otherIncompleteTasks.length})
+==================================================
+${encodeTasks(otherIncompleteTasks)}`;
+
+    const goalInstructions = isBuilding
+      ? `No project is targeted — help me BUILD a new project from scratch.
+
+When building a new project:
+- Use projects.add with a stable id, name, color, status: "active", and notes describing purpose, assumptions, and scope.
+- Use tasks.add for milestones and next actions. Set projectId, dueDateType, triageStatus, and priority.
+- Use events.add with eventKind: "flexible-work-block" for planned work blocks.
+- Use reviewItems.add for uncertain requirements, assumptions, dependencies, or items needing user review.
+- Link events to tasks via linkedTaskIds / linkedEventIds where possible.
+- Use projectId consistently across all tasks and events for the new project.`
+      : `Target project: "${targetProject!.name}" (id: ${targetProject!.id}, status: ${targetProject!.status})
+
+When reorganizing this project:
+- Use tasks.update with stable IDs to change status, priority, triageStatus, nextAction, or notes.
+- Mark tasks "backlog", "waiting", "blocked", "ready", or "done" via tasks.update as appropriate.
+- Use events.update ONLY for flexible-work-block, reminder, or placeholder events.
+- NEVER move or update fixed-appointment, shift, travel, protected-time, or day-type events.
+- Use mergeIntoDayType or convertTimedBlockToTask only when clearly appropriate and only with stable IDs.
+- Put risky deletion suggestions in candidateDeletes — review-only, never auto-applied.`;
+
+    return `${adminAssistantIntro(data, `${isBuilding ? 'building a new project' : `reorganizing project "${targetProject!.name}"`}`, true)}
+Today is ${t}.
+
+${goalInstructions}
+
+==================================================
+ABSOLUTE SAFETY RULES
+==================================================
+- Match events and tasks by stable "id" ONLY — never by title, date, or time.
+- NEVER delete fixed-appointment, shift, travel, protected-time, day-type, or unknown-eventKind events.
+- Only flexible-work-block, reminder, and placeholder events may be deleted — prefer candidateDeletes even for these.
+- candidateDeletes are review-only and will NEVER be auto-applied by the app.
+- When uncertain, use reviewItems.add or warnings instead of making a risky change.
+- Output: LifeGrid JSON patch v2 only. No prose before or after the JSON.
+
+${taskSection}
+
+==================================================
+MOVEABLE EVENTS — flexible-work-block, reminder, placeholder (${moveableEvents.length})
+==================================================
+${encodeEventsDetailed(moveableEvents)}
+${linkedFixedEvents.length > 0 ? `==================================================
+FIXED EVENTS LINKED TO THIS PROJECT — context only, DO NOT MODIFY (${linkedFixedEvents.length})
+==================================================
+${encodeEventsDetailed(linkedFixedEvents)}
+
+` : ''}==================================================
+ALL OTHER FIXED EVENTS — context only, DO NOT MODIFY (${unlinkedFixedEvents.length})
+==================================================
+${encodeEventsCompact(unlinkedFixedEvents)}
+${patchSchemaReference(data.categories)}`;
   }
 
   // ── Standard modes (analyze, conflicts, freetime, balance, prep, digest) ──

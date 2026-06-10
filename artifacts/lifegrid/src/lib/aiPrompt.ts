@@ -1148,6 +1148,7 @@ function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
 export type ProposalStatus = 'parsed' | 'blocked-review-only' | 'review-only';
 
 export interface MergeIntoDayTypeProposal {
+  proposalId: string;
   sourceEventId: string | null;
   targetDayTypeEventId: string | null;
   mergeMode: string;
@@ -1160,6 +1161,7 @@ export interface MergeIntoDayTypeProposal {
 }
 
 export interface ConvertTimedBlockToTaskProposal {
+  proposalId: string;
   sourceEventId: string | null;
   newTask: Partial<Task> & { name?: string };
   deleteSourceAfterConvert: boolean;
@@ -1225,6 +1227,7 @@ function normalizeMergeIntoDayTypeProposals(arr: any[], existingEventIds: Set<st
       else if (!existingEventIds.has(targetDayTypeEventId)) blockingReasons.push(`Unknown targetDayTypeEventId "${targetDayTypeEventId}"`);
       if (blockingReasons.length) warnings.push(`mergeIntoDayType proposal ${i + 1} is blocked/review-only: ${blockingReasons.join('; ')}`);
       return {
+        proposalId: `merge-${i}`,
         sourceEventId,
         targetDayTypeEventId,
         mergeMode: typeof p.mergeMode === 'string' && p.mergeMode.trim() ? p.mergeMode.trim() : 'append-to-notes',
@@ -1253,6 +1256,7 @@ function normalizeConvertTimedBlockToTaskProposals(
       if (!newTask.name) blockingReasons.push('Missing newTask.name');
       if (blockingReasons.length) warnings.push(`convertTimedBlockToTask proposal ${i + 1} is blocked/review-only: ${blockingReasons.join('; ')}`);
       return {
+        proposalId: `conv-${i}`,
         sourceEventId,
         newTask,
         deleteSourceAfterConvert: Boolean(p.deleteSourceAfterConvert),

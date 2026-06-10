@@ -1,0 +1,108 @@
+Implement v0.4.4 Pass 1 — Stable proposal IDs + per-proposal approval UI.
+
+Current state:
+LifeGrid v0.4.3 already parses mergeIntoDayType and convertTimedBlockToTask proposals and shows them as read-only MergeProposalCard / ConvertProposalCard components in AI import preview. candidateDeletes are always view-only and must remain view-only.
+
+Goal:
+Add a stable proposalId field to mergeIntoDayType and convertTimedBlockToTask proposals so each card can be individually selected with a checkbox. Store approved IDs in AIView state. Update the Apply button label to reflect approved transformations.
+
+Do not implement actual transformation apply logic in this pass.
+
+Critical constraints:
+- Do not implement applyTransformationProposals.
+- Do not touch applyUpdateToData.
+- Do not delete events.
+- Do not merge events.
+- Do not convert events to tasks.
+- Do not change localStorage key.
+- Do not add project-reorg mode yet.
+- candidateDeletes must remain view-only and must not get checkboxes.
+- Preserve current review task creation behavior.
+- Preserve existing AI patch v2 behavior.
+- Preserve the Replit aiPrompt.ts type fix.
+
+Files likely to modify:
+- artifacts/lifegrid/src/lib/aiPrompt.ts
+- artifacts/lifegrid/src/pages/AIView.tsx
+
+Required changes:
+
+1. In aiPrompt.ts:
+- Add proposalId: string to MergeIntoDayTypeProposal.
+- Add proposalId: string to ConvertTimedBlockToTaskProposal.
+- In normalizeMergeIntoDayTypeProposals, set proposalId: `merge-${i}` for each returned object.
+- In normalizeConvertTimedBlockToTaskProposals, set proposalId: `conv-${i}` for each returned object.
+
+2. In AIView.tsx:
+- Import Checkbox if needed from the existing UI checkbox component.
+- Add state:
+  const [approvedProposalIds, setApprovedProposalIds] = useState<Set<string>>(new Set());
+
+- Add a toggle helper:
+  const toggleProposal = (id: string) =>
+    setApprovedProposalIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+- In reset(), clear approvedProposalIds.
+
+- Pass approvedProposalIds and toggleProposal into DiffPreview.
+
+- Update DiffPreview props to accept:
+  approvedProposalIds: Set<string>
+  toggleProposal: (id: string) => void
+
+- Update MergeProposalCard:
+  - Add approved: boolean
+  - Add onToggle: () => void
+  - Render checkbox labeled “Approve merge”
+  - When unchecked, show: “Review only — no merge will be applied.”
+  - When checked, show: “Approved for the next safe transformation step.”
+  - Include this safety note:
+    “Source event will only be removed if it is a flexible-work-block, reminder, or placeholder. All others are kept and annotated.”
+  - Do not actually apply the merge yet.
+
+- Update ConvertProposalCard:
+  - Add approved: boolean
+  - Add onToggle: () => void
+  - Render checkbox labeled “Approve conversion”
+  - When unchecked, show: “Review only — no conversion will be applied.”
+  - When checked, show: “Approved for the next safe transformation step.”
+  - Include this safety note:
+    “Source event will only be removed if it is a flexible-work-block, reminder, or placeholder. All others are kept and annotated.”
+  - Do not actually convert the event yet.
+
+- Do not add checkboxes to candidateDeletes.
+
+3. Apply button:
+- Compute approvedCount = approvedProposalIds.size.
+- Allow Apply button to reflect approved transformations in the label, but do not apply them yet.
+- If total > 0 and approvedCount > 0:
+  “Apply {total} changes + {approvedCount} approved transformation(s)”
+- If total === 0 and approvedCount > 0:
+  “Review {approvedCount} approved transformation(s)”
+- Keep existing behavior for direct changes and review task creation.
+
+4. Testing:
+Run:
+pnpm --filter @workspace/lifegrid run typecheck
+pnpm --filter @workspace/lifegrid run build
+git diff --check
+
+If all pass:
+Commit with:
+Add approval UI for AI transformation proposals
+
+Final report should include:
+- files changed
+- proposalId changes
+- checkbox UI changes
+- safety note wording
+- confirmation no merge/delete/convert apply logic was added
+- confirmation candidateDeletes remain view-only
+- typecheck result
+- build result
+- git diff check result
+- commit hash

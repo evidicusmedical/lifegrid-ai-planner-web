@@ -23,6 +23,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { toISODate } from '../lib/format';
 import {
@@ -99,6 +100,15 @@ export const AIView = () => {
 
   // Review tasks toggle — unchecked by default
   const [createReviewTasks, setCreateReviewTasks] = useState(false);
+
+  // Approved transformation proposal IDs — no apply logic yet (Pass 1)
+  const [approvedProposalIds, setApprovedProposalIds] = useState<Set<string>>(new Set());
+  const toggleProposal = (id: string) =>
+    setApprovedProposalIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   // Prompt size estimate
   const [promptTokens, setPromptTokens] = useState<number | null>(null);
@@ -232,6 +242,7 @@ export const AIView = () => {
     setPreview(null); setError(null); setCopied(false);
     setApplyAsVersion(false); setVersionName(''); setImportSource('text');
     setCreateReviewTasks(false);
+    setApprovedProposalIds(new Set());
     setPromptType('compact'); setRangePreset('next30'); setUseRange(true); setRangeStart(toISODate(new Date())); setRangeEnd(toISODate(addDays(new Date(), 30)));
     setIncludeTasks(true); setIncludePeople(true); setIncludeCompletedTasks(false); setIncludeProjectsTags(true);
     try { localStorage.removeItem(DRAFT_KEY); } catch { /* */ }
@@ -267,9 +278,11 @@ export const AIView = () => {
           preview={preview}
           applyLabel={applyAsVersion ? 'Create Version' : undefined}
           onApply={handleApply}
-          onCancel={() => { setPreview(null); setImportJson(''); setError(null); setCreateReviewTasks(false); }}
+          onCancel={() => { setPreview(null); setImportJson(''); setError(null); setCreateReviewTasks(false); setApprovedProposalIds(new Set()); }}
           createReviewTasks={createReviewTasks}
           setCreateReviewTasks={setCreateReviewTasks}
+          approvedProposalIds={approvedProposalIds}
+          toggleProposal={toggleProposal}
         />
       </div>
     );
@@ -839,9 +852,10 @@ function buildReviewTasks(preview: ParsedUpdate, cats: Category[]): Task[] {
   return tasks;
 }
 
-function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks, setCreateReviewTasks }: {
+function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks, setCreateReviewTasks, approvedProposalIds, toggleProposal }: {
   preview: ParsedUpdate; onApply: () => void; onCancel: () => void; applyLabel?: string;
   createReviewTasks: boolean; setCreateReviewTasks: (v: boolean) => void;
+  approvedProposalIds: Set<string>; toggleProposal: (id: string) => void;
 }) {
   const prjAdd = preview.projects?.add ?? [];
   const prjUpdate = preview.projects?.update ?? [];
@@ -863,13 +877,20 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
     evtAdd.length + evtUpdate.length + evtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
   const warnings = preview.warnings ?? [];
-  const canApply = total > 0 || (createReviewTasks && reviewOnlyTotal > 0);
+  const approvedCount = approvedProposalIds.size;
+  const canApply = total > 0 || approvedCount > 0 || (createReviewTasks && reviewOnlyTotal > 0);
   const reviewTaskCount = createReviewTasks ? reviewOnlyTotal : 0;
   const applyButtonLabel = (() => {
     if (applyLabel) return applyLabel;
-    if (total === 0 && reviewTaskCount > 0) return `Create ${reviewTaskCount} Review Task${reviewTaskCount !== 1 ? 's' : ''}`;
-    if (reviewTaskCount > 0) return `Apply ${total} Change${total !== 1 ? 's' : ''} + ${reviewTaskCount} Review Task${reviewTaskCount !== 1 ? 's' : ''}`;
-    return `Apply ${total > 0 ? `${total} ` : ''}Change${total !== 1 ? 's' : ''}`;
+    if (total > 0 && approvedCount > 0)
+      return `Apply ${total} change${total !== 1 ? 's' : ''} + ${approvedCount} transformation${approvedCount !== 1 ? 's' : ''}`;
+    if (total === 0 && approvedCount > 0)
+      return `Review ${approvedCount} approved transformation${approvedCount !== 1 ? 's' : ''}`;
+    if (total === 0 && reviewTaskCount > 0)
+      return `Create ${reviewTaskCount} review task${reviewTaskCount !== 1 ? 's' : ''}`;
+    if (reviewTaskCount > 0)
+      return `Apply ${total} change${total !== 1 ? 's' : ''} + ${reviewTaskCount} review task${reviewTaskCount !== 1 ? 's' : ''}`;
+    return `Apply ${total > 0 ? `${total} ` : ''}change${total !== 1 ? 's' : ''}`;
   })();
 
   return (
@@ -952,14 +973,14 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
       {/* Merge proposals */}
       {mergeProposals.length > 0 && (
         <ProposalSection title={`Merge-into-day-type — ${mergeProposals.length} proposal${mergeProposals.length !== 1 ? 's' : ''}`} color="violet">
-          {mergeProposals.map((mp, i) => <MergeProposalCard key={i} item={mp} />)}
+          {mergeProposals.map((mp, i) => <MergeProposalCard key={i} item={mp} approved={approvedProposalIds.has(mp.proposalId)} onToggle={() => toggleProposal(mp.proposalId)} />)}
         </ProposalSection>
       )}
 
       {/* Convert proposals */}
       {convertProposals.length > 0 && (
         <ProposalSection title={`Convert-to-task — ${convertProposals.length} proposal${convertProposals.length !== 1 ? 's' : ''}`} color="violet">
-          {convertProposals.map((cp, i) => <ConvertProposalCard key={i} item={cp} />)}
+          {convertProposals.map((cp, i) => <ConvertProposalCard key={i} item={cp} approved={approvedProposalIds.has(cp.proposalId)} onToggle={() => toggleProposal(cp.proposalId)} />)}
         </ProposalSection>
       )}
 
@@ -1099,36 +1120,68 @@ function CandidateDeleteCard({ item }: { item: CandidateDeleteProposal }) {
   );
 }
 
-function MergeProposalCard({ item }: { item: MergeIntoDayTypeProposal }) {
+function MergeProposalCard({ item, approved, onToggle }: { item: MergeIntoDayTypeProposal; approved: boolean; onToggle: () => void }) {
+  const blocked = item.blockingReasons.length > 0;
   return (
-    <div className="bg-card/80 border border-border rounded-md p-2 space-y-1">
+    <div className={`bg-card/80 border rounded-md p-2 space-y-1 ${approved ? 'border-violet-500/50 bg-violet-500/5' : 'border-border'}`}>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`merge-${item.proposalId}`}
+          checked={approved}
+          onCheckedChange={() => onToggle()}
+          disabled={blocked}
+        />
+        <label htmlFor={`merge-${item.proposalId}`} className={`text-[11px] font-semibold select-none ${blocked ? 'text-muted-foreground' : 'cursor-pointer'}`}>
+          Approve merge
+        </label>
+        {blocked && <span className="text-[9px] text-amber-600 dark:text-amber-400 ml-auto">blocked</span>}
+      </div>
       <p className="text-[10px] text-muted-foreground">Source: <span className="font-mono text-[9px]">{item.sourceEventId ?? '—'}</span></p>
       <p className="text-[10px] text-muted-foreground">Target: <span className="font-mono text-[9px]">{item.targetDayTypeEventId ?? '—'}</span></p>
       {item.reason && <p className="text-[10px] text-foreground/70 leading-snug">{item.reason}</p>}
-      {item.blockingReasons.length > 0 && (
-        <p className="text-[9px] text-amber-600 dark:text-amber-400">Blocking: {item.blockingReasons.join('; ')}</p>
-      )}
-      <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">This proposal is review-only in v0.4.3 Pass 3. No merge will be applied.</p>
+      {blocked && <p className="text-[9px] text-amber-600 dark:text-amber-400">Blocking: {item.blockingReasons.join('; ')}</p>}
+      <p className={`text-[9px] font-medium ${approved ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground'}`}>
+        {approved ? 'Approved for the next safe transformation step.' : 'Review only — no merge will be applied.'}
+      </p>
+      <p className="text-[9px] text-muted-foreground/60 leading-tight">
+        Source event will only be removed if it is a flexible-work-block, reminder, or placeholder. All others are kept and annotated.
+      </p>
     </div>
   );
 }
 
-function ConvertProposalCard({ item }: { item: ConvertTimedBlockToTaskProposal }) {
+function ConvertProposalCard({ item, approved, onToggle }: { item: ConvertTimedBlockToTaskProposal; approved: boolean; onToggle: () => void }) {
   const proposedName = (item.newTask as any)?.name ?? item.sourceEventId ?? '—';
   const dueDate = (item.newTask as any)?.dueDate;
   const priority = (item.newTask as any)?.priority;
+  const blocked = item.blockingReasons.length > 0;
   return (
-    <div className="bg-card/80 border border-border rounded-md p-2 space-y-1">
+    <div className={`bg-card/80 border rounded-md p-2 space-y-1 ${approved ? 'border-violet-500/50 bg-violet-500/5' : 'border-border'}`}>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id={`conv-${item.proposalId}`}
+          checked={approved}
+          onCheckedChange={() => onToggle()}
+          disabled={blocked}
+        />
+        <label htmlFor={`conv-${item.proposalId}`} className={`text-[11px] font-semibold select-none ${blocked ? 'text-muted-foreground' : 'cursor-pointer'}`}>
+          Approve conversion
+        </label>
+        {blocked && <span className="text-[9px] text-amber-600 dark:text-amber-400 ml-auto">blocked</span>}
+      </div>
       <p className="text-[11px] font-semibold text-foreground">{proposedName}</p>
       <p className="text-[10px] text-muted-foreground">Source: <span className="font-mono text-[9px]">{item.sourceEventId ?? '—'}</span></p>
       {(dueDate || priority) && (
         <p className="text-[10px] text-muted-foreground">{[dueDate && `Due: ${dueDate}`, priority && `Priority: ${priority}`].filter(Boolean).join(' · ')}</p>
       )}
       {item.reason && <p className="text-[10px] text-foreground/70 leading-snug">{item.reason}</p>}
-      {item.blockingReasons.length > 0 && (
-        <p className="text-[9px] text-amber-600 dark:text-amber-400">Blocking: {item.blockingReasons.join('; ')}</p>
-      )}
-      <p className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">This proposal is review-only in v0.4.3 Pass 3. No event will be converted automatically.</p>
+      {blocked && <p className="text-[9px] text-amber-600 dark:text-amber-400">Blocking: {item.blockingReasons.join('; ')}</p>}
+      <p className={`text-[9px] font-medium ${approved ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground'}`}>
+        {approved ? 'Approved for the next safe transformation step.' : 'Review only — no conversion will be applied.'}
+      </p>
+      <p className="text-[9px] text-muted-foreground/60 leading-tight">
+        Source event will only be removed if it is a flexible-work-block, reminder, or placeholder. All others are kept and annotated.
+      </p>
     </div>
   );
 }

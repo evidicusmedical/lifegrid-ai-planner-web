@@ -248,13 +248,19 @@ OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON
   "events": {
     "add": [],
     "update": [],
-    "delete": []
+    "delete": [],
+    "mergeIntoDayType": [],
+    "convertTimedBlockToTask": [],
+    "candidateDeletes": []
   },
   "tasks": {
     "add": [],
     "update": [],
     "delete": [],
     "complete": []
+  },
+  "reviewItems": {
+    "add": []
   }
 }
 
@@ -717,6 +723,14 @@ export interface ParsedUpdate {
     update: Array<{ id: string } & Partial<Task>>;
     delete: string[];
   };
+  transformationProposals?: {
+    mergeIntoDayType: MergeIntoDayTypeProposal[];
+    convertTimedBlockToTask: ConvertTimedBlockToTaskProposal[];
+    candidateDeletes: CandidateDeleteProposal[];
+  };
+  reviewItems?: {
+    add: ReviewItemProposal[];
+  };
   completedTaskIds?: string[];
   patchNotes?: string[];
   warnings?: string[];
@@ -750,7 +764,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     .replace(/```\s*/g, '')
     .trim();
 
-  const dataKeyMatch = s.match(/\{\s*"(?:lifegridPatchVersion|projects|events|tasks|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
+  const dataKeyMatch = s.match(/\{\s*"(?:lifegridPatchVersion|projects|events|tasks|reviewItems|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)"/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
   if (start < 0) {
@@ -938,14 +952,36 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     };
   }
 
+  if (parsed.events) {
+    const mergeIntoDayType = normalizeMergeIntoDayTypeProposals(parsed.events.mergeIntoDayType ?? [], existingEventIds, warnings);
+    const convertTimedBlockToTask = normalizeConvertTimedBlockToTaskProposals(parsed.events.convertTimedBlockToTask ?? [], existingEventIds, validCats, warnings);
+    const candidateDeletes = normalizeCandidateDeleteProposals(parsed.events.candidateDeletes ?? [], warnings);
+    if (mergeIntoDayType.length || convertTimedBlockToTask.length || candidateDeletes.length) {
+      result.transformationProposals = {
+        mergeIntoDayType,
+        convertTimedBlockToTask,
+        candidateDeletes,
+      };
+    }
+  }
+
+  const reviewItemAdds = normalizeReviewItems(parsed.reviewItems?.add ?? []);
+  if (reviewItemAdds.length) result.reviewItems = { add: reviewItemAdds };
+
   const totalChanges =
     (result.projects?.add.length ?? 0) + (result.projects?.update.length ?? 0) + (result.projects?.delete.length ?? 0) +
     (result.events?.add.length ?? 0) + (result.events?.update.length ?? 0) + (result.events?.delete.length ?? 0) +
     (result.tasks?.add.length ?? 0) + (result.tasks?.update.length ?? 0) + (result.tasks?.delete.length ?? 0);
 
-  if (totalChanges === 0 && !result.projects && !result.events && !result.tasks) {
+  const totalReviewOnly =
+    (result.transformationProposals?.mergeIntoDayType.length ?? 0) +
+    (result.transformationProposals?.convertTimedBlockToTask.length ?? 0) +
+    (result.transformationProposals?.candidateDeletes.length ?? 0) +
+    (result.reviewItems?.add.length ?? 0);
+
+  if (totalChanges === 0 && totalReviewOnly === 0 && !result.projects && !result.events && !result.tasks && !result.reviewItems) {
     throw new Error(
-      'The JSON doesn\'t contain "projects", "events", or "tasks" keys.\n' +
+      'The JSON doesn\'t contain "projects", "events", "tasks", "reviewItems", or supported reorganization proposal keys.\n' +
       'Make sure you used the exact prompt from this app and pasted the complete AI response.'
     );
   }
@@ -1104,6 +1140,127 @@ function normalizeProjectUpdate(u: any): { id: string } & Partial<Project> {
   if (u.status  !== undefined && VALID_PROJECT_STATUS.has(u.status)) out.status = u.status;
   if ('notes'   in u) out.notes = u.notes ?? null;
   return out;
+}
+
+
+function normalizeMergeIntoDayTypeProposals(arr: any[], existingEventIds: Set<string>, warnings: string[]): MergeIntoDayTypeProposal[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(p => p && typeof p === 'object')
+    .map((p, i) => {
+      const sourceEventId = typeof p.sourceEventId === 'string' && p.sourceEventId.trim() ? p.sourceEventId.trim() : null;
+      const targetDayTypeEventId = typeof p.targetDayTypeEventId === 'string' && p.targetDayTypeEventId.trim() ? p.targetDayTypeEventId.trim() : null;
+      const blockingReasons: string[] = [];
+      if (!sourceEventId) blockingReasons.push('Missing sourceEventId');
+      else if (!existingEventIds.has(sourceEventId)) blockingReasons.push(`Unknown sourceEventId "${sourceEventId}"`);
+      if (!targetDayTypeEventId) blockingReasons.push('Missing targetDayTypeEventId');
+      else if (!existingEventIds.has(targetDayTypeEventId)) blockingReasons.push(`Unknown targetDayTypeEventId "${targetDayTypeEventId}"`);
+      if (blockingReasons.length) warnings.push(`mergeIntoDayType proposal ${i + 1} is blocked/review-only: ${blockingReasons.join('; ')}`);
+      return {
+        sourceEventId,
+        targetDayTypeEventId,
+        mergeMode: typeof p.mergeMode === 'string' && p.mergeMode.trim() ? p.mergeMode.trim() : 'append-to-notes',
+        noteSection: typeof p.noteSection === 'string' && p.noteSection.trim() ? p.noteSection.trim() : null,
+        deleteSourceAfterMerge: Boolean(p.deleteSourceAfterMerge),
+        preserveSourceInAuditTrail: p.preserveSourceInAuditTrail !== false,
+        reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim() : null,
+        status: blockingReasons.length ? 'blocked-review-only' : 'parsed',
+        blockingReasons,
+      } as MergeIntoDayTypeProposal;
+    });
+}
+
+function normalizeConvertTimedBlockToTaskProposals(
+  arr: any[], existingEventIds: Set<string>, validCats: Set<string>, warnings: string[]
+): ConvertTimedBlockToTaskProposal[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(p => p && typeof p === 'object')
+    .map((p, i) => {
+      const sourceEventId = typeof p.sourceEventId === 'string' && p.sourceEventId.trim() ? p.sourceEventId.trim() : null;
+      const newTask = normalizeProposedTask(p.newTask ?? {}, validCats);
+      const blockingReasons: string[] = [];
+      if (!sourceEventId) blockingReasons.push('Missing sourceEventId');
+      else if (!existingEventIds.has(sourceEventId)) blockingReasons.push(`Unknown sourceEventId "${sourceEventId}"`);
+      if (!newTask.name) blockingReasons.push('Missing newTask.name');
+      if (blockingReasons.length) warnings.push(`convertTimedBlockToTask proposal ${i + 1} is blocked/review-only: ${blockingReasons.join('; ')}`);
+      return {
+        sourceEventId,
+        newTask,
+        deleteSourceAfterConvert: Boolean(p.deleteSourceAfterConvert),
+        reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim() : null,
+        status: blockingReasons.length ? 'blocked-review-only' : 'parsed',
+        blockingReasons,
+      } as ConvertTimedBlockToTaskProposal;
+    });
+}
+
+function normalizeProposedTask(raw: any, validCats: Set<string>): Partial<Task> & { name?: string } {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Partial<Task> & { name?: string } = {};
+  if (typeof raw.name === 'string' && raw.name.trim()) out.name = raw.name.trim();
+  const rawCat = raw.category ?? raw.tag ?? (Array.isArray(raw.tags) ? raw.tags[0] : undefined);
+  if (validCats.has(rawCat)) out.category = rawCat;
+  if (raw.dueDate !== undefined) out.dueDate = fixDate(String(raw.dueDate));
+  if (raw.status !== undefined && VALID_STA.has(raw.status)) out.status = raw.status;
+  if (raw.priority !== undefined && VALID_PRI.has(raw.priority)) out.priority = raw.priority;
+  if (raw.dueDateType !== undefined && VALID_DUE_DATE_TYPE.has(raw.dueDateType)) out.dueDateType = raw.dueDateType;
+  if (raw.triageStatus !== undefined && VALID_TRIAGE_STATUS.has(raw.triageStatus)) out.triageStatus = raw.triageStatus;
+  if (raw.owner !== undefined) out.owner = String(raw.owner ?? 'Me');
+  if ('notes' in raw) out.notes = raw.notes ?? null;
+  if ('nextAction' in raw) out.nextAction = raw.nextAction ?? null;
+  if ('schedulingNotes' in raw) out.schedulingNotes = raw.schedulingNotes ?? null;
+  if ('projectId' in raw) out.projectId = raw.projectId ? String(raw.projectId) : null;
+  if ('parentTaskId' in raw) out.parentTaskId = raw.parentTaskId ? String(raw.parentTaskId) : null;
+  if ('linkedEventIds' in raw) out.linkedEventIds = normalizeIds(raw.linkedEventIds ?? []);
+  return out;
+}
+
+function normalizeCandidateDeleteProposals(arr: any[], warnings: string[]): CandidateDeleteProposal[] {
+  if (!Array.isArray(arr)) return [];
+  const proposals = arr
+    .filter(p => p && typeof p === 'object')
+    .map(p => {
+      const match = p.match && typeof p.match === 'object' ? p.match : {};
+      const confidence = VALID_CANDIDATE_CONFIDENCE.has(p.confidence) ? p.confidence : 'unknown';
+      return {
+        match: {
+          date: match.date ? fixDate(String(match.date)) : null,
+          title: typeof match.title === 'string' && match.title.trim() ? match.title.trim() : null,
+          startTime: fixTime(match.startTime),
+          endTime: fixTime(match.endTime),
+        },
+        confidence,
+        requiresUserReview: p.requiresUserReview !== false,
+        reason: typeof p.reason === 'string' && p.reason.trim() ? p.reason.trim() : null,
+        status: 'review-only',
+      } as CandidateDeleteProposal;
+    });
+  if (proposals.length) warnings.push(`${proposals.length} candidate delete proposal${proposals.length === 1 ? '' : 's'} parsed as review-only. Candidate deletes are never auto-applied.`);
+  return proposals;
+}
+
+function normalizeReviewItems(arr: any[]): ReviewItemProposal[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter(item => item && typeof item === 'object')
+    .map((item, i) => {
+      const type: ReviewItemType = VALID_REVIEW_TYPES.has(item.type) ? item.type : 'needs-user-review';
+      const severity: ReviewItemSeverity = VALID_REVIEW_SEVERITIES.has(item.severity) ? item.severity : 'medium';
+      const triageStatus: TaskTriageStatus = VALID_TRIAGE_STATUS.has(item.triageStatus) ? item.triageStatus : 'needs-review';
+      return {
+        id: typeof item.id === 'string' && item.id.trim() ? item.id.trim() : `review-${Date.now()}-${i}`,
+        type,
+        severity,
+        date: item.date ? fixDate(String(item.date)) : null,
+        title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : 'AI review item',
+        description: typeof item.description === 'string' && item.description.trim() ? item.description.trim() : null,
+        recommendedAction: typeof item.recommendedAction === 'string' && item.recommendedAction.trim() ? item.recommendedAction.trim() : null,
+        affectedItemRefs: normalizeIds(item.affectedItemRefs ?? []),
+        canAutoFix: Boolean(item.canAutoFix),
+        triageStatus,
+      };
+    });
 }
 
 // ─── Date / time helpers ──────────────────────────────────────────────────────

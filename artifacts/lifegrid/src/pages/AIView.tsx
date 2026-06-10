@@ -737,6 +737,11 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
   const tskDelete = preview.tasks?.delete ?? [];
   const completed = preview.completedTaskIds ?? [];
   const notes = preview.patchNotes ?? [];
+  const mergeProposals = preview.transformationProposals?.mergeIntoDayType ?? [];
+  const convertProposals = preview.transformationProposals?.convertTimedBlockToTask ?? [];
+  const candidateDeletes = preview.transformationProposals?.candidateDeletes ?? [];
+  const reviewItems = preview.reviewItems?.add ?? [];
+  const reviewOnlyTotal = mergeProposals.length + convertProposals.length + candidateDeletes.length + reviewItems.length;
   const total = prjAdd.length + prjUpdate.length + prjDelete.length +
     evtAdd.length + evtUpdate.length + evtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
@@ -747,6 +752,7 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
     (prjUpdate.length + evtUpdate.length + tskUpdate.length) > 0 && `~${prjUpdate.length + evtUpdate.length + tskUpdate.length} updated`,
     completed.length > 0 && `✓${completed.length} completed`,
     (prjDelete.length + evtDelete.length + tskDelete.length) > 0 && `−${prjDelete.length + evtDelete.length + tskDelete.length} removed`,
+    reviewOnlyTotal > 0 && `${reviewOnlyTotal} review-only`,
   ].filter(Boolean);
 
   return (
@@ -768,6 +774,20 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
           {notes.map((n, i) => (
             <p key={i} className="text-[10px] text-blue-700 dark:text-blue-400">{n}</p>
           ))}
+        </div>
+      )}
+
+      {reviewOnlyTotal > 0 && (
+        <div className="bg-violet-500/10 border border-violet-500/30 rounded-lg p-2.5 space-y-1">
+          <p className="text-[10px] font-bold text-violet-700 dark:text-violet-400 uppercase tracking-wide">
+            Review-only AI reorganization proposals — not applied
+          </p>
+          <p className="text-[10px] text-violet-700 dark:text-violet-400">
+            {mergeProposals.length} merge into day-type · {convertProposals.length} convert to task · {candidateDeletes.length} candidate delete · {reviewItems.length} review item{reviewItems.length !== 1 ? 's' : ''}
+          </p>
+          {candidateDeletes.length > 0 && (
+            <p className="text-[10px] text-violet-700 dark:text-violet-400">Candidate deletes are review evidence only and are never auto-applied.</p>
+          )}
         </div>
       )}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -795,7 +815,8 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel }: {
             />
           ))}
           {tskDelete.map((id, i) => <DiffRow key={`td${i}`} op="delete" label={`Remove task: ${String(id).slice(0, 20)}`} isTask />)}
-          {total === 0 && <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>}
+          {total === 0 && reviewOnlyTotal === 0 && <p className="text-xs text-center text-muted-foreground py-2">No changes found in the response.</p>}
+          {total === 0 && reviewOnlyTotal > 0 && <p className="text-xs text-center text-muted-foreground py-2">No direct changes to apply. Review-only proposals were parsed but require a future confirmation flow.</p>}
         </div>
       </div>
       <div className="flex gap-2">

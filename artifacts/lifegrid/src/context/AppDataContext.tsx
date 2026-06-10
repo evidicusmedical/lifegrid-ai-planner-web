@@ -4,6 +4,7 @@ import {
   EventDisplayPriority, EventKind, ProjectStatus, TaskDueDateType, TaskTriageStatus,
 } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
+import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
 
 interface AppContextType extends AppData {
   // Active calendar identity
@@ -50,7 +51,7 @@ interface AppContextType extends AppData {
   duplicateCalendar: (id: string, name?: string) => string;
 
   // Import / backup
-  applyImportUpdate: (update: any, target?: { newVersionName?: string }) => void;
+  applyImportUpdate: (update: any, transformationArgs?: { proposals: TransformationProposalSet; approvedProposalIds: Set<string> }, target?: { newVersionName?: string }) => string[];
   exportBackup: () => string;
   importBackup: (json: string) => void;
   clearActiveCalendar: () => void;
@@ -401,7 +402,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
   // ── Import update (optionally into a brand-new version) ──
-  const applyUpdateToData = (d: AppData, update: any): AppData => {
+  const applyUpdateToData = (d: AppData, update: any): { data: AppData; warnings: string[] } => {
+    const applyWarnings: string[] = [];
     const catIds = new Set(d.categories.map(c => c.id));
     const catColor = (id: string) =>
       d.categories.find(c => c.id === id)?.color ?? d.categories.find(c => c.id === 'other')?.color ?? '#6b7280';
@@ -455,7 +457,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
       if (Array.isArray(update.events.delete)) {
-        next.events = next.events.filter(e => !update.events.delete.includes(e.id));
+        const BLOCKED_DIRECT_DELETE = new Set<EventKind>(['fixed-appointment', 'shift', 'travel', 'day-type', 'protected-time']);
+        const toDelete = new Set<string>();
+        for (const id of update.events.delete) {
+          const ev = next.events.find(e => e.id === id);
+          if (!ev) continue;
+          if (!ev.eventKind || BLOCKED_DIRECT_DELETE.has(ev.eventKind)) {
+            applyWarnings.push(`Blocked delete of "${ev.title}" (${ev.eventKind ?? 'unknown eventKind'}) — only flexible-work-block, reminder, or placeholder may be auto-deleted`);
+            continue;
+          }
+          toDelete.add(id);
+        }
+        next.events = next.events.filter(e => !toDelete.has(e.id));
       }
     }
     if (update.tasks) {
@@ -472,19 +485,43 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         next.tasks = next.tasks.filter(t => !update.tasks.delete.includes(t.id));
       }
     }
-    return next;
+    return { data: next, warnings: applyWarnings };
   };
 
-  const applyImportUpdate = (update: any, target?: { newVersionName?: string }) => {
+  const applyImportUpdate = (
+    update: any,
+    transformationArgs?: { proposals: TransformationProposalSet; approvedProposalIds: Set<string> },
+    target?: { newVersionName?: string }
+  ): string[] => {
+    const allWarnings: string[] = [];
+    const shouldTransform = !!(
+      transformationArgs &&
+      transformationArgs.approvedProposalIds.size > 0 &&
+      (transformationArgs.proposals.mergeIntoDayType.length > 0 || transformationArgs.proposals.convertTimedBlockToTask.length > 0)
+    );
+
     if (target?.newVersionName) {
-      // Apply changes into a NEW calendar version (a copy of the current one)
       const copy = JSON.parse(JSON.stringify(activeCalendar.data)) as AppData;
-      const updated = applyUpdateToData(copy, update);
-      const cal = freshCalendar(target.newVersionName, updated);
+      const { data: afterDirect, warnings: w1 } = applyUpdateToData(copy, update);
+      allWarnings.push(...w1);
+      const { data: finalData, warnings: w2 } = shouldTransform
+        ? applyTransformationProposals(afterDirect, transformationArgs!.proposals, transformationArgs!.approvedProposalIds)
+        : { data: afterDirect, warnings: [] };
+      allWarnings.push(...w2);
+      const cal = freshCalendar(target.newVersionName, finalData);
       setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     } else {
-      mutate(d => applyUpdateToData(d, update));
+      mutate(d => {
+        const { data: afterDirect, warnings: w1 } = applyUpdateToData(d, update);
+        allWarnings.push(...w1);
+        const { data: finalData, warnings: w2 } = shouldTransform
+          ? applyTransformationProposals(afterDirect, transformationArgs!.proposals, transformationArgs!.approvedProposalIds)
+          : { data: afterDirect, warnings: [] };
+        allWarnings.push(...w2);
+        return finalData;
+      });
     }
+    return allWarnings;
   };
 
   // ── Backup / restore ──

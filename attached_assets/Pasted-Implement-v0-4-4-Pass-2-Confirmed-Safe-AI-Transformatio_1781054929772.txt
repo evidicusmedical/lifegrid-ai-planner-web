@@ -1,0 +1,192 @@
+Implement v0.4.4 Pass 2 — Confirmed Safe AI Transformation Apply Logic.
+
+Current state:
+- v0.4.4 Pass 1 is complete.
+- AI import preview has approval checkboxes for mergeIntoDayType and convertTimedBlockToTask proposals.
+- approvedProposalIds is tracked in AIView.
+- candidateDeletes remain view-only.
+- No transformation apply logic exists yet.
+
+Goal:
+When the user explicitly approves merge/convert proposals and clicks Apply, LifeGrid should apply only those approved, stable-ID-based, safe transformations.
+
+This pass should add:
+1. applyTransformations helper logic.
+2. confirmed convertTimedBlockToTask behavior.
+3. confirmed mergeIntoDayType behavior.
+4. audit preservation.
+5. source event deletion only when safe.
+6. direct event delete hardening.
+
+Critical safety constraints:
+- candidateDeletes must remain review-only.
+- No title/date/time delete matching.
+- No transformation applies unless its proposalId is in approvedProposalIds.
+- Source event deletion is allowed only for eventKind:
+  - flexible-work-block
+  - reminder
+  - placeholder
+- Source event deletion is blocked for:
+  - fixed-appointment
+  - shift
+  - travel
+  - day-type
+  - protected-time
+  - missing/unknown eventKind
+- If source deletion is blocked, keep the source event and annotate it.
+- Preserve original source details in audit notes before any source deletion.
+- Do not change localStorage key.
+- Preserve JSON backup/restore compatibility.
+- Preserve current AI patch v2 direct add/update/delete behavior.
+- Avoid broad refactors.
+
+Files likely to modify:
+- artifacts/lifegrid/src/lib/applyTransformations.ts — new file
+- artifacts/lifegrid/src/pages/AIView.tsx
+- artifacts/lifegrid/src/context/AppDataContext.tsx
+- artifacts/lifegrid/src/types/index.ts only if needed
+
+Required implementation:
+
+1. Create src/lib/applyTransformations.ts.
+
+Export:
+- isSourceDeletionAllowed(event: Event | undefined): { allowed: boolean; reason?: string }
+- appendAuditEntry(event: Event, entry: string): Event
+- applyTransformationProposals(args): { data: AppData; warnings: string[] }
+
+Safe delete function must be:
+
+const SAFE_DELETE_KINDS = new Set<EventKind>(['flexible-work-block', 'reminder', 'placeholder']);
+
+export function isSourceDeletionAllowed(event: Event | undefined): { allowed: boolean; reason?: string } {
+  if (!event) return { allowed: false, reason: 'Source event not found by ID' };
+  if (!event.eventKind) {
+    return { allowed: false, reason: 'Source event has unknown eventKind and cannot be auto-deleted' };
+  }
+  if (SAFE_DELETE_KINDS.has(event.eventKind)) return { allowed: true };
+  return { allowed: false, reason: `"${event.eventKind}" events cannot be auto-deleted` };
+}
+
+2. appendAuditEntry:
+- Add audit line into event.aiNotes.
+- Format:
+  [AI v0.4.4 YYYY-MM-DD HH:MM] <entry>
+- Preserve existing aiNotes by appending.
+
+3. applyTransformationProposals should accept:
+- current AppData
+- transformationProposals
+- approvedProposalIds
+
+It should:
+- clone events/tasks/project arrays safely
+- process only approved proposalIds
+- track processedSourceIds to avoid double-transforming the same event
+- return updated data and warnings
+- not mutate input data directly
+
+4. convertTimedBlockToTask behavior:
+
+For each approved convertTimedBlockToTask proposal:
+- Find source event by sourceEventId.
+- If missing, warning and skip.
+- If source already processed, warning and skip.
+- Build a new Task using existing Task model.
+- new task should include:
+  - id: proposal.newTask.id if present, otherwise generated id
+  - name: proposal.newTask.name
+  - category: proposal.newTask.category or sourceEvent.category or safe fallback
+  - dueDate: proposal.newTask.dueDate or sourceEvent.date
+  - dueDateType: proposal.newTask.dueDateType or target-date if date exists, otherwise needs-clarification
+  - status: todo
+  - priority: proposal.newTask.priority or medium
+  - triageStatus: proposal.newTask.triageStatus or needs-review
+  - owner: Me
+  - nextAction: proposal.newTask.nextAction or null
+  - notes: include provenance/audit text and any proposal.newTask.notes
+  - projectId: proposal.newTask.projectId or null
+  - parentTaskId: proposal.newTask.parentTaskId or null if valid
+  - linkedEventIds: include sourceEvent.id
+- Add task to tasks.
+- Add audit to source event.
+- If deleteSourceAfterConvert is true:
+  - call isSourceDeletionAllowed(sourceEvent)
+  - if allowed: remove source event after task is created and provenance preserved
+  - if blocked: keep source event with audit note and warning
+- If deleteSourceAfterConvert is false:
+  - keep source event with audit note
+- Do not delete anything if source event has missing/unknown eventKind.
+
+5. mergeIntoDayType behavior:
+
+For each approved mergeIntoDayType proposal:
+- Find sourceEvent and targetEvent.
+- If source missing, warning and skip.
+- If target missing, warning and skip.
+- If source already processed, warning and skip.
+- Target must have eventKind === day-type.
+  - If not, warning and skip.
+- Merge into target notes:
+  - append-to-notes default
+  - prepend-to-notes if requested
+  - replace-notes if requested
+  - no-change should only add audit, not alter target notes
+- Include source title, date, time, category, notes if present, and reason in merged note/audit.
+- Add audit to target event.
+- Add audit to source event if it remains.
+- If deleteSourceAfterMerge is true:
+  - call isSourceDeletionAllowed(sourceEvent)
+  - if allowed: remove source event after target audit is preserved
+  - if blocked: keep source event with audit note and warning
+- Do not delete source if missing/unknown eventKind.
+
+6. Direct event delete hardening:
+
+In AppDataContext.tsx applyUpdateToData or the relevant import apply path:
+- For direct events.delete from AI patches:
+  - Only delete events if eventKind is flexible-work-block, reminder, or placeholder.
+  - Block deletion of fixed-appointment, shift, travel, day-type, protected-time, missing/unknown eventKind.
+  - Add warning for blocked deletes if warning reporting is feasible.
+- Do not block task deletes in this pass.
+- Do not change project delete behavior in this pass.
+
+7. AIView apply behavior:
+- When user clicks Apply:
+  - Existing direct changes still apply as before.
+  - Review task creation still works as before.
+  - Approved transformations should be applied after direct safe changes, or in the safest order you determine.
+  - candidateDeletes must not be applied.
+- Surface transformation warnings to the user if feasible via toast or preview note.
+- After apply, reset approvedProposalIds.
+
+8. Preserve current behaviors:
+- Direct project/event/task add/update/delete still work, except event delete is now safer.
+- Review task creation still works.
+- Patches with no approved transformations still behave like v0.4.3.
+- Patches with approved transformations but no direct changes can apply transformations.
+
+9. Testing:
+Run:
+pnpm --filter @workspace/lifegrid run typecheck
+pnpm --filter @workspace/lifegrid run build
+git diff --check
+
+10. If all pass:
+Commit with:
+Apply approved AI transformation proposals safely
+
+Final report should include:
+- files changed
+- applyTransformations helper summary
+- safe delete behavior
+- convertTimedBlockToTask behavior
+- mergeIntoDayType behavior
+- audit preservation behavior
+- direct event delete hardening behavior
+- confirmation candidateDeletes remain review-only
+- confirmation missing/unknown eventKind blocks deletion
+- typecheck result
+- build result
+- git diff check result
+- commit hash

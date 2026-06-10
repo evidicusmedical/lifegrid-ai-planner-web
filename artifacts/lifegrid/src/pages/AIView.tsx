@@ -226,13 +226,37 @@ export const AIView = () => {
           };
         }
       }
-      appData.applyImportUpdate(effectivePreview, applyAsVersion ? { newVersionName: versionName.trim() } : undefined);
+      const txProposals = preview.transformationProposals;
+      const allWarnings = appData.applyImportUpdate(
+        effectivePreview,
+        approvedProposalIds.size > 0 && txProposals
+          ? {
+              proposals: {
+                mergeIntoDayType: txProposals.mergeIntoDayType,
+                convertTimedBlockToTask: txProposals.convertTimedBlockToTask,
+              },
+              approvedProposalIds,
+            }
+          : undefined,
+        applyAsVersion ? { newVersionName: versionName.trim() } : undefined
+      );
       const add = (effectivePreview.projects?.add.length ?? 0) + (effectivePreview.events?.add.length ?? 0) + (effectivePreview.tasks?.add.length ?? 0);
       const upd = (effectivePreview.projects?.update.length ?? 0) + (effectivePreview.events?.update.length ?? 0) + (effectivePreview.tasks?.update.length ?? 0);
       const del = (effectivePreview.projects?.delete.length ?? 0) + (effectivePreview.events?.delete.length ?? 0) + (effectivePreview.tasks?.delete.length ?? 0);
+      const txApplied = approvedProposalIds.size;
       toast.success(applyAsVersion ? `New version "${versionName.trim()}" created!` : 'Schedule updated!', {
-        description: [add && `+${add} added`, upd && `~${upd} updated`, del && `−${del} removed`].filter(Boolean).join('  '),
+        description: [
+          add && `+${add} added`,
+          upd && `~${upd} updated`,
+          del && `−${del} removed`,
+          txApplied && `${txApplied} transformation${txApplied !== 1 ? 's' : ''} applied`,
+        ].filter(Boolean).join('  '),
       });
+      if (allWarnings.length > 0) {
+        toast.warning(`Applied with ${allWarnings.length} warning${allWarnings.length !== 1 ? 's' : ''}`, {
+          description: allWarnings.slice(0, 3).join('\n') + (allWarnings.length > 3 ? `\n…+${allWarnings.length - 3} more` : ''),
+        });
+      }
       reset();
     } catch { setError('Failed to apply — please try again.'); }
   };

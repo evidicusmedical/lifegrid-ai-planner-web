@@ -1,0 +1,77 @@
+Fix v0.4.4 direct event delete preview so protected deletes are not shown as safe changes.
+
+Current issue:
+When importing an AI patch with events.delete containing a protected event ID, the apply logic correctly blocks deletion, but the AI import preview still shows:
+- "1 safe change ready to apply"
+- "Remove event: <id>"
+
+This is misleading. Protected event deletes should be visible as blocked/review-needed, not safe.
+
+Do not change transformation apply behavior.
+Do not change candidateDeletes behavior.
+Do not change localStorage key.
+Do not add backend/auth/cloud sync/API integration.
+Do not add project-reorg mode yet.
+
+Current safety rule:
+Only these eventKind values may be deleted automatically:
+- flexible-work-block
+- reminder
+- placeholder
+
+These must be blocked from AI direct delete:
+- fixed-appointment
+- shift
+- travel
+- day-type
+- protected-time
+- missing/unknown eventKind
+
+Required behavior:
+
+1. In AI import preview / DiffPreview:
+   - Before showing events.delete as safe removals, check the existing event by ID.
+   - If the event is deletable under the safe-delete rule, show it under safe changes.
+   - If the event is protected or missing/unknown eventKind, show it under warnings/review-needed/blocked changes instead.
+   - Label clearly:
+     "Blocked delete: <event title>"
+     "This event is <eventKind or unknown> and will not be deleted automatically."
+
+2. Update safe change counts:
+   - Blocked event deletes should not count as safe changes ready to apply.
+   - The preview should not say "1 safe change ready to apply" when the only change is a blocked event delete.
+
+3. Apply button behavior:
+   - If the patch contains only blocked event deletes and no review-task creation or other safe changes, applying should either:
+     A. be disabled, or
+     B. show a clear message that there are no safe changes to apply.
+   - Choose the lower-risk implementation.
+
+4. Reuse existing safe-delete logic if possible:
+   - Prefer importing/reusing isSourceDeletionAllowed from src/lib/applyTransformations.ts.
+   - If reuse would cause dependency problems, duplicate a tiny read-only helper but keep behavior identical.
+
+5. Preserve apply-time hardening:
+   - applyUpdateToData should still block protected deletes at runtime.
+   - This fix is mainly to make the preview accurate before Apply.
+
+6. Testing:
+Run:
+pnpm --filter @workspace/lifegrid run typecheck
+pnpm --filter @workspace/lifegrid run build
+git diff --check
+
+7. If all pass:
+Commit with:
+Clarify blocked event deletes in AI import preview
+
+Final report should include:
+- files changed
+- preview behavior changed
+- safe change count behavior
+- apply button behavior
+- confirmation apply-time hardening remains
+- typecheck result
+- build result
+- git diff check result
+- commit hash

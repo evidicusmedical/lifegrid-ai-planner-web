@@ -17,7 +17,8 @@ import {
   CandidateDeleteProposal,
   ReviewItemProposal,
 } from '../lib/aiPrompt';
-import { Task, Category } from '../types';
+import { Task, Category, Event } from '../types';
+import { isSourceDeletionAllowed } from '../lib/applyTransformations';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -300,6 +301,7 @@ export const AIView = () => {
         />
         <DiffPreview
           preview={preview}
+          existingEvents={appData.events}
           applyLabel={applyAsVersion ? 'Create Version' : undefined}
           onApply={handleApply}
           onCancel={() => { setPreview(null); setImportJson(''); setError(null); setCreateReviewTasks(false); setApprovedProposalIds(new Set()); }}
@@ -876,8 +878,8 @@ function buildReviewTasks(preview: ParsedUpdate, cats: Category[]): Task[] {
   return tasks;
 }
 
-function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks, setCreateReviewTasks, approvedProposalIds, toggleProposal }: {
-  preview: ParsedUpdate; onApply: () => void; onCancel: () => void; applyLabel?: string;
+function DiffPreview({ preview, existingEvents, onApply, onCancel, applyLabel, createReviewTasks, setCreateReviewTasks, approvedProposalIds, toggleProposal }: {
+  preview: ParsedUpdate; existingEvents: Event[]; onApply: () => void; onCancel: () => void; applyLabel?: string;
   createReviewTasks: boolean; setCreateReviewTasks: (v: boolean) => void;
   approvedProposalIds: Set<string>; toggleProposal: (id: string) => void;
 }) {
@@ -897,8 +899,27 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
   const candidateDeletes = preview.transformationProposals?.candidateDeletes ?? [];
   const reviewItems = preview.reviewItems?.add ?? [];
   const reviewOnlyTotal = mergeProposals.length + convertProposals.length + candidateDeletes.length + reviewItems.length;
+
+  // Split evtDelete into safe (auto-deletable kinds) vs blocked (protected eventKind)
+  const safeEvtDelete: string[] = [];
+  const blockedEvtDelete: Array<{ id: string; title: string; eventKind: string; reason: string }> = [];
+  for (const id of evtDelete) {
+    const ev = existingEvents.find(e => e.id === String(id));
+    const check = isSourceDeletionAllowed(ev);
+    if (check.allowed) {
+      safeEvtDelete.push(String(id));
+    } else {
+      blockedEvtDelete.push({
+        id: String(id),
+        title: ev?.title ?? String(id).slice(0, 28),
+        eventKind: ev?.eventKind ?? 'unknown',
+        reason: check.reason ?? 'Protected event kind cannot be auto-deleted',
+      });
+    }
+  }
+
   const total = prjAdd.length + prjUpdate.length + prjDelete.length +
-    evtAdd.length + evtUpdate.length + evtDelete.length +
+    evtAdd.length + evtUpdate.length + safeEvtDelete.length +
     tskAdd.length + tskUpdate.length + tskDelete.length;
   const warnings = preview.warnings ?? [];
   const approvedCount = approvedProposalIds.size;
@@ -930,7 +951,7 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
             {(prjAdd.length + evtAdd.length + tskAdd.length) > 0 && <span className="opacity-70">+{prjAdd.length + evtAdd.length + tskAdd.length} added</span>}
             {(prjUpdate.length + evtUpdate.length + tskUpdate.length) > 0 && <span className="opacity-70">~{prjUpdate.length + evtUpdate.length + tskUpdate.length} updated</span>}
             {completed.length > 0 && <span className="opacity-70">✓{completed.length} completed</span>}
-            {(prjDelete.length + evtDelete.length + tskDelete.length) > 0 && <span className="opacity-70">−{prjDelete.length + evtDelete.length + tskDelete.length} removed</span>}
+            {(prjDelete.length + safeEvtDelete.length + tskDelete.length) > 0 && <span className="opacity-70">−{prjDelete.length + safeEvtDelete.length + tskDelete.length} removed</span>}
           </div>
         )}
         {reviewItems.length > 0 && (
@@ -953,7 +974,12 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
             <AlertCircle size={10} /> {warnings.length} warning{warnings.length !== 1 ? 's' : ''}
           </div>
         )}
-        {total === 0 && reviewOnlyTotal === 0 && warnings.length === 0 && (
+        {blockedEvtDelete.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[10px] text-red-600 dark:text-red-400">
+            <AlertCircle size={10} /> {blockedEvtDelete.length} blocked delete{blockedEvtDelete.length !== 1 ? 's' : ''} — will not be applied
+          </div>
+        )}
+        {total === 0 && reviewOnlyTotal === 0 && warnings.length === 0 && blockedEvtDelete.length === 0 && (
           <p className="text-[10px] text-muted-foreground">No changes or proposals found.</p>
         )}
       </div>
@@ -966,6 +992,23 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
           </p>
           {warnings.map((w, i) => (
             <p key={i} className="text-[10px] text-amber-700 dark:text-amber-400">{w}</p>
+          ))}
+        </div>
+      )}
+
+      {/* Blocked event deletes */}
+      {blockedEvtDelete.length > 0 && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2.5 space-y-2">
+          <p className="text-[10px] font-bold text-red-700 dark:text-red-400 uppercase tracking-wide">
+            🚫 {blockedEvtDelete.length} blocked delete{blockedEvtDelete.length !== 1 ? 's' : ''} — will not be applied
+          </p>
+          {blockedEvtDelete.map((b, i) => (
+            <div key={i} className="space-y-0.5">
+              <p className="text-[10px] font-semibold text-red-700 dark:text-red-400">Blocked delete: {b.title}</p>
+              <p className="text-[10px] text-red-600/80 dark:text-red-400/70">
+                This event is <span className="font-mono bg-red-500/10 px-0.5 rounded">{b.eventKind}</span> and will not be deleted automatically.
+              </p>
+            </div>
           ))}
         </div>
       )}
@@ -1035,7 +1078,7 @@ function DiffPreview({ preview, onApply, onCancel, applyLabel, createReviewTasks
           {prjDelete.map((id, i) => <DiffRow key={`pd${i}`} op="delete" label={`Remove project: ${String(id).slice(0, 20)}`} />)}
           {evtAdd.map((e, i) => <DiffRow key={`ea${i}`} op="add" label={`${e.date} — ${e.title}`} cat={e.category} />)}
           {evtUpdate.map((e, i) => <DiffRow key={`eu${i}`} op="update" label={`Update: ${(e as any).title ?? e.id}`} />)}
-          {evtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${String(id).slice(0, 20)}`} />)}
+          {safeEvtDelete.map((id, i) => <DiffRow key={`ed${i}`} op="delete" label={`Remove event: ${id.slice(0, 20)}`} />)}
           {tskAdd.map((t, i) => <DiffRow key={`ta${i}`} op="add" label={`Task: ${t.name}`} cat={t.category} isTask />)}
           {tskUpdate.map((t, i) => (
             <DiffRow key={`tu${i}`} op="update"

@@ -382,7 +382,7 @@ export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; descr
   { id: 'tasks-only',   emoji: '✅', title: 'Task prioritization',   description: 'Sort tasks, clarify next actions, and identify urgent work.', badge: 'Focused' },
   { id: 'projects',      emoji: '🧱', title: 'Project breakdown',            description: 'Break large projects into small actionable subtasks.' },
   { id: 'project-reorg', emoji: '🏗️', title: 'Build / Reorganize Project', description: 'Create or restructure a project with tasks, milestones, schedule blocks, and review items.', badge: 'New' },
-  { id: 'cleanup-day-types', emoji: '🧹', title: 'Clean Up Grid Into Day Types', description: 'Convert flexible blocked time into day-type plans and tasks while preserving explicit timed commitments.', badge: 'New' },
+  { id: 'cleanup-day-types', emoji: '🧹', title: 'Clean Up Grid Into Day Types', description: 'Small high-confidence first cleanup pass: preserve explicit timed events, move flexible blocks into existing day-type plans, and create tasks from actionable blocks.', badge: 'New' },
   { id: 'messages',      emoji: '✉️', title: 'Draft messages',               description: 'Draft emails/texts based on your schedule and tasks.' },
   { id: 'patch',        emoji: '🧩', title: 'Bulk updates / JSON',   description: 'Minimal raw JSON only: changed fields, completions, and deletes.', badge: 'Fast' },
   { id: 'analyze',      emoji: '🔍', title: 'Full schedule review',  description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
@@ -729,10 +729,12 @@ KEEP UNCHANGED
 USE events.mergeIntoDayType WHEN
 - a flexible-work-block, reminder, or placeholder should become part of a day-type plan
 - the information is planning/context rather than an actionable task
+- the targetDayTypeEventId is an existing day-type event from the exported context, not an event being created in this same patch
 
 USE events.convertTimedBlockToTask WHEN
 - a flexible-work-block, reminder, or placeholder represents an actionable item
-- the result should become a task instead of a timed event
+- the result should become a brand-new task instead of a timed event
+- the source does not already have linkedTaskIds and does not appear to correspond to an existing task
 
 USE events.add ONLY WHEN
 - creating a missing day-type event
@@ -750,6 +752,27 @@ NEVER
 - move or delete fixed appointments, shifts, travel, protected time, day-type events, or unknown events
 - create destructive changes without stable IDs
 - output prose outside JSON
+
+PATCH SIZE GUIDANCE
+- For full-calendar cleanup, return a small high-confidence first patch.
+- Prefer 5-10 transformation proposals maximum unless the user explicitly asks for a full cleanup patch.
+
+SAME-PATCH DAY-TYPE TARGET RULE
+- Do not use mergeIntoDayType or convertTimedBlockToTask with a target day-type event that is being created in the same patch.
+- Transform proposals may only target day-type events that already exist in the exported context.
+- If a needed day-type event is missing, add it with events.add and add reviewItems.add explaining that a second cleanup pass is needed.
+
+EXISTING-TASK CONVERSION RULE
+- Do not use convertTimedBlockToTask when the task already exists.
+- Do not invent fields such as existingTaskIds, preserveTask, taskConversionNote, dayTypeNoteToAppend, removeSourceEvent, or mergeStrategy.
+- If a flexible timed block already has linkedTaskIds or appears to correspond to an existing task, prefer:
+  - tasks.update to link the existing task to the relevant existing day-type event, when appropriate;
+  - mergeIntoDayType only if the source event's planning context should be appended to an existing day-type event;
+  - reviewItems.add if the source event should be removed but cannot be safely transformed under the current schema.
+
+SUPPORTED TRANSFORMATION SCHEMA — use only these fields and no alternate field names
+- events.mergeIntoDayType: sourceEventId, targetDayTypeEventId, mergeMode, noteSection, deleteSourceAfterMerge, preserveSourceInAuditTrail, reason
+- events.convertTimedBlockToTask: sourceEventId, newTask, deleteSourceAfterConvert, reason
 
 JSON OUTPUT RULES
 - Return LifeGrid JSON patch only.

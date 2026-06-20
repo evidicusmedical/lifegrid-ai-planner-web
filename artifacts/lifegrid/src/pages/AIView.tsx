@@ -530,6 +530,14 @@ export const AIView = () => {
                   </select>
                 </div>
               )}
+
+              {promptType === 'cleanup-day-types' && (
+                <div className="mt-4 pt-3 border-t border-border/50 animate-in fade-in">
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">
+                    Use this to ask AI to clean up a date range by preserving explicit timed events, moving flexible blocks into day-type plans, and creating tasks from actionable blocks.
+                  </p>
+                </div>
+              )}
             </details>
           </StepBlock>
         )}

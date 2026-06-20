@@ -373,7 +373,8 @@ const encodeTasks = (tasks: Task[]): string => {
 // ─── Prompt types & their objective blocks ───────────────────────────────────
 export type PromptType =
   | 'compact' | 'analyze' | 'conflicts' | 'freetime' | 'balance' | 'prep' | 'digest'
-  | 'tasks-only' | 'availability' | 'projects' | 'messages' | 'patch' | 'project-reorg';
+  | 'tasks-only' | 'availability' | 'projects' | 'messages' | 'patch' | 'project-reorg'
+  | 'cleanup-day-types';
 
 export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; description: string; badge?: string }[] = [
   { id: 'compact',      emoji: '🧭', title: 'Admin planning',        description: 'Default: share compact LifeGrid context and ask the AI admin assistant to help.', badge: 'Fast' },
@@ -381,6 +382,7 @@ export const PROMPT_TYPES: { id: PromptType; emoji: string; title: string; descr
   { id: 'tasks-only',   emoji: '✅', title: 'Task prioritization',   description: 'Sort tasks, clarify next actions, and identify urgent work.', badge: 'Focused' },
   { id: 'projects',      emoji: '🧱', title: 'Project breakdown',            description: 'Break large projects into small actionable subtasks.' },
   { id: 'project-reorg', emoji: '🏗️', title: 'Build / Reorganize Project', description: 'Create or restructure a project with tasks, milestones, schedule blocks, and review items.', badge: 'New' },
+  { id: 'cleanup-day-types', emoji: '🧹', title: 'Clean Up Grid Into Day Types', description: 'Convert flexible blocked time into day-type plans and tasks while preserving explicit timed commitments.', badge: 'New' },
   { id: 'messages',      emoji: '✉️', title: 'Draft messages',               description: 'Draft emails/texts based on your schedule and tasks.' },
   { id: 'patch',        emoji: '🧩', title: 'Bulk updates / JSON',   description: 'Minimal raw JSON only: changed fields, completions, and deletes.', badge: 'Fast' },
   { id: 'analyze',      emoji: '🔍', title: 'Full schedule review',  description: 'Conflicts, overloaded days, missing prep, and general improvements.' },
@@ -452,6 +454,11 @@ List each conflict clearly, then propose "update"/"delete"/"add" fixes.`,
 2. Use reviewItems.add for uncertain requirements, assumptions, dependencies, and decisions
 3. Only update flexible-work-block, reminder, or placeholder events; protect all fixed events
 4. Put risky deletion suggestions in candidateDeletes (review-only, never auto-applied)`,
+  'cleanup-day-types': `Clean up the grid so that only explicit timed commitments remain as timed events:
+1. Preserve explicit commitments unchanged
+2. Move planning/context blocks into day-type plans
+3. Convert actionable blocks into tasks
+4. Put uncertain cleanup ideas in review-only candidateDeletes and reviewItems.add`,
 };
 
 export interface PlanningOptions {
@@ -683,6 +690,130 @@ ${encodeEventsDetailed(linkedFixedEvents)}
 ALL OTHER FIXED EVENTS — context only, DO NOT MODIFY (${unlinkedFixedEvents.length})
 ==================================================
 ${encodeEventsCompact(unlinkedFixedEvents)}
+${patchSchemaReference(data.categories)}`;
+  }
+
+  // ── Clean up grid into day types mode ──
+  if (promptType === 'cleanup-day-types') {
+    const t = today();
+    const scoped = !!(focusStart && focusEnd);
+    const inFocus = (date: string | null | undefined) => scoped && date ? (date >= focusStart! && date <= focusEnd!) : !scoped;
+    const inRangeOrUnscoped = (date: string | null | undefined) => scoped ? inFocus(date) : true;
+    const rangeLabel = scoped ? `${focusStart} → ${focusEnd}` : 'the full selected LifeGrid calendar';
+    const eventsInRange = data.events.filter(e => inRangeOrUnscoped(e.date));
+    const eventsByKind = (kind: EventKind) => eventsInRange.filter(e => e.eventKind === kind);
+    const unknownEvents = eventsInRange.filter(e => !e.eventKind || !EVENT_KIND_SET.has(e.eventKind));
+    const cleanupSourceKinds = new Set<EventKind>(['flexible-work-block', 'reminder', 'placeholder']);
+    const cleanupSourceEvents = eventsInRange.filter(e => e.eventKind && cleanupSourceKinds.has(e.eventKind));
+    const tasksForPrompt = includeTasks
+      ? data.tasks.filter(task =>
+        (includeCompletedTasks || task.status !== 'done') &&
+        (!scoped || !task.dueDate || inFocus(task.dueDate) || task.linkedEventIds?.some(eventId => eventsInRange.some(e => e.id === eventId)))
+      )
+      : [];
+
+    return `${adminAssistantIntro(data, `cleaning up flexible grid blocks into day-type plans and tasks for ${rangeLabel}`, includeProjectsTags)}
+Today is ${t}. The selected cleanup date range is ${rangeLabel}.
+
+PRIMARY OBJECTIVE
+Clean up the grid so that only explicit timed commitments remain as timed events.
+
+KEEP UNCHANGED
+- fixed-appointment events
+- shift events
+- travel events
+- protected-time events
+- unknown or missing eventKind events
+- day-type events, except adding organized notes when appropriate
+
+USE events.mergeIntoDayType WHEN
+- a flexible-work-block, reminder, or placeholder should become part of a day-type plan
+- the information is planning/context rather than an actionable task
+
+USE events.convertTimedBlockToTask WHEN
+- a flexible-work-block, reminder, or placeholder represents an actionable item
+- the result should become a task instead of a timed event
+
+USE events.add ONLY WHEN
+- creating a missing day-type event
+- creating clearly flexible future work blocks, using eventKind: "flexible-work-block"
+
+USE tasks.add WHEN
+- creating actionable tasks from loose planning blocks
+- creating follow-up tasks from day-type planning
+
+USE events.candidateDeletes ONLY FOR UNCERTAIN CLEANUP SUGGESTIONS
+- Candidate deletes are review-only and never auto-applied.
+
+NEVER
+- delete by title/date/time matching
+- move or delete fixed appointments, shifts, travel, protected time, day-type events, or unknown events
+- create destructive changes without stable IDs
+- output prose outside JSON
+
+JSON OUTPUT RULES
+- Return LifeGrid JSON patch only.
+- Use patch v2 shape.
+- Include events.mergeIntoDayType proposals where appropriate.
+- Include events.convertTimedBlockToTask proposals where appropriate.
+- Include events.candidateDeletes only as review-only suggestions.
+- Include reviewItems.add for uncertainty, assumptions, or manual cleanup questions.
+- Use stable IDs for update/delete/transform proposals.
+
+==================================================
+DAY-TYPE EVENTS — existing plans (${eventsByKind('day-type').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('day-type'))}
+
+==================================================
+FLEXIBLE-WORK-BLOCK EVENTS — cleanup candidates (${eventsByKind('flexible-work-block').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('flexible-work-block'))}
+
+==================================================
+REMINDER EVENTS — cleanup candidates (${eventsByKind('reminder').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('reminder'))}
+
+==================================================
+PLACEHOLDER EVENTS — cleanup candidates (${eventsByKind('placeholder').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('placeholder'))}
+
+==================================================
+FIXED-APPOINTMENT EVENTS — keep unchanged (${eventsByKind('fixed-appointment').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('fixed-appointment'))}
+
+==================================================
+SHIFT EVENTS — keep unchanged (${eventsByKind('shift').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('shift'))}
+
+==================================================
+TRAVEL EVENTS — keep unchanged (${eventsByKind('travel').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('travel'))}
+
+==================================================
+PROTECTED-TIME EVENTS — keep unchanged (${eventsByKind('protected-time').length})
+==================================================
+${encodeEventsDetailed(eventsByKind('protected-time'))}
+
+==================================================
+UNKNOWN / MISSING EVENTKIND EVENTS — keep unchanged (${unknownEvents.length})
+==================================================
+${encodeEventsDetailed(unknownEvents)}
+
+==================================================
+CLEANUP SOURCE EVENTS — only these may be transformed (${cleanupSourceEvents.length})
+==================================================
+${encodeEventsDetailed(cleanupSourceEvents)}
+
+==================================================
+${includeTasks ? `TASKS — due in or relevant to selected range (${tasksForPrompt.length})` : 'TASKS — not included'}
+==================================================
+${includeTasks ? encodeTasks(tasksForPrompt) : '  (not included by user choice)'}
 ${patchSchemaReference(data.categories)}`;
   }
 

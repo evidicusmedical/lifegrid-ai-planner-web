@@ -7,7 +7,9 @@ import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleDa
 import { CalendarSeedMode, createCalendarSeed, hasOperationalRecords, resetToTrulyEmpty } from '../lib/calendarSeeds';
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
 import { analyzeDependencies } from '../lib/aiDependencies';
+import { applyPatchAtomically } from '../lib/aiPatchApply';
 import { browserTimeZone, migrateTemporal } from '../lib/temporal';
+import { serializeBackup, normalizeBackup } from '../lib/backup';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -519,7 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (target?.newVersionName) {
       const copy = JSON.parse(JSON.stringify(activeCalendar.data)) as AppData;
-      const { data: afterDirect, warnings: w1 } = applyUpdateToData(copy, update);
+      const { data: afterDirect, warnings: w1 } = applyPatchAtomically(copy, update);
       allWarnings.push(...w1);
       const { data: finalData, warnings: w2 } = shouldTransform
         ? applyTransformationProposals(afterDirect, transformationArgs!.proposals, transformationArgs!.approvedProposalIds)
@@ -529,7 +531,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     } else {
       mutate(d => {
-        const { data: afterDirect, warnings: w1 } = applyUpdateToData(d, update);
+        const { data: afterDirect, warnings: w1 } = applyPatchAtomically(d, update);
         allWarnings.push(...w1);
         const { data: finalData, warnings: w2 } = shouldTransform
           ? applyTransformationProposals(afterDirect, transformationArgs!.proposals, transformationArgs!.approvedProposalIds)
@@ -543,30 +545,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Backup / restore ──
   const exportBackup = (): string =>
-    JSON.stringify({ app: 'lifegrid', version: 6, exportedAt: new Date().toISOString(), store }, null, 2);
+    serializeBackup(store);
 
   const importBackup = (json: string) => {
     const parsed = JSON.parse(json);
-    const incoming = parsed?.store ?? parsed;
-    if (incoming && Array.isArray(incoming.calendars) && incoming.calendars.length) {
-      const calendars: Calendar[] = incoming.calendars.map((c: any) => ({
-        id: c.id ?? uid(),
-        name: c.name ?? 'Calendar',
-        createdAt: c.createdAt ?? new Date().toISOString(),
-        data: normalizeAppData(c.data),
-        displayTimeZone: typeof c.displayTimeZone === 'string' ? c.displayTimeZone : browserTimeZone(),
-      }));
-      const aid = typeof incoming.activeCalendarId === 'string' && calendars.some(c => c.id === incoming.activeCalendarId)
-        ? incoming.activeCalendarId
-        : calendars[0].id;
-      setStore({ calendars, activeCalendarId: aid });
-    } else if (incoming && (incoming.events || incoming.tasks)) {
-      // A single AppData blob — import as a new calendar version
-      const cal = freshCalendar('Imported Calendar', normalizeAppData(incoming));
-      setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
-    } else {
-      throw new Error('Unrecognized backup format.');
-    }
+    if (parsed?.store || Array.isArray(parsed?.calendars)) { setStore(normalizeBackup(parsed)); return; }
+    if (parsed && (parsed.events || parsed.tasks)) { const cal = freshCalendar('Imported Calendar', normalizeAppData(parsed)); setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id })); return; }
+    throw new Error('Unrecognized backup format.');
   };
 
   const canResetActiveCalendarToTrulyEmpty = !hasOperationalRecords(activeCalendar.data);

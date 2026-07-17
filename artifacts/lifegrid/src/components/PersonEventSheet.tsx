@@ -106,7 +106,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
   const multiDayCount = multiDay && endDate && endDate >= startDateVal ? daySpan(startDateVal, endDate) : 0;
 
   const onSubmit = (data: FormData) => {
-    const base = {
+    const base = { endDate: data.date, timeStatus: data.startTime && data.endTime ? 'timed' as const : 'unknown' as const, timeZone: null, timeZoneMode: data.startTime && data.endTime ? 'floating' as const : null,
       ...data,
       startTime: data.startTime || null,
       endTime: data.endTime || null,

@@ -2,7 +2,7 @@ import { AppData, Event, Task, Category, Person, PersonEvent, Project, ProjectSt
 import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version';
 
 export const universalSchema = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
-Return one JSON object only: {"lifegridPatchVersion":${AI_INTERCHANGE_VERSION},"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}.\nUse stable ids. Dates are YYYY-MM-DD and times are 24-hour HH:MM or null. Categories must be created before references. Supported eventKind values: ${EVENT_KIND_VALUES.join(', ')}. Project status: active, paused, completed, archived. Task status: todo, in-progress, done, blocked; priority: low, medium, high, urgent. Ask clarifying questions for material ambiguity; do not invent names, dates, times, assignments, relationships, clinical/personal information, or unsupported fields. Preserve IDs for updates. Same-patch references may point to approved additions. Final changes must be valid JSON only.`;
+Return one JSON object only: {"lifegridPatchVersion":${AI_INTERCHANGE_VERSION},"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}.\nUse stable ids. Dates are YYYY-MM-DD and times are 24-hour HH:MM or null. Event timeStatus is all-day, timed, unknown, or approximate. Zoned times require an IANA timeZone and timeZoneMode z oned; floating local times use timeZoneMode floating and null timeZone. Preserve source timezone, do not convert all-day dates, and use endDate for overnight events. Categories must be created before references. Supported eventKind values: ${EVENT_KIND_VALUES.join(', ')}. Project status: active, paused, completed, archived. Task status: todo, in-progress, done, blocked; priority: low, medium, high, urgent. Ask clarifying questions for material ambiguity; do not invent names, dates, times, assignments, relationships, clinical/personal information, or unsupported fields. Preserve IDs for updates. Same-patch references may point to approved additions. Final changes must be valid JSON only.`;
 
 export const generateUniversalStarterPrompt = () => `
 ROLE AND OBJECTIVE
@@ -42,7 +42,7 @@ Before final output verify valid JSON; correct lifegridPatchVersion; exact suppo
 FINAL-OUTPUT RULES
 Before final patch mode you may ask concise questions. In final patch mode return JSON only.`;
 
-export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
+export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string; displayTimeZone: string }, range: { start: string | null; end: string | null }) => {
   const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);
   const events = data.events.filter(e => inside(e.date));
   const schedule = data.personEvents.filter(e => inside(e.date));
@@ -51,7 +51,7 @@ export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: s
   const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate));
   tasks.forEach(t => categoryIds.add(t.category));
   const context = {
-    metadata: { application: 'LifeGrid', applicationVersion: APP_VERSION, exportFormatVersion: AI_INTERCHANGE_VERSION, exportedAt: new Date().toISOString(), calendarId: calendar.id, calendarName: calendar.name, selectedDateRange: range, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    metadata: { application: 'LifeGrid', applicationVersion: APP_VERSION, exportFormatVersion: AI_INTERCHANGE_VERSION, exportedAt: new Date().toISOString(), calendarId: calendar.id, calendarName: calendar.name, displayTimeZone: calendar.displayTimeZone, selectedDateRange: range },
     categories: data.categories.filter(c => categoryIds.has(c.id) || c.id === 'other').map((c, order) => ({ ...c, order, protected: c.id === 'other' })),
     people: data.people.filter(p => schedule.some(s => s.person === p.id)).concat(data.people.filter(p => !schedule.some(s => s.person === p.id))),
     projects: data.projects,
@@ -132,6 +132,10 @@ AI REVIEW INSTRUCTIONS
 const eventExportObject = (e: Event) => ({
   id: e.id,
   date: e.date,
+  endDate: e.endDate ?? e.date,
+  timeStatus: e.timeStatus ?? (e.startTime ? 'timed' : 'unknown'),
+  timeZone: e.timeZone ?? null,
+  timeZoneMode: e.timeZoneMode ?? null,
   title: e.title,
   category: e.category,
   tag: e.category,

@@ -4,6 +4,8 @@ export type ProjectStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type TaskDueDateType = 'real-deadline' | 'target-date' | 'someday-backlog' | 'needs-clarification' | 'project-subtask';
 export type TaskTriageStatus = 'ready' | 'needs-review' | 'blocked' | 'waiting' | 'duplicate-candidate' | 'needs-scheduling' | 'scheduled' | 'backlog';
 export type EventDisplayPriority = 1 | 2 | 3 | 4 | 5;
+export type TimeStatus = 'all-day' | 'timed' | 'unknown' | 'approximate';
+export type TimeZoneMode = 'zoned' | 'floating';
 export type EventKind =
   | 'fixed-appointment'
   | 'shift'
@@ -51,6 +53,10 @@ export interface Project {
 export interface Event {
   id: string;
   date: string; // YYYY-MM-DD
+  endDate: string | null; // inclusive YYYY-MM-DD
+  timeStatus: TimeStatus;
+  timeZone: string | null; // IANA timezone for zoned clock times
+  timeZoneMode: TimeZoneMode | null;
   title: string;
   category: CategoryId;
   startTime: string | null; // HH:MM
@@ -94,6 +100,10 @@ export interface PersonEvent {
   id: string;
   person: PersonId;
   date: string; // YYYY-MM-DD
+  endDate: string | null;
+  timeStatus: TimeStatus;
+  timeZone: string | null;
+  timeZoneMode: TimeZoneMode | null;
   title: string;
   notes: string | null;
   color: string;
@@ -118,6 +128,7 @@ export interface Calendar {
   name: string;
   createdAt: string; // ISO timestamp
   data: AppData;
+  displayTimeZone: string;
 }
 
 export interface Store {

@@ -7,6 +7,7 @@ import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleDa
 import { CalendarSeedMode, createCalendarSeed, hasOperationalRecords, resetToTrulyEmpty } from '../lib/calendarSeeds';
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
 import { analyzeDependencies } from '../lib/aiDependencies';
+import { browserTimeZone, migrateTemporal } from '../lib/temporal';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -51,6 +52,7 @@ export interface AppDataContextType extends AppData {
   deleteCalendar: (id: string) => void;
   switchCalendar: (id: string) => void;
   duplicateCalendar: (id: string, name?: string) => string;
+  updateCalendarDisplayTimeZone: (id: string, timeZone: string) => void;
 
   // Import / backup
   applyImportUpdate: (update: any, transformationArgs?: { proposals: TransformationProposalSet; approvedProposalIds: Set<string> }, target?: { newVersionName?: string }) => string[];
@@ -139,6 +141,7 @@ const normalizeAppData = (raw: any): AppData => {
   const projectIds = new Set(data.projects.map(p => p.id));
 
   data.events = data.events.map(e => {
+    e = migrateTemporal(e) as any;
     const startTime = e.startTime ?? null;
     const rawPriority = Number(e.displayPriority);
     const displayPriority = EVENT_DISPLAY_PRIORITIES.has(rawPriority as EventDisplayPriority)
@@ -188,18 +191,13 @@ const normalizeAppData = (raw: any): AppData => {
   // Make sure every person-event person exists.
   const personIds = new Set(data.people.map(p => p.id));
   data.personEvents = data.personEvents.map(pe => ({
-    ...pe,
+    ...migrateTemporal(pe),
     person: personIds.has(pe.person) ? pe.person : (data.people[0]?.id ?? 'shared'),
   }));
   return data;
 };
 
-const freshCalendar = (name: string, data: AppData): Calendar => ({
-  id: uid(),
-  name,
-  createdAt: new Date().toISOString(),
-  data,
-});
+const freshCalendar = (name: string, data: AppData, displayTimeZone = browserTimeZone()): Calendar => ({ id: uid(), name, createdAt: new Date().toISOString(), data, displayTimeZone });
 
 // ─── Load store, migrating legacy single-calendar data if present ─────────────
 const loadStore = (): Store => {
@@ -213,6 +211,7 @@ const loadStore = (): Store => {
           name: c.name ?? 'Calendar',
           createdAt: c.createdAt ?? new Date().toISOString(),
           data: normalizeAppData(c.data),
+          displayTimeZone: typeof c.displayTimeZone === 'string' ? c.displayTimeZone : browserTimeZone(),
         }));
         const activeCalendarId = calendars.some(c => c.id === parsed.activeCalendarId)
           ? parsed.activeCalendarId
@@ -360,17 +359,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Calendar versioning ──
   const createCalendar = (name: string, seed: CalendarSeedMode = 'empty'): string => {
-    const cal = freshCalendar(name || 'Untitled Calendar', createCalendarSeed(seed, activeCalendar.data));
+    const cal = freshCalendar(name || 'Untitled Calendar', createCalendarSeed(seed, activeCalendar.data), seed === 'copy-structure' ? activeCalendar.displayTimeZone : browserTimeZone());
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     return cal.id;
   };
 
   const duplicateCalendar = (id: string, name?: string): string => {
     const src = store.calendars.find(c => c.id === id) ?? activeCalendar;
-    const cal = freshCalendar(name || `${src.name} (copy)`, createCalendarSeed('duplicate', src.data));
+    const cal = freshCalendar(name || `${src.name} (copy)`, createCalendarSeed('duplicate', src.data), src.displayTimeZone);
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     return cal.id;
   };
+
+  const updateCalendarDisplayTimeZone = (id: string, displayTimeZone: string) => setStore(prev => ({ ...prev, calendars: prev.calendars.map(c => c.id === id ? { ...c, displayTimeZone } : c) }));
 
   const renameCalendar = (id: string, name: string) =>
     setStore(prev => ({
@@ -542,7 +543,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Backup / restore ──
   const exportBackup = (): string =>
-    JSON.stringify({ app: 'lifegrid', version: 5, exportedAt: new Date().toISOString(), store }, null, 2);
+    JSON.stringify({ app: 'lifegrid', version: 6, exportedAt: new Date().toISOString(), store }, null, 2);
 
   const importBackup = (json: string) => {
     const parsed = JSON.parse(json);
@@ -553,6 +554,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         name: c.name ?? 'Calendar',
         createdAt: c.createdAt ?? new Date().toISOString(),
         data: normalizeAppData(c.data),
+        displayTimeZone: typeof c.displayTimeZone === 'string' ? c.displayTimeZone : browserTimeZone(),
       }));
       const aid = typeof incoming.activeCalendarId === 'string' && calendars.some(c => c.id === incoming.activeCalendarId)
         ? incoming.activeCalendarId
@@ -598,7 +600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategory, updateCategory, deleteCategory, reorderCategories,
         addPerson, updatePerson, deletePerson,
         addProject, updateProject, deleteProject,
-        createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar,
+        createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar, updateCalendarDisplayTimeZone,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,
         deleteEventGroup, deleteTaskGroup, deletePersonEventGroup,

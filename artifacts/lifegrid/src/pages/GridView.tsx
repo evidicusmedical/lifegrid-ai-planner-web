@@ -15,6 +15,7 @@ import { toPng } from 'html-to-image';
 import { toISODate } from '../lib/format';
 import { APP_VERSION } from '../lib/version';
 import { getDateTemporalState, truncatePreviewNote, validateExportRange } from '../lib/gridAwareness';
+import { getDisplayedTemporalOccurrence } from '../lib/temporal';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -127,7 +128,7 @@ export const GridView = () => {
 
   const getDaysForMonth = (m: number) => (m === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[m]);
 
-  const activeCalendar = calendars.find(c => c.id === activeCalendarId);
+  const activeCalendar = calendars.find(c => c.id === activeCalendarId)!;
   const [clockNow, setClockNow] = useState(() => new Date());
   useEffect(() => { const timer = window.setInterval(() => setClockNow(new Date()), 60_000); return () => window.clearInterval(timer); }, []);
   const clockFor = (zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).format(clockNow);
@@ -178,17 +179,19 @@ export const GridView = () => {
   const sortEventsForCell = useCallback((a: Event, b: Event) => {
     const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
     if (byPriority !== 0) return byPriority;
-    const aAllDay = !a.startTime;
-    const bAllDay = !b.startTime;
+    const aDisplayed = getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone);
+    const bDisplayed = getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone);
+    const aAllDay = !aDisplayed.displayedStartTime;
+    const bAllDay = !bDisplayed.displayedStartTime;
     if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
     if (!aAllDay && !bAllDay) {
-      const byTime = (a.startTime ?? '').localeCompare(b.startTime ?? '');
+      const byTime = (aDisplayed.displayedStartTime ?? '').localeCompare(bDisplayed.displayedStartTime ?? '');
       if (byTime !== 0) return byTime;
     }
     const byCat = (categoryRank.get(a.category) ?? 999) - (categoryRank.get(b.category) ?? 999);
     if (byCat !== 0) return byCat;
     return a.title.localeCompare(b.title);
-  }, [categoryRank]);
+  }, [categoryRank, activeCalendar.displayTimeZone]);
 
   const isTargetedDateExport = useMemo(() => {
     if (exportFilters.datePreset === 'current') return false;
@@ -204,9 +207,10 @@ export const GridView = () => {
     const startDow = parseISODate(start).getDay();
     const filteredByDate = new Map<string, Event[]>();
     exportFilteredEvents.forEach(e => {
-      const arr = filteredByDate.get(e.date) ?? [];
+      const displayed = getDisplayedTemporalOccurrence(e, activeCalendar.displayTimeZone);
+      const arr = filteredByDate.get(displayed.displayedStartDate) ?? [];
       arr.push(e);
-      filteredByDate.set(e.date, arr);
+      filteredByDate.set(displayed.displayedStartDate, arr);
     });
     filteredByDate.forEach(arr => arr.sort(sortEventsForCell));
     const days = dates.map(date => {
@@ -221,20 +225,21 @@ export const GridView = () => {
       weeks.push(week);
     }
     return weeks;
-  }, [exportFilteredEvents, getExportDateRange, sortEventsForCell]);
+  }, [exportFilteredEvents, getExportDateRange, sortEventsForCell, activeCalendar.displayTimeZone]);
 
   const eventsForGrid = exporting ? exportFilteredEvents : events;
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
     eventsForGrid.forEach(e => {
-      const arr = map.get(e.date) ?? [];
+      const displayed = getDisplayedTemporalOccurrence(e, activeCalendar.displayTimeZone);
+      const arr = map.get(displayed.displayedStartDate) ?? [];
       arr.push(e);
-      map.set(e.date, arr);
+      map.set(displayed.displayedStartDate, arr);
     });
     map.forEach(arr => arr.sort(sortEventsForCell));
     return map;
-  }, [eventsForGrid, sortEventsForCell]);
+  }, [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>

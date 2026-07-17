@@ -10,9 +10,9 @@ test('writes zoned TZID values',()=>assert.match(out(),/DTSTART;TZID=America\/Ne
 test('UTC mode converts zoned value',()=>assert.match(out({}, {timeMode:'utc'}),/DTSTART:20261231T140000Z/));
 test('UTC mode preserves floating values',()=>assert.match(out({timeZoneMode:'floating',timeZone:null},{timeMode:'utc'}),/DTSTART:20261231T090000/));
 test('all-day has exclusive end date across year',()=>assert.match(out({timeStatus:'all-day',startTime:null,endTime:null,timeZone:null,timeZoneMode:null}),/DTEND;VALUE=DATE:20270102/));
-test('unknown is excluded by default',()=>assert.equal(out({timeStatus:'unknown',startTime:null,endTime:null,timeZone:null,timeZoneMode:null}).includes('VEVENT'),false));
+test('unknown is included and marked by default',()=>assert.match(out({timeStatus:'unknown',startTime:null,endTime:null,timeZone:null,timeZoneMode:null}),/LifeGrid status: Time unknown/));
 test('unknown inclusion has marker',()=>assert.match(out({timeStatus:'unknown',startTime:null,endTime:null,timeZone:null,timeZoneMode:null},{includeUnknown:true}),/X-LIFEGRID-TIME-UNKNOWN:TRUE/));
-test('approximate is excluded by default',()=>assert.equal(out({timeStatus:'approximate'}).includes('VEVENT'),false));
+test('approximate is included and marked by default',()=>assert.match(out({timeStatus:'approximate'}),/LifeGrid status: Approximate time/));
 test('approximate inclusion has marker',()=>assert.match(out({timeStatus:'approximate'},{includeApproximate:true}),/X-LIFEGRID-APPROXIMATE:TRUE/));
 test('escapes text and normalizes CRLF',()=>assert.match(out(),/SUMMARY:Plan\\, review\\; \\\\ notes[\s\S]*DESCRIPTION:One\\ntwo/));
 test('emits category and never location',()=>{assert.match(out(),/CATEGORIES:Work\\, Team/);assert.equal(out().includes('LOCATION'),false)});

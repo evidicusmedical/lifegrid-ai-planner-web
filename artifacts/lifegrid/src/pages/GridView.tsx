@@ -393,23 +393,9 @@ export const GridView = () => {
     a.click();
   };
 
-  const jumpToToday = () => {
-    setYear(today.getFullYear());
-    didScrollRef.current = false;
-  };
+  const openAdd = (date: string) => { setEditEvent(null); setAddDate(date); setDetailDate(null); setEventSheetOpen(true); };
+  const openEdit = (evt: Event) => { setEditEvent(evt); setAddDate(null); setDetailDate(null); setEventSheetOpen(true); };
 
-  const openAdd = (date: string) => {
-    setEditEvent(null);
-    setAddDate(date);
-    setDetailDate(null);
-    setEventSheetOpen(true);
-  };
-  const openEdit = (evt: Event) => {
-    setEditEvent(evt);
-    setAddDate(null);
-    setDetailDate(null);
-    setEventSheetOpen(true);
-  };
 
   return (
     <div className="flex flex-col h-full bg-background relative">
@@ -456,15 +442,6 @@ export const GridView = () => {
             <ChevronRight size={14} />
           </button>
         </div>
-
-        <button
-          onClick={jumpToToday}
-          className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-          data-testid="button-today"
-        >
-          <CalendarDays size={12} />
-          Today
-        </button>
 
         <div className="flex-1" />
 

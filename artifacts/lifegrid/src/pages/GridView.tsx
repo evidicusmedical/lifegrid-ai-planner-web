@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
 import { Event, Project, Task } from '../types';
-import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown, X, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown, X, Download, MessageSquareText } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 import { DayDetailSheet } from '../components/DayDetailSheet';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { toPng } from 'html-to-image';
 import { toISODate } from '../lib/format';
 import { APP_VERSION } from '../lib/version';
+import { getDateTemporalState, truncatePreviewNote, validateExportRange } from '../lib/gridAwareness';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -244,6 +245,7 @@ export const GridView = () => {
   const setDatePreset = (datePreset: ExportDatePreset) => {
     setExportFilters(prev => ({ ...prev, datePreset }));
   };
+  const resetExportRange = () => setExportFilters(prev => ({ ...prev, datePreset: 'current', customStart: '', customEnd: '' }));
 
   const toggleExportCategory = (id: string) => {
     setExportFilters(prev => {
@@ -254,6 +256,9 @@ export const GridView = () => {
   };
 
   const exportRange = getExportDateRange();
+  // Validation is derived on every render, so corrected inputs, presets, calendar/year changes,
+  // and reopening the options panel can never retain a stale disabled/error state.
+  const exportRangeError = validateExportRange(exportRange, year);
   const isDefaultExportFilter =
     exportFilters.datePreset === 'current' &&
     exportFilters.categoryMode === 'all' &&
@@ -284,12 +289,9 @@ export const GridView = () => {
     const container = scrollRef.current;
     if (!tableRef.current || !container) return;
     const { start, end } = getExportDateRange();
-    if (!start || !end || start > end) {
-      toast.error('Choose a valid export date range.', { id: 'export' });
-      return;
-    }
-    if (!start.startsWith(`${year}-`) || !end.startsWith(`${year}-`)) {
-      toast.error(`Pass 1 exports keep the ${year} grid. Choose dates inside ${year}.`, { id: 'export' });
+    const rangeError = validateExportRange({ start, end }, year);
+    if (rangeError) {
+      toast.error(rangeError, { id: 'export' });
       return;
     }
     if (exportFilters.categoryMode === 'selected' && exportFilters.selectedCategoryIds.length === 0) {
@@ -373,7 +375,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio, exportMode]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode, exportFilters, exportFilteredEvents.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -506,7 +508,8 @@ export const GridView = () => {
           </button>
           <button
             onClick={handleExport}
-            disabled={exporting}
+            disabled={exporting || !!exportRangeError}
+            aria-describedby={exportRangeError ? 'export-range-error' : undefined}
             className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-muted hover:bg-muted/70 text-muted-foreground transition-colors disabled:opacity-50"
             data-testid="button-export"
             title="Create grid image"
@@ -591,6 +594,8 @@ export const GridView = () => {
                   />
                 </div>
               )}
+              {exportRangeError && <p id="export-range-error" role="alert" className="text-[10px] font-medium text-destructive">{exportRangeError}</p>}
+              <button type="button" onClick={resetExportRange} className="text-[10px] font-bold text-primary hover:underline">Reset Export Range</button>
             </div>
 
             <div className="space-y-2">
@@ -728,7 +733,8 @@ export const GridView = () => {
                 {MONTHS.map((_, mIdx) => {
                   const maxDay  = getDaysForMonth(mIdx);
                   const dateStr = `${year}-${String(mIdx+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-                  const isToday = dateStr === todayStr;
+                  const temporal = getDateTemporalState(dateStr, todayStr, detailDate);
+                  const isToday = temporal.isToday;
 
                   if (day > maxDay) {
                     return (
@@ -762,18 +768,18 @@ export const GridView = () => {
                   return (
                     <td
                       key={`${mIdx}-${day}`}
-                      className="border-b border-r border-border cursor-pointer select-none relative align-top"
+                      className={`border-b border-r border-border cursor-pointer select-none relative align-top ${temporal.isPast ? 'opacity-70' : ''} ${temporal.isSelected ? 'ring-2 ring-inset ring-foreground/70' : ''} ${isToday ? 'ring-2 ring-inset ring-primary' : ''} focus-within:ring-2 focus-within:ring-inset focus-within:ring-foreground`}
                       style={{
-                        width: MONTH_COL_W,
-                        minWidth: MONTH_COL_W,
-                        height: rowHeight,
-                        background: cellBg,
+                        width: MONTH_COL_W, minWidth: MONTH_COL_W, height: rowHeight,
+                        background: temporal.isPast ? (theme === 'dark' ? 'rgba(71,85,105,0.18)' : 'rgba(148,163,184,0.13)') : cellBg,
                         padding: '2px 3px',
                       }}
                       onClick={() => setDetailDate(dateStr)}
+                      aria-label={`${dateStr}${isToday ? ', Today' : ''}${temporal.isPast ? ', past date' : ''}${temporal.isSelected ? ', selected' : ''}`}
                       data-testid={`cell-${dateStr}`}
                     >
-                      {isToday && <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" />}
+                      {isToday && <><div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" /><span className="absolute right-1 top-1 rounded bg-primary px-1 text-[7px] font-black text-primary-foreground">Today</span></>}
+                      {temporal.isSelected && <span className="sr-only">Selected date</span>}
 
                       <div
                         className="text-[8px] font-bold leading-none mb-0.5"
@@ -792,7 +798,12 @@ export const GridView = () => {
                         {visEvents.map(evt => (
                           <div
                             key={evt.id}
-                            className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity"
+                            className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
+                            tabIndex={0}
+                            title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ''}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ''}` : ''}${evt.notes ? ` · ${truncatePreviewNote(evt.notes)}` : ''}`}
+                            aria-label={`${evt.title}${evt.notes ? `. Notes: ${truncatePreviewNote(evt.notes)}` : ''}. Press Enter to open date details.`}
+                            onClick={e => { e.stopPropagation(); setDetailDate(dateStr); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailDate(dateStr); } }}
                             style={{
                               backgroundColor: evt.color,
                               height: isExpandedExport ? EVENT_PILL_H : 10,
@@ -808,6 +819,7 @@ export const GridView = () => {
                             <span className="text-white font-semibold truncate" style={{ fontSize: 8, lineHeight: 1 }}>
                               {evt.title}
                             </span>
+                            {evt.notes?.trim() && <MessageSquareText aria-label="Has notes" className="ml-auto shrink-0 text-white" size={7} />}
                           </div>
                         ))}
 

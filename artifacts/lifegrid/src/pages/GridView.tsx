@@ -407,15 +407,16 @@ export const GridView = () => {
     <div className="flex flex-col h-full bg-background relative">
 
       {/* ── Header bar ── */}
-      <div className="flex-none px-3 py-2 flex items-center gap-2 border-b border-border bg-card">
+      <div className="flex-none relative px-3 py-2 flex items-center gap-3 border-b border-border bg-card">
+        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground whitespace-nowrap">LifeGrid {APP_VERSION}</span>
         {/* Calendar version switcher */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-1 max-w-[8rem] text-left"
+              className="flex items-center gap-1 min-w-0 max-w-[min(20rem,38vw)] text-left" title={activeCalendar?.name ?? 'LifeGrid'}
               data-testid="button-calendar-switcher"
             >
-              <span className="text-base font-bold tracking-tight truncate">{activeCalendar?.name ?? 'LifeGrid'}</span><span className="text-[10px] text-muted-foreground shrink-0">LifeGrid {APP_VERSION}</span>
+              <span className="text-base font-bold tracking-tight truncate">{activeCalendar?.name ?? 'LifeGrid'}</span>
               <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>
@@ -436,7 +437,7 @@ export const GridView = () => {
         </DropdownMenu>
 
         {/* Year nav */}
-        <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 ml-1">
+        <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 ml-3">
           <button onClick={() => setYear(y => y - 1)} className="p-1.5 rounded hover:bg-background transition-colors" data-testid="button-year-prev">
             <ChevronLeft size={14} />
           </button>
@@ -778,7 +779,7 @@ export const GridView = () => {
                       aria-label={`${dateStr}${isToday ? ', Today' : ''}${temporal.isPast ? ', past date' : ''}${temporal.isSelected ? ', selected' : ''}`}
                       data-testid={`cell-${dateStr}`}
                     >
-                      {isToday && <><div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" /><span className="absolute right-1 top-1 rounded bg-primary px-1 text-[7px] font-black text-primary-foreground">Today</span></>}
+                      {isToday && <><div className="absolute top-0 left-0 right-0 h-0.5 bg-primary" /><span className="sr-only">Today</span></>}
                       {temporal.isSelected && <span className="sr-only">Selected date</span>}
 
                       <div

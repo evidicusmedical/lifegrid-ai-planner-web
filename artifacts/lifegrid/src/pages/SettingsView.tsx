@@ -18,6 +18,7 @@ import { Category, Person, Project, ProjectStatus } from '../types';
 import { formatDate } from '../lib/format';
 import { downloadCurrentBackup } from '../lib/backup';
 import { dateIsInRange, exportRangeFor, formatExportRange, type ExportPreset, validateDateRange } from '../lib/exportUtils';
+import { exportFilename } from '../lib/exportFilenames';
 
 const PRESET_COLORS = [
   '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#6b7280',
@@ -84,13 +85,13 @@ function ColorPicker({ value, onChange }: { value: string; onChange: (c: string)
 
 // ─── Calendar versions ────────────────────────────────────────────────────────
 function CalendarVersions() {
-  const { calendars, activeCalendarId, switchCalendar, createCalendar, duplicateCalendar, renameCalendar, deleteCalendar } = useAppData();
+  const { calendars, activeCalendarId, activeCalendar, switchCalendar, createCalendar, duplicateCalendar, renameCalendar, deleteCalendar, canResetActiveCalendarToTrulyEmpty, resetActiveCalendarToTrulyEmpty } = useAppData();
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  const create = (seed: 'empty' | 'sample') => {
-    const name = newName.trim() || (seed === 'sample' ? 'Sample Calendar' : 'New Calendar');
+  const create = (seed: 'empty' | 'copy-structure' | 'sample') => {
+    const name = newName.trim() || (seed === 'sample' ? 'Sample Calendar' : seed === 'copy-structure' ? 'Structured Calendar' : 'New Calendar');
     createCalendar(name, seed);
     setNewName('');
     toast.success(`Created "${name}"`);
@@ -159,14 +160,12 @@ function CalendarVersions() {
         );
       })}
 
-      <div className="pt-1 flex gap-2">
-        <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New version name…" className="h-9 text-xs flex-1" data-testid="input-new-calendar" />
-        <Button size="sm" variant="secondary" onClick={() => create('empty')} className="gap-1 h-9" data-testid="button-create-empty">
-          <Plus size={13} /> Empty
-        </Button>
-        <Button size="sm" variant="secondary" onClick={() => create('sample')} className="gap-1 h-9" data-testid="button-create-sample">
-          <Plus size={13} /> Sample
-        </Button>
+      {canResetActiveCalendarToTrulyEmpty && <AlertDialog><AlertDialogTrigger asChild><Button size="sm" variant="outline" className="w-full text-destructive">Reset to Truly Empty</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reset "{activeCalendar.name}" to Truly Empty?</AlertDialogTitle><AlertDialogDescription>This removes all categories except Other, all people, and all projects. Events, tasks, and people schedule entries are already empty. Other calendar versions are unchanged.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => { resetActiveCalendarToTrulyEmpty(); toast.success('Calendar reset to truly empty'); }}>Reset</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+      <div className="pt-1 grid grid-cols-1 sm:grid-cols-[1fr_auto_auto_auto] gap-2">
+        <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="New version name…" className="h-9 text-xs" data-testid="input-new-calendar" />
+        <Button title="Start with no planning data, people, projects, or custom tags." size="sm" variant="secondary" onClick={() => create('empty')} className="gap-1 h-9"><Plus size={13} /> Empty</Button>
+        <Button title="Reuse categories, people, and projects without copying events or tasks." size="sm" variant="secondary" onClick={() => create('copy-structure')} className="gap-1 h-9"><Copy size={13} /> Copy Structure</Button>
+        <Button title="Create a fictional example calendar." size="sm" variant="secondary" onClick={() => create('sample')} className="gap-1 h-9"><Plus size={13} /> Sample</Button>
       </div>
     </Section>
   );
@@ -684,7 +683,7 @@ function ExportManager() {
     {rangeError && <p role="alert" className="text-xs text-destructive">{rangeError}</p>}
     <select value={category} onChange={e => setCategory(e.target.value)} className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All categories</option>{app.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
     <p className="text-[10px] text-muted-foreground">{formatExportRange(range)} · {category === 'all' ? 'All categories' : app.categories.find(c => c.id === category)?.label} · {events.length} event{events.length === 1 ? '' : 's'}</p>
-    <div className="grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" disabled={!!rangeError} onClick={() => { download(buildTextExport(app), `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`, 'text/plain'); toast.success('Text export downloaded', { description: 'Human-readable only — not restorable.' }); }}><Download size={14}/> Export readable text</Button><Button size="sm" variant="secondary" disabled={!!rangeError || !events.length} onClick={() => { download(buildIcsExport(app, events), `lifegrid-events-${new Date().toISOString().slice(0, 10)}.ics`, 'text/calendar'); toast.success('ICS exported', { description: `${events.length} calendar/grid event${events.length === 1 ? '' : 's'} exported.` }); }}><Download size={14}/> Export ICS calendar</Button></div>
+    <div className="grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" disabled={!!rangeError} onClick={() => { download(buildTextExport(app), exportFilename('text_export', app.activeCalendar.name), 'text/plain'); toast.success('Text export downloaded', { description: 'Human-readable only — not restorable.' }); }}><Download size={14}/> Export readable text</Button><Button size="sm" variant="secondary" disabled={!!rangeError || !events.length} onClick={() => { download(buildIcsExport(app, events), exportFilename('ics_export', app.activeCalendar.name), 'text/calendar'); toast.success('ICS exported', { description: `${events.length} calendar/grid event${events.length === 1 ? '' : 's'} exported.` }); }}><Download size={14}/> Export ICS calendar</Button></div>
     {!events.length && !rangeError && <p className="text-xs text-amber-700">No events match this range and category; ICS download is disabled.</p>}
     <Button size="sm" variant="outline" onClick={() => { setPreset('all'); setCategory('all'); setCustomStart(''); setCustomEnd(''); }}>Reset export filters</Button>
   </Section>;

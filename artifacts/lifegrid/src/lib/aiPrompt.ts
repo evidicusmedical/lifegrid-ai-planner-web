@@ -4,7 +4,43 @@ import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version';
 export const universalSchema = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
 Return one JSON object only: {"lifegridPatchVersion":${AI_INTERCHANGE_VERSION},"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}.\nUse stable ids. Dates are YYYY-MM-DD and times are 24-hour HH:MM or null. Categories must be created before references. Supported eventKind values: ${EVENT_KIND_VALUES.join(', ')}. Project status: active, paused, completed, archived. Task status: todo, in-progress, done, blocked; priority: low, medium, high, urgent. Ask clarifying questions for material ambiguity; do not invent names, dates, times, assignments, relationships, clinical/personal information, or unsupported fields. Preserve IDs for updates. Same-patch references may point to approved additions. Final changes must be valid JSON only.`;
 
-export const generateUniversalStarterPrompt = () => `LifeGrid is a local-first visual year-grid planning system. You may be given text, images, screenshots, spreadsheets, PDFs, emails, or schedules. Interpret those materials, ask clarifying questions when material ambiguity exists, and then produce an import package. Do not fabricate missing facts; use notes/warnings for harmless uncertainty. It supports categories, people/providers, projects, tasks (including completed tasks), dated events and Day Types (eventKind: "day-type"), and person schedule/availability entries. All-day events use null startTime/endTime; timed events require ordered HH:MM values.\n\n${universalSchema()}\n\nPeople use id, label, color. Person schedule entries use id, person, date, title, startTime, endTime, notes, color. Events use id, date, title, category, startTime, endTime, eventKind, linkedTaskIds and notes. Tasks use id, name, category, status, priority, dueDate, projectId, linkedEventIds, nextAction and notes. Projects use id, name, color, order, status and notes. This format is general-purpose: provider/shift schedules are one example, not a special domain.`;
+export const generateUniversalStarterPrompt = () => `
+ROLE AND OBJECTIVE
+You prepare a human-reviewed LifeGrid v3 import patch from supplied information. Be model-agnostic, provider-independent, and local-first. Do not reveal private reasoning.
+
+CAPABILITY AND SOURCE-ACCESS LIMITATIONS
+Do not claim to have read a source that was not available. Do not infer unreadable image or file contents. Process usable sources when another is unavailable; add a concise warning, and ask a focused clarification only if missing information prevents a safe patch.
+
+SOURCE INVENTORY
+Conceptually inventory every supplied user instruction, existing LifeGrid export, image, screenshot, photograph, PDF, table, spreadsheet/worksheet, email/message thread, calendar export, schedule, handwritten note, or narrative text. Internally distinguish accessible, unreadable, truncated, duplicated, conflicting, authoritative, new-information, and existing-record information.
+
+EVIDENCE EXTRACTION
+Use this sequence: inventory sources; extract observable facts; normalize supported facts; identify duplicates/conflicts; resolve existing versus new entities; classify facts into LifeGrid entities; construct the patch; validate it. Never convert unsupported inference into fact. Preserve decision-relevant constraints, conditionality, preparation, recovery, travel, dependencies, blockers, and material uncertainty in concise notes; do not copy whole source documents.
+
+TEMPORAL NORMALIZATION
+Dates are YYYY-MM-DD and times are 24-hour HH:MM. Relative dates need a reliable reference date. A timezone must come from the user/source and must not be invented. Intentional all-day events use null startTime and endTime; unknown time is not automatically all-day—consider a due-date task, reminder, placeholder, Day Type context, or warning. v3 has no end date for overnight events: do not use identical times unless supplied current data uses it and the user explicitly approves; ask when material.
+
+ENTITY RESOLUTION AND PRECEDENCE
+Match in order: exact stable ID; exact supported external ID; exact normalized label plus corroborating fields; strong semantic candidate; unresolved. Only the first three normally permit automatic update. Semantic similarity produces a warning, never an overwrite. Preserve IDs for updates. Namespaces are independent (a category ID and person ID may match as text). Resolve conflicts by: current user correction; current authoritative LifeGrid export for existing IDs/state; confirmed structured/official schedule; newer explicit source; older/less-specific source; inference. Inference never silently overrides sourced information.
+
+MATERIAL AMBIGUITY
+Ask the minimum focused questions when uncertainty could change identity, add versus update, date, timing, person, ownership, relationship, event versus task, completion, project/task status, duplicates, or sensitive personal data. Harmless uncertainty may be a note, warning, task, placeholder, or allowed null.
+
+LIFEGRID DOMAIN-FIELD REFERENCE
+${universalSchema()}
+Categories add require id, label, color. People add require id, label, color. Projects add require id, name, color, order, aliases (array), status (active|paused|completed|archived), notes (string|null). Tasks add require id, name, category, dueDate (YYYY-MM-DD|null), status (todo|in-progress|done|blocked), owner, nextAction (string|null), notes (string|null), priority (low|medium|high|urgent), schedulingNotes (string|null), projectId (string|null), dueDateType (real-deadline|target-date|someday-backlog|needs-clarification|project-subtask), triageStatus (ready|needs-review|blocked|waiting|duplicate-candidate|needs-scheduling|scheduled|backlog), parentTaskId (string|null), linkedEventIds (array), recurringGroupId (optional string). Events add require id, date, title, category, startTime/endTime (HH:MM|null), color, notes (string|null), displayPriority (1|2|3|4|5), showInGrid/showInExport (boolean), eventKind (${EVENT_KIND_VALUES.join('|')} or omitted), linkedTaskIds (array), aiNotes/sourceNotes (string|null), recurringGroupId (optional string). PeopleSchedule add requires id, person, date, title, notes (string|null), color, with optional startTime/endTime and recurringGroupId. Updates require existing id and only changed supported fields: omitted fields remain unchanged; explicit null clears nullable fields; empty relationship arrays clear those links.
+
+PLANNING POLICY
+Fixed commitments remain fixed unless explicitly changed. Due dates are not scheduled times. Day Types describe identity, constraints, and capacity. Do not turn flexible tasks into timed events without support. Travel, preparation, recovery, and protected time consume capacity; do not displace protected time or move real deadlines without authorization. Target dates can adjust when overloaded; backlog need not be calendar entries; Day Type notes summarize context.
+
+PATCH-CONSTRUCTION RULES
+Use only v3 top-level keys. No deletion or merge operations. Parents must precede same-patch dependents. Use add only for new IDs and update only for existing IDs.
+
+DETERMINISTIC FINAL VALIDATION
+Before final output verify valid JSON; correct lifegridPatchVersion; exact supported keys; no Markdown/comments/unsupported fields; unique proposed IDs; no add reusing an existing ID; update IDs exist; valid enums/dates/times; timed same-day end later than start; valid category/project/person/task-parent/linked references; no parent cycles; non-empty required names/titles; no obvious duplicate additions; and parent records precede dependents.
+
+FINAL-OUTPUT RULES
+Before final patch mode you may ask concise questions. In final patch mode return JSON only.`;
 
 export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
   const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);

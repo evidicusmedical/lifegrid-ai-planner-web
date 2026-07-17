@@ -4,6 +4,7 @@ import {
   EventDisplayPriority, EventKind, ProjectStatus, TaskDueDateType, TaskTriageStatus,
 } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
+import { CalendarSeedMode, createCalendarSeed, hasOperationalRecords, resetToTrulyEmpty } from '../lib/calendarSeeds';
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
 import { analyzeDependencies } from '../lib/aiDependencies';
 
@@ -45,7 +46,7 @@ export interface AppDataContextType extends AppData {
   deleteProject: (id: string) => void;
 
   // Calendar versioning
-  createCalendar: (name: string, seed?: 'empty' | 'sample' | 'duplicate') => string;
+  createCalendar: (name: string, seed?: CalendarSeedMode) => string;
   renameCalendar: (id: string, name: string) => void;
   deleteCalendar: (id: string) => void;
   switchCalendar: (id: string) => void;
@@ -56,6 +57,8 @@ export interface AppDataContextType extends AppData {
   exportBackup: () => string;
   importBackup: (json: string) => void;
   clearActiveCalendar: () => void;
+  resetActiveCalendarToTrulyEmpty: () => boolean;
+  canResetActiveCalendarToTrulyEmpty: boolean;
   lastBackupAt: string | null;
   recordBackup: () => void;
 
@@ -356,28 +359,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
 
   // ── Calendar versioning ──
-  const createCalendar = (name: string, seed: 'empty' | 'sample' | 'duplicate' = 'empty'): string => {
-    const seedData =
-      seed === 'sample'
-        ? normalizeAppData(defaultData)
-        : seed === 'duplicate'
-        ? JSON.parse(JSON.stringify(activeCalendar.data))
-        : ({
-            events: [],
-            tasks: [],
-            personEvents: [],
-            categories: activeCalendar.data.categories.map(c => ({ ...c })),
-            people: activeCalendar.data.people.map(p => ({ ...p })),
-            projects: activeCalendar.data.projects.map(p => ({ ...p })),
-          } as AppData);
-    const cal = freshCalendar(name || 'Untitled Calendar', seedData);
+  const createCalendar = (name: string, seed: CalendarSeedMode = 'empty'): string => {
+    const cal = freshCalendar(name || 'Untitled Calendar', createCalendarSeed(seed, activeCalendar.data));
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     return cal.id;
   };
 
   const duplicateCalendar = (id: string, name?: string): string => {
     const src = store.calendars.find(c => c.id === id) ?? activeCalendar;
-    const cal = freshCalendar(name || `${src.name} (copy)`, JSON.parse(JSON.stringify(src.data)));
+    const cal = freshCalendar(name || `${src.name} (copy)`, createCalendarSeed('duplicate', src.data));
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     return cal.id;
   };
@@ -577,6 +567,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const canResetActiveCalendarToTrulyEmpty = !hasOperationalRecords(activeCalendar.data);
+  const resetActiveCalendarToTrulyEmpty = (): boolean => {
+    if (!canResetActiveCalendarToTrulyEmpty) return false;
+    setStore(prev => ({ ...prev, calendars: prev.calendars.map(c => c.id === prev.activeCalendarId ? resetToTrulyEmpty(c) : c) }));
+    return true;
+  };
+
   const clearActiveCalendar = () =>
     mutate(d => ({ ...d, events: [], tasks: [], personEvents: [] }));
 
@@ -602,7 +599,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPerson, updatePerson, deletePerson,
         addProject, updateProject, deleteProject,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar,
-        applyImportUpdate, exportBackup, importBackup, clearActiveCalendar,
+        applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,
         deleteEventGroup, deleteTaskGroup, deletePersonEventGroup,
       }}

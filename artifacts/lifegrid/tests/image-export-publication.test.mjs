@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { APP_VERSION } from '../.test-build/lib/version.js';
+import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, getDenseDay, getExportDimensions } from '../.test-build/lib/gridPublication.js';
+
+const cats = [{ id: 'work', label: 'Work', color: '#111111' }, { id: 'home', label: 'Home', color: '#222222' }, { id: 'unused', label: 'Unused', color: '#333333' }];
+const events = [{ category: 'home' }, { category: 'work' }, { category: 'home' }, { category: 'missing' }, { category: 'unused', showInExport: false }];
+test('legend uses represented categories in saved order and does not mutate inputs', () => { const before = JSON.stringify(events); const legend = buildExportLegend(events, cats); assert.deepEqual(legend.entries.map(x => x.label), ['Work', 'Home', 'Other']); assert.equal(legend.recordCount, 4); assert.equal(JSON.stringify(events), before); assert.equal(legend.entries[0].color, '#111111'); });
+test('empty and filtered exports produce deterministic legends', () => { assert.equal(buildExportLegend([], cats).entries.length, 0); assert.deepEqual(buildExportLegend(events.filter(e => e.category === 'home'), cats).representedCategoryIds, ['home']); });
+test('metadata contains required publication fields and constrains custom text', () => { const metadata = buildExportMetadata({ calendarName: 'Calendar', start: '2026-01-01', end: '2026-12-31', timeZone: 'America/New_York', customTitle: '<b>Title</b>'.repeat(40), generatedAt: new Date('2026-07-17T18:45:00Z') }); assert.equal(metadata.title.length, 120); assert.ok(metadata.metadata.some(x => x.includes('Display timezone: America/New_York'))); assert.ok(metadata.metadata.some(x => x.includes(APP_VERSION))); assert.ok(metadata.metadata.some(x => x.startsWith('Generated '))); });
+test('density and dimensions are deterministic and detailed is larger', () => { assert.equal(EXPORT_DENSITY.compact.titleClamp, 1); assert.equal(EXPORT_DENSITY.detailed.titleClamp, 2); const compact = getExportDimensions('compact', 12); const detailed = getExportDimensions('detailed', 12); assert.ok(detailed.width >= compact.width); assert.ok(detailed.height >= compact.height); });
+test('dense day reports accurate accessible overflow without mutation', () => { const records = [1,2,3,4]; const result = getDenseDay(records, 2); assert.deepEqual(result.visible, [1,2]); assert.equal(result.overflow, 2); assert.match(result.overflowLabel, /2 more/); assert.deepEqual(records, [1,2,3,4]); });

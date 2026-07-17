@@ -55,7 +55,7 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
                     ); })()}
                     <span className="capitalize">{catLabel(evt.category)}</span>
                   </div>
-                  {evt.notes && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{evt.notes}</p>}
+                  {evt.notes && <p className="text-xs text-muted-foreground mt-2 whitespace-pre-wrap leading-relaxed">{evt.notes}</p>}
                   {getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone).converted && <p className="text-[11px] text-muted-foreground mt-1">Original: {evt.date} {evt.startTime}–{evt.endTime} {evt.timeZone}</p>}
                 </div>
               </button>

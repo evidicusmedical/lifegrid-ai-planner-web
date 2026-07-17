@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
 import { Event, Project, Task } from '../types';
-import { ChevronLeft, ChevronRight, Sun, Moon, Image, CalendarDays, Plus, Check, ChevronDown, X, Download, MessageSquareText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sun, Moon, Image, Plus, Check, ChevronDown, X, Download, MessageSquareText } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 import { DayDetailSheet } from '../components/DayDetailSheet';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,8 @@ import {
 import { toast } from 'sonner';
 import { toPng } from 'html-to-image';
 import { toISODate } from '../lib/format';
-import { APP_VERSION } from '../lib/version';
+import { DayTypePreview } from '../components/DayTypePreview';
+import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, ExportDensity, getDenseDay, getExportDimensions } from '../lib/gridPublication';
 import { getDateTemporalState, truncatePreviewNote, validateExportRange } from '../lib/gridAwareness';
 import { getDisplayedTemporalOccurrence } from '../lib/temporal';
 
@@ -92,6 +93,15 @@ const sortProjectsForExport = (a: Project, b: Project) => {
   return a.name.localeCompare(b.name);
 };
 
+const ExportPublicationHeader = ({ metadata, legend }: { metadata: { title: string; subtitle: string; metadata: string[] }; legend: { id: string; label: string; color: string }[] }) => (
+  <header className="mb-5 border-b border-border pb-4" data-testid="export-publication-header">
+    <h1 className="text-2xl font-extrabold tracking-tight">{metadata.title}</h1>
+    {metadata.subtitle && <p className="mt-1 text-sm text-muted-foreground">{metadata.subtitle}</p>}
+    <div className="mt-2 space-y-0.5 text-xs text-muted-foreground">{metadata.metadata.map(item => <p key={item}>{item}</p>)}</div>
+    <section className="mt-4 border-t border-border pt-3" aria-label="Categories"><p className="text-xs font-bold">Categories</p><div className="mt-2 flex flex-wrap gap-x-3 gap-y-2">{legend.map(entry => <span key={entry.id} className="inline-flex items-center gap-1.5 text-xs font-medium"><span className="h-3 w-3 rounded-sm border border-black/10" style={{ backgroundColor: entry.color }} />{entry.label}</span>)}</div></section>
+  </header>
+);
+
 export const GridView = () => {
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
@@ -106,6 +116,11 @@ export const GridView = () => {
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
   const [exportMode, setExportMode] = useState<'expanded' | 'visible'>('expanded');
+  const [exportDensity, setExportDensity] = useState<ExportDensity>('compact');
+  const [customExportTitle, setCustomExportTitle] = useState('');
+  const [customExportSubtitle, setCustomExportSubtitle] = useState('');
+  const [includeGeneratedAt, setIncludeGeneratedAt] = useState(false);
+  const [previewEvent, setPreviewEvent] = useState<{ event: Event; date: string; anchor: DOMRect } | null>(null);
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
   const [exportFilters, setExportFilters] = useState<GridExportFilters>({
     datePreset: 'current',
@@ -120,6 +135,8 @@ export const GridView = () => {
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
   const targetedExportRef = useRef<HTMLDivElement>(null);
+  const publicationRef = useRef<HTMLDivElement>(null);
+  const previewTimerRef = useRef<number | null>(null);
   const didScrollRef = useRef(false);
 
   const todayStr   = toISODate(today);
@@ -227,7 +244,7 @@ export const GridView = () => {
     return weeks;
   }, [exportFilteredEvents, getExportDateRange, sortEventsForCell, activeCalendar.displayTimeZone]);
 
-  const eventsForGrid = exporting ? exportFilteredEvents : events;
+  const eventsForGrid = exporting ? exportFilteredEvents.filter(event => event.showInExport !== false) : events;
 
   const gridData = useMemo(() => {
     const map = new Map<string, Event[]>();
@@ -287,7 +304,10 @@ export const GridView = () => {
 
   useEffect(() => { didScrollRef.current = false; }, [year]);
 
-  const exportFileName = `lifegrid-${activeCalendar?.name ?? 'calendar'}-${year}.png`.replace(/\s+/g, '-');
+  const exportFileName = `lifegrid-${activeCalendar?.name ?? 'calendar'}-${exportRange.start || year}-${exportRange.end || year}.png`.replace(/\s+/g, '-');
+  const exportLegend = useMemo(() => buildExportLegend(exportFilteredEvents, categories), [exportFilteredEvents, categories]);
+  const exportMetadata = useMemo(() => buildExportMetadata({ calendarName: activeCalendar?.name ?? 'LifeGrid', start: exportRange.start, end: exportRange.end, timeZone: activeCalendar?.displayTimeZone ?? 'UTC', customTitle: customExportTitle, customSubtitle: customExportSubtitle, generatedAt: includeGeneratedAt ? new Date() : null }), [activeCalendar, customExportTitle, customExportSubtitle, exportRange.end, exportRange.start, includeGeneratedAt]);
+  const exportDimensions = getExportDimensions(exportDensity, exportLegend.entries.length, isTargetedDateExport);
 
   // ── Image export (html-to-image renders modern CSS correctly) ──
   // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
@@ -324,7 +344,7 @@ export const GridView = () => {
 
     await new Promise(requestAnimationFrame);
 
-    const captureNode = useTargetedLayout ? targetedExportRef.current : tableRef.current;
+    const captureNode = useTargetedLayout ? targetedExportRef.current : publicationRef.current;
     if (!captureNode) {
       toast.error('Export failed — try again', { id: 'export' });
       setExporting(false);
@@ -339,7 +359,7 @@ export const GridView = () => {
     await new Promise(requestAnimationFrame);
 
     const opts = {
-      pixelRatio: exportPixelRatio,
+      pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio,
       backgroundColor: theme === 'dark' ? '#0d1526' : '#ffffff',
       width: captureNode.scrollWidth,
       height: captureNode.scrollHeight,
@@ -383,7 +403,7 @@ export const GridView = () => {
       container.style.height   = prevH;
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio, exportMode, exportFilters, exportFilteredEvents.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode, exportDensity, exportFilters, exportFilteredEvents.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -402,7 +422,6 @@ export const GridView = () => {
 
       {/* ── Header bar ── */}
       <div className="flex-none relative px-3 py-2 flex items-center gap-3 border-b border-border bg-card">
-        <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[10px] text-muted-foreground whitespace-nowrap">LifeGrid {APP_VERSION}</span>
         {/* Calendar version switcher */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -430,7 +449,6 @@ export const GridView = () => {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <span className="hidden lg:block text-[10px] text-muted-foreground" title={activeCalendar?.displayTimeZone}>{clockFor(activeCalendar?.displayTimeZone ?? 'UTC')} · {clockFor('UTC')}</span>
 
         {/* Year nav */}
         <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 ml-3">
@@ -543,6 +561,13 @@ export const GridView = () => {
             <div className="text-[11px] text-muted-foreground">{exportFilterSummary}</div>
           </div>
 
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="text-xs font-semibold">Export density<select value={exportDensity} onChange={e => setExportDensity(e.target.value as ExportDensity)} className="mt-1 block h-8 w-full rounded border border-border bg-background px-2 text-xs"><option value="compact">Compact</option><option value="detailed">Detailed</option></select></label>
+            <label className="text-xs font-semibold">Custom title<input value={customExportTitle} maxLength={120} onChange={e => setCustomExportTitle(e.target.value)} className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs" /></label>
+            <label className="text-xs font-semibold">Custom subtitle<input value={customExportSubtitle} maxLength={180} onChange={e => setCustomExportSubtitle(e.target.value)} className="mt-1 h-8 w-full rounded border border-border bg-background px-2 text-xs" /></label>
+            <label className="flex items-center gap-2 self-end pb-1 text-xs font-semibold"><input type="checkbox" checked={includeGeneratedAt} onChange={e => setIncludeGeneratedAt(e.target.checked)} /> Include generated timestamp</label>
+          </div>
+          <p className="text-[11px] text-muted-foreground" role="status">Preview: {exportMetadata.title} · {exportLegend.recordCount} records · {exportLegend.entries.length} categories · approximately {exportDimensions.width} × {exportDimensions.height}px. Detailed exports use larger dimensions.</p>
           <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
             <div className="space-y-2">
               <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Date range</div>
@@ -666,6 +691,8 @@ export const GridView = () => {
 
       {/* ── Scrollable grid ── */}
       <div ref={scrollRef} className="flex-1 overflow-auto">
+        <div ref={publicationRef} className={exporting ? "lifegrid-export-publication bg-background p-6" : undefined} style={exporting ? { minWidth: exportDimensions.width, padding: EXPORT_DENSITY[exportDensity].padding } : undefined}>
+        {exporting && <ExportPublicationHeader metadata={exportMetadata} legend={exportLegend.entries} />}
         <table
           ref={tableRef}
           className="border-collapse bg-background"
@@ -741,8 +768,9 @@ export const GridView = () => {
                   const dow      = DOW_SHORT[dateObj.getDay()];
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                   const dayEvents = gridData.get(dateStr) ?? [];
-                  const visEvents = isExpandedExport ? dayEvents : dayEvents.slice(0, MAX_VISIBLE_EVENTS);
-                  const overflow  = isExpandedExport ? 0 : Math.max(0, dayEvents.length - MAX_VISIBLE_EVENTS);
+                  const denseDay = getDenseDay(dayEvents, exporting ? EXPORT_DENSITY[exportDensity].cellLimit : MAX_VISIBLE_EVENTS);
+                  const visEvents = isExpandedExport ? dayEvents : denseDay.visible;
+                  const overflow = isExpandedExport ? 0 : denseDay.overflow;
 
                   let cellBg: string;
                   if (isToday) {
@@ -791,7 +819,11 @@ export const GridView = () => {
                             title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ''}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ''}` : ''}${evt.notes ? ` · ${truncatePreviewNote(evt.notes)}` : ''}`}
                             aria-label={`${evt.title}${evt.notes ? `. Notes: ${truncatePreviewNote(evt.notes)}` : ''}. Press Enter to open date details.`}
                             onClick={e => { e.stopPropagation(); setDetailDate(dateStr); }}
-                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailDate(dateStr); } }}
+                            onPointerEnter={e => { if (evt.eventKind === 'day-type' && window.matchMedia('(hover: hover)').matches) { previewTimerRef.current = window.setTimeout(() => setPreviewEvent({ event: evt, date: dateStr, anchor: e.currentTarget.getBoundingClientRect() }), 250); } }}
+                            onPointerLeave={() => { if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current); }}
+                            onFocus={e => { if (evt.eventKind === 'day-type') setPreviewEvent({ event: evt, date: dateStr, anchor: e.currentTarget.getBoundingClientRect() }); }}
+                            aria-describedby={previewEvent?.event.id === evt.id ? `day-type-preview-${evt.id}` : undefined}
+                            onKeyDown={e => { if (e.key === 'Escape') { setPreviewEvent(null); e.currentTarget.focus(); } if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailDate(dateStr); } }}
                             style={{
                               backgroundColor: evt.color,
                               height: isExpandedExport ? EVENT_PILL_H : 10,
@@ -812,12 +844,12 @@ export const GridView = () => {
                         ))}
 
                         {overflow > 0 && (
-                          <div
-                            className="text-[7px] font-bold px-1"
+                          <button type="button" onClick={e => { e.stopPropagation(); setDetailDate(dateStr); }} aria-label={denseDay.overflowLabel}
+                            className="text-[7px] font-bold px-1 text-left"
                             style={{ color: theme === 'dark' ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)', lineHeight: 1 }}
                           >
                             +{overflow} more
-                          </div>
+                          </button>
                         )}
                       </div>
                     </td>
@@ -827,25 +859,17 @@ export const GridView = () => {
             );})}
           </tbody>
         </table>
+        </div>
       </div>
 
       {exporting && isTargetedDateExport && (
         <div
           ref={targetedExportRef}
           className="fixed top-0 -left-[10000px] bg-background text-foreground"
-          style={{ width: 1120, padding: 24 }}
+          style={{ width: exportDimensions.width, padding: EXPORT_DENSITY[exportDensity].padding }}
           data-testid="targeted-export-grid"
         >
-          <div className="mb-4 flex items-end justify-between border-b border-border pb-3">
-            <div>
-              <div className="text-2xl font-extrabold tracking-tight">{activeCalendar?.name ?? 'LifeGrid'} schedule</div>
-              <div className="mt-1 text-sm font-semibold text-muted-foreground">{exportRange.start} → {exportRange.end}</div>
-            </div>
-            <div className="text-right text-xs font-semibold text-muted-foreground">
-              <div>{exportFilters.categoryMode === 'all' ? 'All tags' : `${exportFilters.selectedCategoryIds.length} selected tag${exportFilters.selectedCategoryIds.length === 1 ? '' : 's'}`}</div>
-              <div>{exportFilters.projectId === 'all' ? 'All projects' : sortedProjects.find(p => p.id === exportFilters.projectId)?.name ?? 'Project focus'}</div>
-            </div>
-          </div>
+          <ExportPublicationHeader metadata={exportMetadata} legend={exportLegend.entries} />
 
           <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
@@ -927,6 +951,8 @@ export const GridView = () => {
       >
         <Plus size={22} />
       </button>
+
+      <DayTypePreview event={previewEvent?.event ?? null} date={previewEvent?.date ?? todayStr} category={categories.find(category => category.id === previewEvent?.event.category)?.label ?? "Other"} anchor={previewEvent?.anchor ?? null} onClose={() => setPreviewEvent(null)} onDetails={() => { setDetailDate(previewEvent?.date ?? null); setPreviewEvent(null); }} onEdit={() => { if (previewEvent) openEdit(previewEvent.event); setPreviewEvent(null); }} />
 
       <DayDetailSheet
         date={detailDate}

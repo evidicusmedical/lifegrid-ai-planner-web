@@ -128,6 +128,9 @@ export const GridView = () => {
   const getDaysForMonth = (m: number) => (m === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[m]);
 
   const activeCalendar = calendars.find(c => c.id === activeCalendarId);
+  const [clockNow, setClockNow] = useState(() => new Date());
+  useEffect(() => { const timer = window.setInterval(() => setClockNow(new Date()), 60_000); return () => window.clearInterval(timer); }, []);
+  const clockFor = (zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).format(clockNow);
 
   const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
   const sortedProjects = useMemo(() => [...projects].sort(sortProjectsForExport), [projects]);
@@ -435,6 +438,8 @@ export const GridView = () => {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <span className="hidden lg:block text-[10px] text-muted-foreground" title={activeCalendar?.displayTimeZone}>{clockFor(activeCalendar?.displayTimeZone ?? 'UTC')} · {clockFor('UTC')}</span>
 
         {/* Year nav */}
         <div className="flex items-center gap-0.5 bg-muted rounded-lg p-0.5 ml-3">

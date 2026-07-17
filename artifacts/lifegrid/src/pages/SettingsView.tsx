@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { Category, Person, Project, ProjectStatus } from '../types';
 import { formatDate } from '../lib/format';
+import { downloadCurrentBackup } from '../lib/backup';
+import { dateIsInRange, exportRangeFor, formatExportRange, type ExportPreset, validateDateRange } from '../lib/exportUtils';
 
 const PRESET_COLORS = [
   '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#6b7280',
@@ -24,14 +26,6 @@ const PRESET_COLORS = [
 
 const slug = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `id-${Date.now()}`;
-
-const backupTimestampParts = (date = new Date()) => ({
-  date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-  time: `${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`,
-});
-
-const safeFilenamePart = (value: string): string =>
-  value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'calendar';
 
 export const SettingsView = () => {
   return (
@@ -648,7 +642,7 @@ function escapeIcsText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
 }
 
-function buildIcsExport(app: ReturnType<typeof useAppData>): string {
+function buildIcsExport(app: ReturnType<typeof useAppData>, events = app.events): string {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const lines = [
     'BEGIN:VCALENDAR',
@@ -656,7 +650,7 @@ function buildIcsExport(app: ReturnType<typeof useAppData>): string {
     'PRODID:-//LifeGrid AI Planner//EN',
     'CALSCALE:GREGORIAN',
   ];
-  app.events.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
+  events.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(e => {
     const start = e.startTime ? `${e.date.replace(/-/g, '')}T${e.startTime.replace(':', '')}00` : e.date.replace(/-/g, '');
     const end = e.endTime ? `${e.date.replace(/-/g, '')}T${e.endTime.replace(':', '')}00` : undefined;
     lines.push('BEGIN:VEVENT');
@@ -676,59 +670,30 @@ function buildIcsExport(app: ReturnType<typeof useAppData>): string {
 
 function ExportManager() {
   const app = useAppData();
-
-  const download = (contents: string, filename: string, type: string) => {
-    const blob = new Blob([contents], { type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <Section icon={<FileText size={16} />} title="Readable & calendar exports" subtitle="For sharing; these files are not restorable backups.">
-      <p className="text-[11px] text-muted-foreground leading-relaxed">
-        These exports are separate from JSON backup/restore. Use them for printing, sharing, or importing grid events into an external calendar app.
-      </p>
-      <div className="grid grid-cols-2 gap-2">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            download(buildTextExport(app), `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`, 'text/plain');
-            toast.success('Text export downloaded', { description: 'Readable only — not restorable.' });
-          }}
-          className="gap-1.5 h-9 text-xs"
-          data-testid="button-export-text"
-        >
-          <Download size={14} /> Export .txt
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => {
-            download(buildIcsExport(app), `lifegrid-events-${new Date().toISOString().slice(0, 10)}.ics`, 'text/calendar');
-            toast.success('ICS exported', { description: 'Calendar/grid events only — tasks and people entries are not included.' });
-          }}
-          className="gap-1.5 h-9 text-xs"
-          data-testid="button-export-ics"
-        >
-          <Download size={14} /> Events .ics
-        </Button>
-      </div>
-      <p className="text-[10px] text-muted-foreground">
-        ICS export includes calendar/grid events only and can be imported into external calendar apps. Tasks, projects, and People tab schedules stay in LifeGrid backups.
-      </p>
-    </Section>
-  );
+  const [preset, setPreset] = useState<ExportPreset>('all');
+  const [customStart, setCustomStart] = useState(''); const [customEnd, setCustomEnd] = useState('');
+  const [category, setCategory] = useState('all');
+  const range = exportRangeFor(preset, { start: customStart || null, end: customEnd || null });
+  const rangeError = preset === 'custom' ? validateDateRange(range) : null;
+  const events = useMemo(() => app.events.filter(event => dateIsInRange(event.date, range) && (category === 'all' || event.category === category)), [app.events, range.start, range.end, category]);
+  const download = (contents: string, filename: string, type: string) => { const url = URL.createObjectURL(new Blob([contents], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); };
+  return <Section icon={<FileText size={16} />} title="Share or publish your schedule" subtitle="These exports are not restorable backups.">
+    <p className="text-[11px] text-muted-foreground">Readable text is for review, printing, and sharing. ICS contains calendar/grid events only; projects, tasks, people, and People-tab schedules are not included unless represented as events.</p>
+    <div className="flex flex-wrap gap-1">{([['month','Current Month'],['next30','Next 30 Days'],['next90','Next 90 Days'],['year','Current Year'],['all','All Events'],['custom','Custom Range']] as [ExportPreset,string][]).map(([id,label]) => <button key={id} onClick={() => setPreset(id)} className={`rounded px-2 py-1 text-[10px] font-semibold ${preset === id ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>{label}</button>)}</div>
+    {preset === 'custom' && <div className="grid grid-cols-2 gap-2"><Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} aria-label="ICS export start"/><Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} aria-label="ICS export end"/></div>}
+    {rangeError && <p role="alert" className="text-xs text-destructive">{rangeError}</p>}
+    <select value={category} onChange={e => setCategory(e.target.value)} className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All categories</option>{app.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
+    <p className="text-[10px] text-muted-foreground">{formatExportRange(range)} · {category === 'all' ? 'All categories' : app.categories.find(c => c.id === category)?.label} · {events.length} event{events.length === 1 ? '' : 's'}</p>
+    <div className="grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" disabled={!!rangeError} onClick={() => { download(buildTextExport(app), `lifegrid-export-${new Date().toISOString().slice(0, 10)}.txt`, 'text/plain'); toast.success('Text export downloaded', { description: 'Human-readable only — not restorable.' }); }}><Download size={14}/> Export readable text</Button><Button size="sm" variant="secondary" disabled={!!rangeError || !events.length} onClick={() => { download(buildIcsExport(app, events), `lifegrid-events-${new Date().toISOString().slice(0, 10)}.ics`, 'text/calendar'); toast.success('ICS exported', { description: `${events.length} calendar/grid event${events.length === 1 ? '' : 's'} exported.` }); }}><Download size={14}/> Export ICS calendar</Button></div>
+    {!events.length && !rangeError && <p className="text-xs text-amber-700">No events match this range and category; ICS download is disabled.</p>}
+    <Button size="sm" variant="outline" onClick={() => { setPreset('all'); setCategory('all'); setCustomStart(''); setCustomEnd(''); }}>Reset export filters</Button>
+  </Section>;
 }
 
 // ─── Data backup / restore / clear ────────────────────────────────────────────
 function DataManager() {
   const app = useAppData();
-  const { exportBackup, importBackup, clearActiveCalendar, activeCalendar, lastBackupAt, recordBackup } = app;
+  const { importBackup, clearActiveCalendar, activeCalendar, lastBackupAt } = app;
   const fileRef = useRef<HTMLInputElement>(null);
 
   const daysSince = lastBackupAt
@@ -736,19 +701,7 @@ function DataManager() {
     : null;
   const backupOk = daysSince !== null && daysSince < 7;
 
-  const handleExport = () => {
-    const json = exportBackup();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const ts = backupTimestampParts();
-    a.download = `lifegrid_json_backup_${safeFilenamePart(activeCalendar.name)}_${ts.date}_${ts.time}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Backup downloaded');
-    recordBackup();
-  };
+  const handleExport = () => { downloadCurrentBackup(app); toast.success('JSON backup downloaded', { description: 'Saved locally to your device; it is not stored in the cloud.' }); };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -764,7 +717,7 @@ function DataManager() {
   };
 
   return (
-    <Section icon={<Database size={16} />} title="Data & backup" subtitle="All data lives on your device. Export regularly.">
+    <Section icon={<Database size={16} />} title="Preserve your LifeGrid" subtitle="Local JSON backup and restore; no cloud storage.">
       {!backupOk && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-700 dark:text-amber-400 mb-1">
           {daysSince === null
@@ -775,7 +728,7 @@ function DataManager() {
 
       <div className="space-y-2">
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Your data is stored only in this browser. Clearing site/browser data can remove it. A JSON backup is the main save point; download one after meaningful changes and restore by uploading your latest JSON backup.
+          Your data is stored only in this browser. Clearing site/browser data can remove it. A JSON backup preserves every calendar version in this browser and is the restorable format. Restoring a full backup replaces the current local calendar store; a single-calendar file is added as a new calendar.
         </p>
         <Button size="sm" variant="secondary" onClick={handleExport} className="w-full gap-1.5 h-9 text-xs" data-testid="button-export-backup">
           <Download size={14} /> Download restorable JSON backup

@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
+import { analyzeDependencies } from '../lib/aiDependencies';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -514,6 +515,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     target?: { newVersionName?: string }
   ): string[] => {
     const allWarnings: string[] = [];
+    // Revalidate selected references against current data before any mutation.
+    const allSelected = new Set<string>();
+    ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'].forEach(group => ['add', 'update'].forEach(operation => ((update[group]?.[operation] ?? []) as any[]).forEach((record: any, index: number) => allSelected.add(`${group}:${operation}:${record.id}:${index}`))));
+    const dependencyCheck = analyzeDependencies(update, activeCalendar.data, allSelected);
+    if (dependencyCheck.blocked.size) throw new Error([...dependencyCheck.blocked.values()].join('; '));
     const shouldTransform = !!(
       transformationArgs &&
       transformationArgs.approvedProposalIds.size > 0 &&

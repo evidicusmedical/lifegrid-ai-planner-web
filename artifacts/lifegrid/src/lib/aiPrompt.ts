@@ -1,4 +1,30 @@
-import { AppData, Event, Task, Category, Project, ProjectStatus, EventDisplayPriority, EventKind, TaskDueDateType, TaskTriageStatus } from '../types';
+import { AppData, Event, Task, Category, Person, PersonEvent, Project, ProjectStatus, EventDisplayPriority, EventKind, TaskDueDateType, TaskTriageStatus } from '../types';
+import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version';
+
+export const universalSchema = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
+Return one JSON object only: {"lifegridPatchVersion":${AI_INTERCHANGE_VERSION},"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}.\nUse stable ids. Dates are YYYY-MM-DD and times are 24-hour HH:MM or null. Categories must be created before references. Supported eventKind values: ${EVENT_KIND_VALUES.join(', ')}. Project status: active, paused, completed, archived. Task status: todo, in-progress, done, blocked; priority: low, medium, high, urgent. Ask clarifying questions for material ambiguity; do not invent names, dates, times, assignments, relationships, clinical/personal information, or unsupported fields. Preserve IDs for updates. Same-patch references may point to approved additions. Final changes must be valid JSON only.`;
+
+export const generateUniversalStarterPrompt = () => `LifeGrid is a local-first visual year-grid planning system. You may be given text, images, screenshots, spreadsheets, PDFs, emails, or schedules. Interpret those materials, ask clarifying questions when material ambiguity exists, and then produce an import package. Do not fabricate missing facts; use notes/warnings for harmless uncertainty. It supports categories, people/providers, projects, tasks (including completed tasks), dated events and Day Types (eventKind: "day-type"), and person schedule/availability entries. All-day events use null startTime/endTime; timed events require ordered HH:MM values.\n\n${universalSchema()}\n\nPeople use id, label, color. Person schedule entries use id, person, date, title, startTime, endTime, notes, color. Events use id, date, title, category, startTime, endTime, eventKind, linkedTaskIds and notes. Tasks use id, name, category, status, priority, dueDate, projectId, linkedEventIds, nextAction and notes. Projects use id, name, color, order, status and notes. This format is general-purpose: provider/shift schedules are one example, not a special domain.`;
+
+export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
+  const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);
+  const events = data.events.filter(e => inside(e.date));
+  const schedule = data.personEvents.filter(e => inside(e.date));
+  const categoryIds = new Set(events.map(e => e.category));
+  const taskIds = new Set(events.flatMap(e => e.linkedTaskIds ?? []));
+  const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate));
+  tasks.forEach(t => categoryIds.add(t.category));
+  const context = {
+    metadata: { application: 'LifeGrid', applicationVersion: APP_VERSION, exportFormatVersion: AI_INTERCHANGE_VERSION, exportedAt: new Date().toISOString(), calendarId: calendar.id, calendarName: calendar.name, selectedDateRange: range, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    categories: data.categories.filter(c => categoryIds.has(c.id) || c.id === 'other').map((c, order) => ({ ...c, order, protected: c.id === 'other' })),
+    people: data.people.filter(p => schedule.some(s => s.person === p.id)).concat(data.people.filter(p => !schedule.some(s => s.person === p.id))),
+    projects: data.projects,
+    tasks,
+    events,
+    peopleSchedule: schedule,
+  };
+  return `Export Current LifeGrid to AI\nYou can analyze, resolve conflicts, reorganize tasks, create/update projects, schedule entries, Day Types, categories, people, and workload plans. Do not apply changes yourself: return JSON for human review.\n\n${universalSchema()}\n\nCURRENT LIFEGRID CONTEXT\n${JSON.stringify(context, null, 2)}`;
+};
 
 const today = () => new Date().toISOString().split('T')[0];
 const nextYear = () => new Date().getFullYear() + 1;
@@ -958,6 +984,9 @@ ${schemaReference(data.categories)}`;
 
 // ─── Robust parser ────────────────────────────────────────────────────────────
 export interface ParsedUpdate {
+  categories?: { add: Category[]; update: Array<{ id: string } & Partial<Category>> };
+  people?: { add: Person[]; update: Array<{ id: string } & Partial<Person>> };
+  peopleSchedule?: { add: PersonEvent[]; update: Array<{ id: string } & Partial<PersonEvent>> };
   projects?: {
     add:    Project[];
     update: Array<{ id: string } & Partial<Project>>;
@@ -1074,6 +1103,27 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
 
   const result: ParsedUpdate = {};
   if (Array.isArray(parsed.notes)) result.patchNotes = parsed.notes.filter((n: any) => typeof n === 'string');
+
+  const validHex = (value: unknown) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+  const unique = (items: any[], label: string) => {
+    const seen = new Set<string>();
+    return items.filter(item => { const id = String(item?.id ?? ''); if (!id || seen.has(id)) { warnings.push(`Invalid or duplicate ${label} id: "${id || 'missing'}"`); return false; } seen.add(id); return true; });
+  };
+  if (parsed.categories) {
+    const add = unique(Array.isArray(parsed.categories.add) ? parsed.categories.add : [], 'category').filter(c => typeof c.label === 'string' && c.label.trim() && validHex(c.color)).map(c => ({ id: String(c.id), label: c.label.trim(), color: c.color }));
+    result.categories = { add, update: (Array.isArray(parsed.categories.update) ? parsed.categories.update : []).filter((c: any) => c?.id && c.id !== 'other').map((c: any) => ({ id: String(c.id), ...(typeof c.label === 'string' ? { label: c.label } : {}), ...(validHex(c.color) ? { color: c.color } : {}) })) };
+    add.forEach(category => validCats.add(category.id));
+  }
+  if (parsed.people) {
+    const add = unique(Array.isArray(parsed.people.add) ? parsed.people.add : [], 'person').filter(p => typeof (p.label ?? p.name) === 'string' && String(p.label ?? p.name).trim()).map(p => ({ id: String(p.id), label: String(p.label ?? p.name).trim(), color: validHex(p.color) ? p.color : '#6b7280' }));
+    result.people = { add, update: (Array.isArray(parsed.people.update) ? parsed.people.update : []).filter((p: any) => p?.id).map((p: any) => ({ id: String(p.id), ...(p.label ?? p.name ? { label: String(p.label ?? p.name) } : {}), ...(validHex(p.color) ? { color: p.color } : {}) })) };
+  }
+  if (parsed.peopleSchedule || parsed.availability) {
+    const source = parsed.peopleSchedule ?? parsed.availability;
+    const peopleAfterAdds = new Set([...(existingData?.people.map(p => p.id) ?? []), ...((result.people?.add ?? []).map(p => p.id))]);
+    const add = unique(Array.isArray(source.add) ? source.add : [], 'schedule entry').filter(e => peopleAfterAdds.has(e.person) && fixDate(e.date)).map((e, i) => ({ id: String(e.id), person: String(e.person), date: fixDate(e.date)!, title: String(e.title ?? 'Availability'), notes: e.notes ?? null, color: validHex(e.color) ? e.color : '#6b7280', startTime: fixTime(e.startTime), endTime: fixTime(e.endTime) } as PersonEvent));
+    result.peopleSchedule = { add, update: (Array.isArray(source.update) ? source.update : []).filter((e: any) => e?.id).map((e: any) => ({ ...e, id: String(e.id), ...(e.date ? { date: fixDate(e.date) } : {}) })) };
+  }
 
   // Accept the v0.3.1 minimal patch shape and translate it into the
   // existing importer shape so applyImportUpdate remains backwards-compatible.

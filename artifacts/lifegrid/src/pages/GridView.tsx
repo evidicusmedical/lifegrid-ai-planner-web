@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { toPng } from 'html-to-image';
 import { toISODate } from '../lib/format';
+import { APP_VERSION } from '../lib/version';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -412,7 +413,7 @@ export const GridView = () => {
               className="flex items-center gap-1 max-w-[8rem] text-left"
               data-testid="button-calendar-switcher"
             >
-              <span className="text-base font-bold tracking-tight truncate">{activeCalendar?.name ?? 'LifeGrid'}</span>
+              <span className="text-base font-bold tracking-tight truncate">{activeCalendar?.name ?? 'LifeGrid'}</span><span className="text-[10px] text-muted-foreground shrink-0">LifeGrid {APP_VERSION}</span>
               <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
             </button>
           </DropdownMenuTrigger>

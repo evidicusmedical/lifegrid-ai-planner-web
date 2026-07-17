@@ -6,7 +6,7 @@ import {
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
 
-interface AppContextType extends AppData {
+export interface AppDataContextType extends AppData {
   // Active calendar identity
   calendars: Calendar[];
   activeCalendarId: string;
@@ -64,7 +64,7 @@ interface AppContextType extends AppData {
   deletePersonEventGroup: (groupId: string) => void;
 }
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+const AppContext = createContext<AppDataContextType | undefined>(undefined);
 
 const STORE_KEY = 'lifegrid_store_v5';
 const LEGACY_KEY = 'lifegrid_data';
@@ -423,10 +423,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const next: AppData = {
       ...d,
+      categories: [...d.categories],
+      people: [...d.people],
+      personEvents: [...d.personEvents],
       projects: [...d.projects],
       events: [...d.events],
       tasks: [...d.tasks],
     };
+
+    // Canonical v3 imports create parents before dependent records. Required
+    // fallback category is never modified by AI imports.
+    if (update.categories) {
+      if (Array.isArray(update.categories.add)) next.categories = [...next.categories, ...update.categories.add.filter((c: Category) => !next.categories.some(existing => existing.id === c.id))];
+      if (Array.isArray(update.categories.update)) next.categories = next.categories.map(c => c.id === 'other' ? c : ({ ...c, ...(update.categories.update.find((u: any) => u.id === c.id) ?? {}) }));
+    }
+    if (update.people) {
+      if (Array.isArray(update.people.add)) next.people = [...next.people, ...update.people.add.filter((p: Person) => !next.people.some(existing => existing.id === p.id))];
+      if (Array.isArray(update.people.update)) next.people = next.people.map(p => ({ ...p, ...(update.people.update.find((u: any) => u.id === p.id) ?? {}) }));
+    }
+    if (update.peopleSchedule) {
+      const peopleIds = new Set(next.people.map(p => p.id));
+      if (Array.isArray(update.peopleSchedule.add)) next.personEvents = [...next.personEvents, ...update.peopleSchedule.add.filter((e: PersonEvent) => peopleIds.has(e.person) && !next.personEvents.some(existing => existing.id === e.id))];
+      if (Array.isArray(update.peopleSchedule.update)) next.personEvents = next.personEvents.map(e => ({ ...e, ...(update.peopleSchedule.update.find((u: any) => u.id === e.id) ?? {}) }));
+    }
+    catIds.clear(); next.categories.forEach(c => catIds.add(c.id));
 
     // Apply project operations first so task projectId values can be sanitized
     // against the final project set. Deleting a project keeps tasks and detaches

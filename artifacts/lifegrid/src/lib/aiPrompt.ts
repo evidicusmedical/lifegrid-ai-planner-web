@@ -1158,7 +1158,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     add.forEach(category => validCats.add(category.id));
   }
   if (parsed.people) {
-    const add = unique(Array.isArray(parsed.people.add) ? parsed.people.add : [], 'person').filter(p => typeof (p.label ?? p.name) === 'string' && String(p.label ?? p.name).trim()).map(p => ({ id: String(p.id), label: String(p.label ?? p.name).trim(), color: validHex(p.color) ? p.color : '#6b7280' }));
+    const add = unique(Array.isArray(parsed.people.add) ? parsed.people.add : [], 'person').filter(p => typeof (p.label ?? p.name) === 'string' && String(p.label ?? p.name).trim()).map((p, index) => ({ id: String(p.id), label: String(p.label ?? p.name).trim(), color: validHex(p.color) ? p.color : '#6b7280', order: Number.isFinite(Number(p.order)) && Number(p.order) >= 0 ? Number(p.order) : index }));
     result.people = { add, update: (Array.isArray(parsed.people.update) ? parsed.people.update : []).filter((p: any) => p?.id).map((p: any) => ({ id: String(p.id), ...(p.label ?? p.name ? { label: String(p.label ?? p.name) } : {}), ...(validHex(p.color) ? { color: p.color } : {}) })) };
   }
   if (parsed.peopleSchedule || parsed.availability) {

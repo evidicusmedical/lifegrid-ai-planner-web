@@ -35,6 +35,8 @@ export interface Person {
   id: string;
   label: string;
   color: string;
+  /** Persistent per-calendar display order. */
+  order: number;
 }
 
 // ─── Projects / major events ──────────────────────────────────────────────────

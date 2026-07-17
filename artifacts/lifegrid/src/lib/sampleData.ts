@@ -11,8 +11,8 @@ export const DEFAULT_CATEGORIES: Category[] = [
 ];
 
 export const DEFAULT_PEOPLE: Person[] = [
-  { id: 'wife',   label: "Wife's Schedule", color: '#8b5cf6' },
-  { id: 'shared', label: 'Shared / Together', color: '#dc2626' },
+  { id: 'wife',   label: "Wife's Schedule", color: '#8b5cf6', order: 0 },
+  { id: 'shared', label: 'Shared / Together', color: '#dc2626', order: 1 },
 ];
 
 // ── ED shift helper ──────────────────────────────────────────────────────────
@@ -412,9 +412,9 @@ export const defaultData = {
     { id: crypto.randomUUID(), person: 'wife', date: '2026-07-10', title: 'Girls Trip to Napa', notes: '4 nights', color: '#d97706' },
     { id: crypto.randomUUID(), person: 'wife', date: '2026-07-13', title: 'Return from Napa', notes: null, color: '#d97706' },
     { id: crypto.randomUUID(), person: 'wife', date: '2026-08-05', title: 'Work Conference', notes: 'Chicago — 2 nights', color: '#2563eb' },
-    { id: crypto.randomUUID(), person: 'wife', date: '2026-09-12', title: 'Spa Day with Mom', notes: null, color: '#ec4899' },
+    { id: crypto.randomUUID(), person: 'wife', date: '2026-09-12', title: 'Spa Day with Mom', notes: null, color: '#ec4899', order: 0 },
     { id: crypto.randomUUID(), person: 'wife', date: '2026-10-03', title: 'Book Club', notes: null, color: '#8b5cf6' },
-    { id: crypto.randomUUID(), person: 'wife', date: '2026-11-20', title: 'Hair Appt', notes: null, color: '#ec4899' },
+    { id: crypto.randomUUID(), person: 'wife', date: '2026-11-20', title: 'Hair Appt', notes: null, color: '#ec4899', order: 0 },
     { id: crypto.randomUUID(), person: 'shared', date: '2026-06-28', title: 'Couples Therapy', notes: null, color: '#8b5cf6' },
     { id: crypto.randomUUID(), person: 'shared', date: '2026-07-04', title: '4th of July BBQ', notes: null, color: '#dc2626' },
     { id: crypto.randomUUID(), person: 'shared', date: '2026-08-01', title: 'Anniversary Dinner', notes: null, color: '#dc2626' },

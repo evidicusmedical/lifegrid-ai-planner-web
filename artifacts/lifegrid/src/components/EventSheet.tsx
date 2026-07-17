@@ -18,6 +18,7 @@ import { useAppData } from '../context/AppDataContext';
 import { Event, EventDisplayPriority, TimeStatus, TimeZoneMode } from '../types';
 import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
+import { TemporalFields } from './TemporalFields';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -335,14 +336,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                   </div>
                 )}
 
-                <div className="rounded-xl border border-border p-3 space-y-3">
-                  <Label className="text-sm font-semibold">Time type</Label>
-                  <div className="grid grid-cols-2 gap-2">{([['all-day','All day'],['timed','Timed'],['unknown','Time unknown'],['approximate','Approximate']] as [TimeStatus,string][]).map(([value,label]) => <button key={value} type="button" onClick={() => setTimeStatus(value)} className={`rounded-lg border px-2 py-2 text-xs ${timeStatus === value ? 'border-primary bg-primary/5 text-primary' : 'border-border'}`}>{label}</button>)}</div>
-                  {(timeStatus === 'timed' || timeStatus === 'approximate') && <><div className="grid grid-cols-2 gap-2"><FormField control={form.control} name="startTime" render={({field}) => <FormItem><FormLabel>Start time</FormLabel><FormControl><Input type="time" {...field} value={field.value || ''}/></FormControl></FormItem>}/><FormField control={form.control} name="endTime" render={({field}) => <FormItem><FormLabel>End time</FormLabel><FormControl><Input type="time" {...field} value={field.value || ''}/></FormControl></FormItem>}/></div>
-                  <div><Label>End date</Label><Input type="date" value={temporalEndDate} min={startDateVal} onChange={e => setTemporalEndDate(e.target.value)} /></div>
-                  <div className="flex gap-2"><Button type="button" size="sm" variant={timeZoneMode === 'zoned' ? 'default' : 'outline'} onClick={() => setTimeZoneMode('zoned')}>Specific timezone</Button><Button type="button" size="sm" variant={timeZoneMode === 'floating' ? 'default' : 'outline'} onClick={() => setTimeZoneMode('floating')}>Floating local time</Button></div>
-                  {timeZoneMode === 'zoned' && <select value={timeZone} onChange={e => setTimeZone(e.target.value)} className="w-full h-9 rounded border bg-background px-2 text-sm">{['UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Asia/Tokyo'].map(z => <option key={z}>{z}</option>)}</select>}</>}
-                </div>
+                <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={activeCalendar.displayTimeZone} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
 
                 {/* ── Repeat (new events only, disabled when multi-day) ── */}
                 {!initialData && !multiDay && (

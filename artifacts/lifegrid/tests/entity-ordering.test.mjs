@@ -1,0 +1,2 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { normalizeEntityOrder, moveEntity } from '../.test-build/lib/entityOrder.js';
+test('ordering normalization is immutable, contiguous and stable',()=>{const input=[{id:'a',order:2},{id:'b'},{id:'c',order:2},{id:'d',order:-1}];const out=normalizeEntityOrder(input);assert.deepEqual(out.map(x=>x.order),[0,1,2,3]);assert.deepEqual(input.map(x=>x.order),[2,undefined,2,-1]);assert.deepEqual(moveEntity(out,2,0).map(x=>x.id),['b','a','c','d']);});

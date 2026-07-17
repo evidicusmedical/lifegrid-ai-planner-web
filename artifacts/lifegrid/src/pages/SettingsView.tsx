@@ -478,7 +478,7 @@ function PeopleManager() {
     if (!l) { toast.error('Enter a name'); return; }
     const id = slug(l);
     if (people.some(p => p.id === id)) { toast.error('That person already exists'); return; }
-    addPerson({ id, label: l, color });
+    addPerson({ id, label: l, color, order: people.length });
     setLabel(''); setColor(PRESET_COLORS[4]); setAdding(false);
     toast.success(`Added "${l}"`);
   };
@@ -558,15 +558,9 @@ function PersonRow({ person, onUpdate, onDelete }: {
 }
 
 function TimeDataReview() {
-  const { events, personEvents } = useAppData(); const [kind, setKind] = useState('all'); const [code, setCode] = useState('all');
-  const all = useMemo(() => analyzeTemporalReview(events, personEvents), [events, personEvents]);
-  const visible = all.filter(i => (kind === 'all' || i.recordType === kind) && (code === 'all' || i.code === code));
-  const codes = [...new Set(all.map(i => i.code))];
-  return <Section icon={<CalendarDays size={16}/>} title="Time Data Review" subtitle="Active calendar only. Review does not alter data.">
-    <p className="text-xs text-muted-foreground">{all.length ? `${all.length} issue${all.length === 1 ? '' : 's'} require review.` : 'No temporal issues found.'}</p>
-    <div className="grid grid-cols-2 gap-2"><select value={kind} onChange={e => setKind(e.target.value)} data-testid="temporal-review-record-filter" className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All records</option><option value="event">Events</option><option value="person-schedule">Person schedule</option></select><select value={code} onChange={e => setCode(e.target.value)} data-testid="temporal-review-issue-filter" className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All issue types</option>{codes.map(value => <option key={value}>{value}</option>)}</select></div>
-    {visible.map(issue => <div key={issue.key} className="rounded border p-2 text-xs" data-testid={`temporal-review-${issue.key}`}><div className="font-semibold">{issue.title} <span className="text-muted-foreground">· {issue.recordType} · {issue.date}</span></div><p className="text-muted-foreground">{issue.explanation}</p><p className={issue.blocking ? 'text-destructive' : 'text-amber-600'}>{issue.code} · {issue.severity}</p><p className="text-[10px] text-muted-foreground">Open the {issue.recordType === 'event' ? 'Grid' : 'People'} page and use its normal editor to correct this record.</p></div>)}
-  </Section>;
+  const { events, personEvents, activeCalendar } = useAppData(); const [kind,setKind]=useState('all'); const [code,setCode]=useState('all'); const [expanded,setExpanded]=useState(false); const [showAll,setShowAll]=useState(false); const [rapid,setRapid]=useState(false);
+  const all=useMemo(()=>analyzeTemporalReview(events,personEvents),[events,personEvents]); const visible=all.filter(i=>(kind==='all'||i.recordType===kind)&&(code==='all'||i.code===code)); const listed=showAll?visible:visible.slice(0,5); const current=listed[0];
+  return <Section icon={<CalendarDays size={16}/>} title="Time Data Review" subtitle="Active calendar only. Review does not alter data."><p className="text-xs text-muted-foreground">Time Data Review identifies records whose date, time, timezone, or overnight configuration may be incomplete, ambiguous, or invalid. It never changes your data automatically. Open a record in its normal editor, correct it, and return to confirm the issue has cleared.</p><div className="flex flex-wrap gap-2 text-xs"><b>{all.length} total</b><span>{visible.length} visible</span><span className="text-destructive">{all.filter(i=>i.blocking).length} blocking</span><Button size="sm" variant="outline" onClick={()=>setExpanded(!expanded)} data-testid="time-review-toggle">{expanded?'Collapse':'Expand'} review</Button></div>{expanded&&<><div className="grid grid-cols-2 gap-2"><select value={kind} onChange={e=>setKind(e.target.value)} data-testid="temporal-review-record-filter"><option value="all">All records</option><option value="event">Events</option><option value="person-schedule">People schedule</option></select><select value={code} onChange={e=>setCode(e.target.value)} data-testid="temporal-review-issue-filter"><option value="all">All issue types</option>{[...new Set(all.map(i=>i.code))].map(v=><option key={v}>{v}</option>)}</select></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={()=>{setKind('all');setCode('all')}}>Clear Filters</Button><Button size="sm" variant="outline" onClick={()=>setShowAll(!showAll)}>{showAll?'Show first five':'Show All'}</Button></div>{listed.map(i=><div key={i.key} className="rounded border p-2 text-xs" data-testid={`temporal-review-${i.key}`}><b>{i.title}</b><p>{i.explanation}</p><p className="text-muted-foreground">Open the normal {i.recordType==='event'?'Event':'People Schedule'} editor.</p></div>)}</>}<div className="border-t pt-2"><p className="text-xs">Rapid Time Review: one issue at a time; nothing is changed automatically.</p><Button size="sm" onClick={()=>setRapid(!rapid)} data-testid="start-rapid-review">{rapid?'Exit Review':'Start Rapid Review'}</Button>{rapid&&<div className="mt-2 rounded border p-2 text-xs" data-testid="rapid-review-card">{current?<>1 of {listed.length} reviewed · <b>{current.title}</b><p>{current.explanation}</p><p>Use the normal editor to correct it; analyzer confirmation is required before resolution.</p></>:'No issues match these filters.'}</div>}</div></Section>;
 }
 
 // ─── Condensed text export ─────────────────────────────────────────────────────

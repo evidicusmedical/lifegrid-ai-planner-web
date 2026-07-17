@@ -10,6 +10,7 @@ import { analyzeDependencies } from '../lib/aiDependencies';
 import { applyPatchAtomically } from '../lib/aiPatchApply';
 import { browserTimeZone, migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
+import { moveEntity, normalizeEntityOrder } from '../lib/entityOrder';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -42,11 +43,13 @@ export interface AppDataContextType extends AppData {
   addPerson: (person: Person) => void;
   updatePerson: (id: string, update: Partial<Person>) => void;
   deletePerson: (id: string) => void;
+  reorderPeople: (fromIndex: number, toIndex: number) => void;
 
   // Project CRUD
   addProject: (project: Project) => void;
   updateProject: (id: string, update: Partial<Project>) => void;
   deleteProject: (id: string) => void;
+  reorderProjects: (fromIndex: number, toIndex: number) => void;
 
   // Calendar versioning
   createCalendar: (name: string, seed?: CalendarSeedMode) => string;
@@ -126,11 +129,9 @@ const normalizeAppData = (raw: any): AppData => {
     categories,
     // People may be intentionally empty — only fall back to defaults when the
     // field is entirely missing/invalid (fresh install / legacy migration).
-    people: Array.isArray(raw?.people)
-      ? raw.people
-      : DEFAULT_PEOPLE.map(p => ({ ...p })),
+    people: normalizeEntityOrder(Array.isArray(raw?.people) ? raw.people : DEFAULT_PEOPLE.map(p => ({ ...p }))),
     // Projects are optional — existing data migrates with empty list.
-    projects: Array.isArray(raw?.projects) ? raw.projects.map(normalizeProject) : [],
+    projects: normalizeEntityOrder(Array.isArray(raw?.projects) ? raw.projects.map(normalizeProject) : []),
   };
   // Make sure every event/task category exists; fall back to "other".
   const catIds = new Set(data.categories.map(c => c.id));
@@ -328,7 +329,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
   // ── People ──
-  const addPerson = (person: Person) => mutate(d => ({ ...d, people: [...d.people, person] }));
+  const addPerson = (person: Person) => mutate(d => ({ ...d, people: normalizeEntityOrder([...d.people, { ...person, order: d.people.length }]) }));
   const updatePerson = (id: string, update: Partial<Person>) =>
     mutate(d => {
       const next = { ...d, people: d.people.map(p => (p.id === id ? { ...p, ...update } : p)) };
@@ -339,6 +340,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return next;
     });
+  const reorderPeople = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, people: normalizeEntityOrder(moveEntity(d.people, fromIndex, toIndex)) }));
   const deletePerson = (id: string) =>
     mutate(d => ({
       ...d,
@@ -348,9 +350,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Projects ──
   const addProject = (project: Project) =>
-    mutate(d => ({ ...d, projects: [...d.projects, project] }));
+    mutate(d => ({ ...d, projects: normalizeEntityOrder([...d.projects, { ...project, order: d.projects.length }]) }));
   const updateProject = (id: string, update: Partial<Project>) =>
     mutate(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...update } : p)) }));
+  const reorderProjects = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, projects: normalizeEntityOrder(moveEntity(d.projects, fromIndex, toIndex)) }));
   const deleteProject = (id: string) =>
     mutate(d => ({
       ...d,
@@ -583,8 +586,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addTask, updateTask, deleteTask,
         addPersonEvent, updatePersonEvent, deletePersonEvent,
         addCategory, updateCategory, deleteCategory, reorderCategories,
-        addPerson, updatePerson, deletePerson,
-        addProject, updateProject, deleteProject,
+        addPerson, updatePerson, deletePerson, reorderPeople,
+        addProject, updateProject, deleteProject, reorderProjects,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar, updateCalendarDisplayTimeZone,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,

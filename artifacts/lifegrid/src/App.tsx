@@ -4,6 +4,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { Toaster } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BottomNav } from './components/BottomNav';
+import { AppHeader } from './components/AppHeader';
 import { GridView } from './pages/GridView';
 import { TasksView } from './pages/TasksView';
 import { PeopleView } from './pages/PeopleView';
@@ -22,6 +23,7 @@ function AppContent() {
           You're offline — your data is still available
         </div>
       )}
+      <AppHeader />
       <main className="flex-1 flex flex-col overflow-hidden">
         {tab === 'grid'   && <GridView />}
         {tab === 'tasks'  && <TasksView />}

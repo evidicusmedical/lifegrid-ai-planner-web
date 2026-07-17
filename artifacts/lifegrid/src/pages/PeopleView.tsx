@@ -8,13 +8,14 @@ import { getDisplayedTemporalOccurrence, temporalSummary } from '../lib/temporal
 
 export const PeopleView = () => {
   const { personEvents, people, activeCalendar } = useAppData();
+  const orderedPeople = useMemo(() => [...people].sort((a, b) => a.order - b.order), [people]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<PersonEvent | null>(null);
-  const [defaultPerson, setDefaultPerson] = useState<string>(people[0]?.id ?? 'wife');
+  const [defaultPerson, setDefaultPerson] = useState<string>(orderedPeople[0]?.id ?? 'wife');
 
   const grouped = useMemo(() => {
     const map = new Map<string, PersonEvent[]>();
-    people.forEach(p => map.set(p.id, []));
+    orderedPeople.forEach(p => map.set(p.id, []));
     personEvents.forEach(e => {
       const arr = map.get(e.person);
       if (arr) arr.push(e);
@@ -22,7 +23,7 @@ export const PeopleView = () => {
     });
     map.forEach(arr => arr.sort((a, b) => { const ao = getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone); const bo = getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone); return `${ao.displayedStartDate} ${ao.displayedStartTime ?? ''}`.localeCompare(`${bo.displayedStartDate} ${bo.displayedStartTime ?? ''}`); }));
     return map;
-  }, [personEvents, people, activeCalendar.displayTimeZone]);
+  }, [personEvents, orderedPeople, activeCalendar.displayTimeZone]);
 
   const openAdd = (personId: string) => {
     setSelectedEvent(null);
@@ -45,7 +46,7 @@ export const PeopleView = () => {
             <p className="text-xs mt-1">Add people in Settings to track their schedules here.</p>
           </div>
         ) : (
-          people.map(person => {
+          orderedPeople.map(person => {
             const events = grouped.get(person.id) ?? [];
             return (
               <div key={person.id} className="mb-8">

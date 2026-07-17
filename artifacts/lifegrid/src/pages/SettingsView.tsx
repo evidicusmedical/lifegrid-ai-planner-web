@@ -20,7 +20,7 @@ import { formatDate } from '../lib/format';
 import { downloadCurrentBackup } from '../lib/backup';
 import { dateIsInRange, exportRangeFor, formatExportRange, type ExportPreset, validateDateRange } from '../lib/exportUtils';
 import { exportFilename } from '../lib/exportFilenames';
-import { temporalSummary } from '../lib/temporal';
+import { temporalSummary, zonedLocalToInstant } from '../lib/temporal';
 
 const PRESET_COLORS = [
   '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#6b7280',
@@ -646,8 +646,9 @@ function InstallSection() {
 function escapeIcsText(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
 }
+function foldIcsLine(line: string): string[] { const encoder = new TextEncoder(); const chunks: string[] = []; let chunk = ''; let bytes = 0; for (const char of line) { const size = encoder.encode(char).length; if (bytes + size > 75 && chunk) { chunks.push(chunk); chunk = ' ' + char; bytes = 1 + size; } else { chunk += char; bytes += size; } } if (chunk) chunks.push(chunk); return chunks; }
 
-function buildIcsExport(app: ReturnType<typeof useAppData>, events = app.events, options = { includeApproximate: false, includeUnknown: false }): string {
+export function buildIcsExport(app: ReturnType<typeof useAppData>, events = app.events, options: { includeApproximate: boolean; includeUnknown: boolean; timeMode?: 'preserve' | 'utc' } = { includeApproximate: false, includeUnknown: false }): string {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const dayAfter = (date: string) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0,10).replace(/-/g,''); };
   const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//LifeGrid AI Planner//EN','CALSCALE:GREGORIAN'];
@@ -655,17 +656,17 @@ function buildIcsExport(app: ReturnType<typeof useAppData>, events = app.events,
     const date = e.date.replace(/-/g, ''); const endDate = (e.endDate || e.date).replace(/-/g, '');
     lines.push('BEGIN:VEVENT', `UID:${e.id}@lifegrid`, `DTSTAMP:${stamp}`);
     if (e.timeStatus === 'all-day' || e.timeStatus === 'unknown') { lines.push(`DTSTART;VALUE=DATE:${date}`, `DTEND;VALUE=DATE:${dayAfter(e.endDate || e.date)}`); }
-    else { const st = `${date}T${(e.startTime || '00:00').replace(':','')}00`, en = `${endDate}T${(e.endTime || '00:00').replace(':','')}00`; if (e.timeZoneMode === 'zoned' && e.timeZone) { lines.push(`DTSTART;TZID=${e.timeZone}:${st}`, `DTEND;TZID=${e.timeZone}:${en}`); } else lines.push(`DTSTART:${st}`, `DTEND:${en}`); }
+    else { const st = `${date}T${(e.startTime || '00:00').replace(':','')}00`, en = `${endDate}T${(e.endTime || '00:00').replace(':','')}00`; const startInstant = e.timeZone ? zonedLocalToInstant(e.date, e.startTime || '00:00', e.timeZone) : null; const endInstant = e.timeZone ? zonedLocalToInstant(e.endDate || e.date, e.endTime || '00:00', e.timeZone) : null; if (options.timeMode === 'utc' && e.timeZoneMode === 'zoned' && startInstant && endInstant) { const utc = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); lines.push(`DTSTART:${utc(startInstant)}`, `DTEND:${utc(endInstant)}`); } else if (e.timeZoneMode === 'zoned' && e.timeZone) { lines.push(`DTSTART;TZID=${e.timeZone}:${st}`, `DTEND;TZID=${e.timeZone}:${en}`); } else lines.push(`DTSTART:${st}`, `DTEND:${en}`); }
     lines.push(`SUMMARY:${escapeIcsText(e.title)}`); if (e.timeStatus === 'approximate') lines.push('X-LIFEGRID-APPROXIMATE:TRUE'); if (e.timeStatus === 'unknown') lines.push('X-LIFEGRID-TIME-UNKNOWN:TRUE');
     const cat = app.categories.find(c => c.id === e.category)?.label ?? e.category; lines.push(`CATEGORIES:${escapeIcsText(cat)}`); if (e.notes) lines.push(`DESCRIPTION:${escapeIcsText(e.notes)}`); lines.push('END:VEVENT');
-  }); lines.push('END:VCALENDAR'); return lines.join('\r\n');
+  }); lines.push('END:VCALENDAR'); return lines.flatMap(foldIcsLine).join('\r\n') + '\r\n';
 }
 function ExportManager() {
   const app = useAppData();
   const [preset, setPreset] = useState<ExportPreset>('all');
   const [customStart, setCustomStart] = useState(''); const [customEnd, setCustomEnd] = useState('');
   const [category, setCategory] = useState('all');
-  const [includeApproximate, setIncludeApproximate] = useState(false); const [includeUnknown, setIncludeUnknown] = useState(false);
+  const [includeApproximate, setIncludeApproximate] = useState(false); const [includeUnknown, setIncludeUnknown] = useState(false); const [timeMode, setTimeMode] = useState<'preserve' | 'utc'>('preserve');
   const range = exportRangeFor(preset, { start: customStart || null, end: customEnd || null });
   const rangeError = preset === 'custom' ? validateDateRange(range) : null;
   const events = useMemo(() => app.events.filter(event => dateIsInRange(event.date, range) && (category === 'all' || event.category === category)), [app.events, range.start, range.end, category]);
@@ -676,8 +677,8 @@ function ExportManager() {
     {preset === 'custom' && <div className="grid grid-cols-2 gap-2"><Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} aria-label="ICS export start"/><Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} aria-label="ICS export end"/></div>}
     {rangeError && <p role="alert" className="text-xs text-destructive">{rangeError}</p>}
     <select value={category} onChange={e => setCategory(e.target.value)} className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All categories</option>{app.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
-    <div className="flex gap-3 text-[10px]"><label><input type="checkbox" checked={includeApproximate} onChange={e => setIncludeApproximate(e.target.checked)}/> Include approximate</label><label><input type="checkbox" checked={includeUnknown} onChange={e => setIncludeUnknown(e.target.checked)}/> Include unknown as all-day</label></div><p className="text-[10px] text-muted-foreground">{formatExportRange(range)} · {category === 'all' ? 'All categories' : app.categories.find(c => c.id === category)?.label} · {events.length} event{events.length === 1 ? '' : 's'}</p>
-    <div className="grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" disabled={!!rangeError} onClick={() => { download(buildTextExport(app), exportFilename('text_export', app.activeCalendar.name), 'text/plain'); toast.success('Text export downloaded', { description: 'Human-readable only — not restorable.' }); }}><Download size={14}/> Export readable text</Button><Button size="sm" variant="secondary" disabled={!!rangeError || !events.length} onClick={() => { download(buildIcsExport(app, events, { includeApproximate, includeUnknown }), exportFilename('ics_export', app.activeCalendar.name), 'text/calendar'); toast.success('ICS exported', { description: `${events.length} calendar/grid event${events.length === 1 ? '' : 's'} exported.` }); }}><Download size={14}/> Export ICS calendar</Button></div>
+    <div className="flex gap-3 text-[10px]"><label><input type="checkbox" checked={includeApproximate} onChange={e => setIncludeApproximate(e.target.checked)}/> Include approximate</label><label><input type="checkbox" checked={includeUnknown} onChange={e => setIncludeUnknown(e.target.checked)}/> Include unknown as all-day</label><label>Timed export <select value={timeMode} onChange={e => setTimeMode(e.target.value as 'preserve' | 'utc')}><option value="preserve">Preserve TZID</option><option value="utc">UTC</option></select></label></div><p className="text-[10px] text-muted-foreground">{formatExportRange(range)} · {category === 'all' ? 'All categories' : app.categories.find(c => c.id === category)?.label} · {events.length} event{events.length === 1 ? '' : 's'}</p>
+    <div className="grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" disabled={!!rangeError} onClick={() => { download(buildTextExport(app), exportFilename('text_export', app.activeCalendar.name), 'text/plain'); toast.success('Text export downloaded', { description: 'Human-readable only — not restorable.' }); }}><Download size={14}/> Export readable text</Button><Button size="sm" variant="secondary" disabled={!!rangeError || !events.length} onClick={() => { download(buildIcsExport(app, events, { includeApproximate, includeUnknown, timeMode }), exportFilename('ics_export', app.activeCalendar.name), 'text/calendar'); toast.success('ICS exported', { description: `${events.length} calendar/grid event${events.length === 1 ? '' : 's'} exported.` }); }}><Download size={14}/> Export ICS calendar</Button></div>
     {!events.length && !rangeError && <p className="text-xs text-amber-700">No events match this range and category; ICS download is disabled.</p>}
     <Button size="sm" variant="outline" onClick={() => { setPreset('all'); setCategory('all'); setCustomStart(''); setCustomEnd(''); }}>Reset export filters</Button>
   </Section>;

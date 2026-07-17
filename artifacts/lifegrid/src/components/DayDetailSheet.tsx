@@ -5,6 +5,7 @@ import { Plus, Clock } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { Event } from '../types';
 import { formatDateLong } from '../lib/format';
+import { getDisplayedTemporalOccurrence } from '../lib/temporal';
 
 interface DayDetailSheetProps {
   date: string | null;
@@ -14,12 +15,12 @@ interface DayDetailSheetProps {
 }
 
 export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, onAddEvent, onEditEvent }) => {
-  const { events, categories } = useAppData();
+  const { events, categories, activeCalendar } = useAppData();
 
   const dayEvents = date
     ? events
-        .filter(e => e.date === date)
-        .sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'))
+        .filter(e => getDisplayedTemporalOccurrence(e, activeCalendar.displayTimeZone).displayedStartDate === date)
+        .sort((a, b) => (getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone).displayedStartTime || '99:99').localeCompare(getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone).displayedStartTime || '99:99'))
     : [];
 
   const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;
@@ -46,15 +47,16 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-sm leading-tight">{evt.title}</div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                    {(evt.startTime || evt.endTime) && (
+                    {(evt.startTime || evt.endTime) && (() => { const occurrence = getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone); return (
                       <span className="flex items-center gap-1">
                         <Clock size={11} />
-                        {evt.startTime}{evt.endTime ? `–${evt.endTime}` : ''}
+                        {occurrence.displayedStartTime}{occurrence.displayedEndTime ? `–${occurrence.displayedEndTime}` : ''} {occurrence.converted ? activeCalendar.displayTimeZone : ''}
                       </span>
-                    )}
+                    ); })()}
                     <span className="capitalize">{catLabel(evt.category)}</span>
                   </div>
                   {evt.notes && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{evt.notes}</p>}
+                  {getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone).converted && <p className="text-[11px] text-muted-foreground mt-1">Original: {evt.date} {evt.startTime}–{evt.endTime} {evt.timeZone}</p>}
                 </div>
               </button>
             ))

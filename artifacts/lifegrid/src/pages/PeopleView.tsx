@@ -4,9 +4,10 @@ import { Plus, Settings2 } from 'lucide-react';
 import { PersonEventSheet } from '../components/PersonEventSheet';
 import { PersonEvent } from '../types';
 import { formatDate } from '../lib/format';
+import { getDisplayedTemporalOccurrence, temporalSummary } from '../lib/temporal';
 
 export const PeopleView = () => {
-  const { personEvents, people } = useAppData();
+  const { personEvents, people, activeCalendar } = useAppData();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<PersonEvent | null>(null);
   const [defaultPerson, setDefaultPerson] = useState<string>(people[0]?.id ?? 'wife');
@@ -19,9 +20,9 @@ export const PeopleView = () => {
       if (arr) arr.push(e);
       else map.set(e.person, [e]);
     });
-    map.forEach(arr => arr.sort((a, b) => a.date.localeCompare(b.date)));
+    map.forEach(arr => arr.sort((a, b) => { const ao = getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone); const bo = getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone); return `${ao.displayedStartDate} ${ao.displayedStartTime ?? ''}`.localeCompare(`${bo.displayedStartDate} ${bo.displayedStartTime ?? ''}`); }));
     return map;
-  }, [personEvents, people]);
+  }, [personEvents, people, activeCalendar.displayTimeZone]);
 
   const openAdd = (personId: string) => {
     setSelectedEvent(null);
@@ -76,8 +77,7 @@ export const PeopleView = () => {
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm truncate">{evt.title}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            {formatDate(evt.date)}
-                            {evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ''}` : ''}
+                            {(() => { const occurrence = getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone); return `${formatDate(occurrence.displayedStartDate)} · ${temporalSummary({ ...evt, date: occurrence.displayedStartDate, endDate: occurrence.displayedEndDate, startTime: occurrence.displayedStartTime, endTime: occurrence.displayedEndTime })}${occurrence.converted ? ` · original ${evt.timeZone}` : ''}`; })()}
                           </div>
                         </div>
                       </div>

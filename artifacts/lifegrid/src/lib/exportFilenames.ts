@@ -1,0 +1,3 @@
+export const safeFilenamePart = (value: string) => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_-]+/gi, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '') || 'calendar';
+export const localExportTimestamp = (date = new Date()) => ({ date: date.toISOString().slice(0, 10), time: date.toTimeString().slice(0, 8).replace(/:/g, '-') });
+export const exportFilename = (kind: 'json_backup' | 'ics_export' | 'text_export', calendarName: string, date = new Date()) => { const ts = localExportTimestamp(date); return `lifegrid_${kind}_${safeFilenamePart(calendarName)}_${ts.date}_${ts.time}.${kind === 'json_backup' ? 'json' : kind === 'ics_export' ? 'ics' : 'txt'}`; };

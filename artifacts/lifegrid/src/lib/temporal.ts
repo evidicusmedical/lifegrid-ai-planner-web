@@ -48,7 +48,7 @@ export const temporalErrors = (e: TemporalRecord): string[] => {
  if (e.startTime && e.endTime && (!e.endDate || e.endDate === e.date) && e.endTime <= e.startTime) out.push('On the same date, end time must be after start time. Use a later end date for overnight events.');
  if (e.startTime || e.endTime) { if (e.timeZoneMode === 'zoned' && !isIanaTimeZone(e.timeZone)) out.push('Specific timezone events require a valid IANA timezone.'); if (e.timeZoneMode === 'floating' && e.timeZone) out.push('Floating local time cannot store a timezone.'); if (!e.timeZoneMode) out.push('Choose specific timezone or floating local time.'); }
  if (!['all-day', 'timed', 'unknown', 'approximate'].includes(status)) out.push('Choose a valid time type.');
- if (e.startTime && e.timeZoneMode === 'zoned' && isIanaTimeZone(e.timeZone)) { const matches = localCandidates(e.date, e.startTime, e.timeZone).length; if (matches === 0) out.push('This local time does not exist because of daylight-saving time.'); if (matches > 1) out.push('This local time is ambiguous because of daylight-saving time; choose a different time.'); }
+ if (e.startTime && e.timeZoneMode === 'zoned' && isIanaTimeZone(e.timeZone)) { for (const [date, time] of [[e.date, e.startTime], [e.endDate ?? e.date, e.endTime]] as [string, string | null | undefined][]) { if (!time) continue; const matches = localCandidates(date, time, e.timeZone).length; if (matches === 0) out.push('This local time does not exist because of daylight-saving time.'); if (matches > 1) out.push('This local time is ambiguous because of daylight-saving time; choose a different time.'); } }
  return out;
 };
 export const migrateTemporal = <T extends Partial<Event | PersonEvent>>(record: T): T & Partial<TemporalRecord> => {
@@ -62,4 +62,25 @@ export const temporalSummary = (e: TemporalRecord) => {
  if (e.timeStatus === 'all-day') return 'All day'; if (e.timeStatus === 'unknown') return 'Time unknown';
  const prefix = e.timeStatus === 'approximate' ? 'Approx. ' : ''; const range = e.startTime ? `${e.startTime}${e.endTime ? `–${e.endTime}` : ''}` : 'Time approximate';
  const end = e.endDate && e.endDate !== e.date ? ` → ${e.endDate}` : ''; return `${prefix}${range}${end}${e.timeZoneMode === 'floating' ? ' floating local time' : e.timeZone ? ` ${e.timeZone}` : ''}`;
+};
+
+export type TemporalReviewIssue = { key: string; recordType: 'event' | 'person-schedule'; recordId: string; title: string; date: string; code: string; severity: 'blocking' | 'advisory'; blocking: boolean; explanation: string };
+/** Pure, non-mutating issue index. Callers pass only the active calendar's data. */
+export const analyzeTemporalReview = (events: Array<TemporalRecord & { id: string; title: string }>, personEvents: Array<TemporalRecord & { id: string; title: string }>): TemporalReviewIssue[] => {
+ const inspect = (record: TemporalRecord & { id: string; title: string }, recordType: TemporalReviewIssue['recordType']) => {
+   const entries: Array<[string, string, boolean]> = [];
+   const add = (code: string, explanation: string, blocking = true) => entries.push([code, explanation, blocking]);
+   if (!record.timeStatus) add('MISSING_TIME_STATUS', 'Confirm whether this is all day or time unknown.', false);
+   if (record.startTime && !record.endTime) add('START_WITHOUT_END', 'Choose an end time.');
+   if (!record.startTime && record.endTime) add('END_WITHOUT_START', 'Choose a start time.');
+   if (record.startTime && record.endTime && record.date === (record.endDate ?? record.date) && record.startTime === record.endTime) add('SAME_START_END', 'Choose a later end time or a later end date for an overnight record.');
+   if (record.endDate && record.endDate < record.date) add('END_BEFORE_START_DATE', 'Choose a later end date for an overnight record.');
+   if (record.timeZoneMode === 'zoned' && !record.timeZone) add('ZONED_WITHOUT_TIMEZONE', 'Select a valid IANA timezone.');
+   if (record.timeZoneMode === 'floating' && record.timeZone) add('FLOATING_WITH_TIMEZONE', 'Floating local time cannot include a timezone.');
+   if (record.timeZone && !isIanaTimeZone(record.timeZone)) add('INVALID_TIMEZONE', 'Select a valid IANA timezone.');
+   for (const message of temporalErrors(record)) { if (message.includes('does not exist')) add('DST_GAP', 'This local time does not exist because of daylight saving time.'); else if (message.includes('ambiguous')) add('DST_FOLD', 'This local time occurs twice; select a different time.'); else if (!entries.some(e => e[0] === 'INVALID_TEMPORAL_COMBINATION')) add('INVALID_TEMPORAL_COMBINATION', message); }
+   if ((record as any).temporalReview) add('MIGRATION_REVIEW_REQUIRED', 'Confirm whether this legacy record is all day or time unknown.', false);
+   return entries.map(([code, explanation, blocking]) => ({ key: `${recordType}:${record.id}:${code}`, recordType, recordId: record.id, title: record.title, date: record.date, code, severity: blocking ? 'blocking' as const : 'advisory' as const, blocking, explanation }));
+ };
+ return [...events.flatMap(e => inspect(e, 'event')), ...personEvents.flatMap(e => inspect(e, 'person-schedule'))];
 };

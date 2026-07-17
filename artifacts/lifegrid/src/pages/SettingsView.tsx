@@ -20,7 +20,7 @@ import { formatDate } from '../lib/format';
 import { downloadCurrentBackup } from '../lib/backup';
 import { dateIsInRange, exportRangeFor, formatExportRange, type ExportPreset, validateDateRange } from '../lib/exportUtils';
 import { exportFilename } from '../lib/exportFilenames';
-import { temporalSummary, zonedLocalToInstant } from '../lib/temporal';
+import { analyzeTemporalReview, temporalSummary, zonedLocalToInstant } from '../lib/temporal';
 
 const PRESET_COLORS = [
   '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#6b7280',
@@ -102,7 +102,7 @@ function CalendarVersions() {
 
   return (
     <Section icon={<CalendarDays size={16} />} title="Calendar versions" subtitle="Keep multiple plans; switch anytime.">
-      <div className="rounded-lg bg-muted/30 p-2 text-xs"><Label>Display timezone</Label><select value={activeCalendar.displayTimeZone} onChange={e => { if (confirm('Changing display timezone changes only displayed zoned-event dates/times. Stored source times are unchanged.')) updateCalendarDisplayTimeZone(activeCalendar.id, e.target.value); }} className="mt-1 w-full h-8 rounded border bg-background px-2"><option>{Intl.DateTimeFormat().resolvedOptions().timeZone}</option>{['UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Asia/Tokyo'].map(z => <option key={z}>{z}</option>)}</select><p className="mt-1 text-muted-foreground">This controls how zoned events are displayed. All-day and floating events do not shift.</p></div>
+      <div className="rounded-lg bg-muted/30 p-2 text-xs"><Label>Display timezone</Label><select value={activeCalendar.displayTimeZone} onChange={e => { if (confirm('Changing display timezone changes only displayed zoned-event dates/times. Stored source times are unchanged.')) updateCalendarDisplayTimeZone(activeCalendar.id, e.target.value); }} className="mt-1 w-full h-8 rounded border bg-background px-2" data-testid="calendar-display-timezone"><option>{Intl.DateTimeFormat().resolvedOptions().timeZone}</option>{['UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Asia/Tokyo'].map(z => <option key={z}>{z}</option>)}</select><p className="mt-1 text-muted-foreground">This controls how zoned events are displayed. All-day and floating events do not shift.</p></div>
       {calendars.map(cal => {
         const active = cal.id === activeCalendarId;
         const isEditing = editingId === cal.id;
@@ -556,7 +556,17 @@ function PersonRow({ person, onUpdate, onDelete }: {
   );
 }
 
-function TimeDataReview() { const { events } = useAppData(); const counts = { same: events.filter(e => e.startTime && e.startTime === e.endTime).length, start: events.filter(e => e.startTime && !e.endTime).length, end: events.filter(e => !e.startTime && e.endTime).length, unknown: events.filter(e => e.timeStatus === 'unknown').length, approximate: events.filter(e => e.timeStatus === 'approximate').length }; const issues = Object.values(counts).reduce((a,b)=>a+b,0); return <Section icon={<CalendarDays size={16}/>} title="Time Data Review" subtitle="Read-only migration review."><p className="text-xs text-muted-foreground">{issues ? `Same start/end: ${counts.same} · Start-only: ${counts.start} · End-only: ${counts.end} · Unknown: ${counts.unknown} · Approximate: ${counts.approximate}` : 'No issues found.'}</p></Section>; }
+function TimeDataReview() {
+  const { events, personEvents } = useAppData(); const [kind, setKind] = useState('all'); const [code, setCode] = useState('all');
+  const all = useMemo(() => analyzeTemporalReview(events, personEvents), [events, personEvents]);
+  const visible = all.filter(i => (kind === 'all' || i.recordType === kind) && (code === 'all' || i.code === code));
+  const codes = [...new Set(all.map(i => i.code))];
+  return <Section icon={<CalendarDays size={16}/>} title="Time Data Review" subtitle="Active calendar only. Review does not alter data.">
+    <p className="text-xs text-muted-foreground">{all.length ? `${all.length} issue${all.length === 1 ? '' : 's'} require review.` : 'No temporal issues found.'}</p>
+    <div className="grid grid-cols-2 gap-2"><select value={kind} onChange={e => setKind(e.target.value)} data-testid="temporal-review-record-filter" className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All records</option><option value="event">Events</option><option value="person-schedule">Person schedule</option></select><select value={code} onChange={e => setCode(e.target.value)} data-testid="temporal-review-issue-filter" className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All issue types</option>{codes.map(value => <option key={value}>{value}</option>)}</select></div>
+    {visible.map(issue => <div key={issue.key} className="rounded border p-2 text-xs" data-testid={`temporal-review-${issue.key}`}><div className="font-semibold">{issue.title} <span className="text-muted-foreground">· {issue.recordType} · {issue.date}</span></div><p className="text-muted-foreground">{issue.explanation}</p><p className={issue.blocking ? 'text-destructive' : 'text-amber-600'}>{issue.code} · {issue.severity}</p><p className="text-[10px] text-muted-foreground">Open the {issue.recordType === 'event' ? 'Grid' : 'People'} page and use its normal editor to correct this record.</p></div>)}
+  </Section>;
+}
 
 // ─── Condensed text export ─────────────────────────────────────────────────────
 function buildTextExport(app: ReturnType<typeof useAppData>): string {
@@ -677,7 +687,7 @@ function ExportManager() {
     {preset === 'custom' && <div className="grid grid-cols-2 gap-2"><Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} aria-label="ICS export start"/><Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} aria-label="ICS export end"/></div>}
     {rangeError && <p role="alert" className="text-xs text-destructive">{rangeError}</p>}
     <select value={category} onChange={e => setCategory(e.target.value)} className="h-8 rounded border bg-background px-2 text-xs"><option value="all">All categories</option>{app.categories.map(c => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
-    <div className="flex gap-3 text-[10px]"><label><input type="checkbox" checked={includeApproximate} onChange={e => setIncludeApproximate(e.target.checked)}/> Include approximate</label><label><input type="checkbox" checked={includeUnknown} onChange={e => setIncludeUnknown(e.target.checked)}/> Include unknown as all-day</label><label>Timed export <select value={timeMode} onChange={e => setTimeMode(e.target.value as 'preserve' | 'utc')}><option value="preserve">Preserve TZID</option><option value="utc">UTC</option></select></label></div><p className="text-[10px] text-muted-foreground">{formatExportRange(range)} · {category === 'all' ? 'All categories' : app.categories.find(c => c.id === category)?.label} · {events.length} event{events.length === 1 ? '' : 's'}</p>
+    <div className="flex gap-3 text-[10px]"><label><input type="checkbox" checked={includeApproximate} onChange={e => setIncludeApproximate(e.target.checked)} data-testid="ics-include-approximate"/> Include approximate</label><label><input type="checkbox" checked={includeUnknown} onChange={e => setIncludeUnknown(e.target.checked)} data-testid="ics-include-unknown"/> Include unknown as all-day</label><label>Timed export <select value={timeMode} onChange={e => setTimeMode(e.target.value as 'preserve' | 'utc')} data-testid="ics-timezone-mode"><option value="preserve">Preserve TZID</option><option value="utc">UTC</option></select></label></div><p className="text-[10px] text-muted-foreground">{formatExportRange(range)} · {category === 'all' ? 'All categories' : app.categories.find(c => c.id === category)?.label} · {events.length} event{events.length === 1 ? '' : 's'}</p>
     <div className="grid grid-cols-2 gap-2"><Button size="sm" variant="secondary" disabled={!!rangeError} onClick={() => { download(buildTextExport(app), exportFilename('text_export', app.activeCalendar.name), 'text/plain'); toast.success('Text export downloaded', { description: 'Human-readable only — not restorable.' }); }}><Download size={14}/> Export readable text</Button><Button size="sm" variant="secondary" disabled={!!rangeError || !events.length} onClick={() => { download(buildIcsExport(app, events, { includeApproximate, includeUnknown, timeMode }), exportFilename('ics_export', app.activeCalendar.name), 'text/calendar'); toast.success('ICS exported', { description: `${events.length} calendar/grid event${events.length === 1 ? '' : 's'} exported.` }); }}><Download size={14}/> Export ICS calendar</Button></div>
     {!events.length && !rangeError && <p className="text-xs text-amber-700">No events match this range and category; ICS download is disabled.</p>}
     <Button size="sm" variant="outline" onClick={() => { setPreset('all'); setCategory('all'); setCustomStart(''); setCustomEnd(''); }}>Reset export filters</Button>

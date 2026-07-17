@@ -1,0 +1,7 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { getDisplayedTemporalOccurrence } from '../.test-build/lib/temporal.js';
+const ny = { date:'2026-07-18',endDate:'2026-07-18',timeStatus:'timed',startTime:'09:00',endTime:'10:00',timeZoneMode:'zoned',timeZone:'America/New_York' };
+test('converts New York occurrences to Chicago without mutation', () => { const copy=structuredClone(ny); const o=getDisplayedTemporalOccurrence(ny,'America/Chicago'); assert.equal(o.displayedStartTime,'08:00'); assert.deepEqual(ny,copy); });
+test('converts UTC across previous date', () => { const o=getDisplayedTemporalOccurrence({...ny,date:'2026-07-18',endDate:'2026-07-18',startTime:'01:00',endTime:'02:00',timeZone:'UTC'},'America/New_York'); assert.equal(o.displayedStartDate,'2026-07-17'); });
+test('keeps all-day unknown and floating source dates unchanged', () => { for (const r of [{...ny,timeStatus:'all-day',startTime:null,endTime:null,timeZone:null,timeZoneMode:null},{...ny,timeStatus:'unknown',startTime:null,endTime:null,timeZone:null,timeZoneMode:null},{...ny,timeZone:null,timeZoneMode:'floating'}]) assert.equal(getDisplayedTemporalOccurrence(r,'Asia/Tokyo').displayedStartDate,r.date); });
+test('preserves actual zoned overnight duration', () => assert.equal(getDisplayedTemporalOccurrence({...ny,endDate:'2026-07-19',endTime:'02:00'},'America/Chicago').durationMinutes,1020));

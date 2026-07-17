@@ -15,8 +15,10 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useAppData } from '../context/AppDataContext';
-import { PersonEvent, PersonType } from '../types';
+import { PersonEvent, PersonType, TimeStatus, TimeZoneMode } from '../types';
 import { X } from 'lucide-react';
+import { temporalErrors } from '../lib/temporal';
+import { TemporalFields } from './TemporalFields';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -47,11 +49,15 @@ interface PersonEventSheetProps {
 }
 
 export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onClose, initialData, defaultPerson }) => {
-  const { addPersonEvent, updatePersonEvent, deletePersonEvent, deletePersonEventGroup, personEvents, people } = useAppData();
+  const { addPersonEvent, updatePersonEvent, deletePersonEvent, deletePersonEventGroup, personEvents, people, activeCalendar } = useAppData();
 
   const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
   const [multiDay, setMultiDay] = useState(false);
   const [endDate, setEndDate] = useState('');
+  const [timeStatus, setTimeStatus] = useState<TimeStatus>('all-day');
+  const [timeZoneMode, setTimeZoneMode] = useState<TimeZoneMode>('zoned');
+  const [timeZone, setTimeZone] = useState('');
+  const [temporalEndDate, setTemporalEndDate] = useState('');
 
   const groupId = initialData?.recurringGroupId;
   const groupSize = groupId ? personEvents.filter(pe => pe.recurringGroupId === groupId).length : 0;
@@ -76,6 +82,10 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
     if (isOpen) {
       setMultiDay(false);
       setEndDate('');
+      setTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day'));
+      setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
+      setTimeZone(initialData?.timeZone ?? activeCalendar.displayTimeZone);
+      setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? '');
       if (initialData) {
         form.reset({
           title: initialData.title,
@@ -106,12 +116,15 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
   const multiDayCount = multiDay && endDate && endDate >= startDateVal ? daySpan(startDateVal, endDate) : 0;
 
   const onSubmit = (data: FormData) => {
-    const base = { endDate: data.date, timeStatus: data.startTime && data.endTime ? 'timed' as const : 'unknown' as const, timeZone: null, timeZoneMode: data.startTime && data.endTime ? 'floating' as const : null,
+    const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
+    const base = { endDate: temporalEndDate || data.date, timeStatus, timeZone: clocked && timeZoneMode === 'zoned' ? timeZone : null, timeZoneMode: clocked ? timeZoneMode : null,
       ...data,
-      startTime: data.startTime || null,
-      endTime: data.endTime || null,
+      startTime: clocked ? data.startTime || null : null,
+      endTime: clocked ? data.endTime || null : null,
       notes: data.notes || null,
     };
+    const issues = temporalErrors(base);
+    if (issues.length) { form.setError('date', { message: issues[0] }); return; }
 
     if (initialData) {
       updatePersonEvent(initialData.id, base);
@@ -249,51 +262,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
                   </div>
                 )}
 
-                {/* Times with clear X (hidden when multi-day) */}
-                {!multiDay && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <FormField
-                      control={form.control}
-                      name="startTime"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Start Time</FormLabel>
-                          <div className="flex items-center gap-1">
-                            <FormControl className="flex-1">
-                              <Input type="time" {...field} value={field.value || ''} />
-                            </FormControl>
-                            {field.value && (
-                              <button type="button" onClick={() => field.onChange('')} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground shrink-0" aria-label="Clear start time">
-                                <X size={14} />
-                              </button>
-                            )}
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="endTime"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>End Time</FormLabel>
-                          <div className="flex items-center gap-1">
-                            <FormControl className="flex-1">
-                              <Input type="time" {...field} value={field.value || ''} />
-                            </FormControl>
-                            {field.value && (
-                              <button type="button" onClick={() => field.onChange('')} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground shrink-0" aria-label="Clear end time">
-                                <X size={14} />
-                              </button>
-                            )}
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                )}
+                {!multiDay && <TemporalFields prefix="person-schedule" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={activeCalendar.displayTimeZone} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />}
 
                 <FormField
                   control={form.control}

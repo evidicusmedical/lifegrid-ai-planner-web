@@ -1,0 +1,15 @@
+# v0.4.12 handoff — Temporal Workflow Completion and Acceptance
+
+## Audit
+Repository: `/workspace/lifegrid-ai-planner-web`; starting checkout `3bc55de` (merge PR #8), containing expected merged head `90631c3e00f209dfad0e29dda9a1320ee9097e41`. Before changes, APP_VERSION/package were v0.4.11, AI interchange was 4, backup schema was 6, and the test command ran five source-contract tests. `getDisplayedTemporalOccurrence` was already used in Grid, image export, Day Detail, and People display. Event editing was temporal-aware; Person Schedule was floating/partial. Time Data Review was aggregate-only. Temporal, ICS, AI parser, backup normalization, and dependency helpers were inspected.
+
+## Implementation and defects fixed
+`TemporalFields` is the shared temporal-form design: one set of transitions/defaults/zone choices/validation summary is used by both sheets. Person Schedule now persists all supported time statuses, inclusive end dates, zoned/floating handling, and rejects invalid final records. A concrete defect was fixed in temporal validation: DST validation had checked only start clocks; invalid or ambiguous end clocks are now also rejected, covered by behavioral tests. `analyzeTemporalReview` is pure/non-mutating and produces stable record keys, severity, safe guidance, and Event/Person Schedule findings. Settings filters the active calendar inputs and lists individual issues; correction remains in normal Grid/People editors.
+
+## Test architecture and results
+Node’s built-in runner compiles the pure temporal helper to a local `.test-build` then executes three behavioral test files: `temporal-validation.test.mjs`, `temporal-conversion.test.mjs`, and `temporal-dst-review.test.mjs`. The runner result and required build/typecheck checks are filled in from the final command output. Coverage exercises validation transitions/ranges, conversion/no-mutation/duration, DST gap/fold, and review stability/removal. Existing contract coverage remains in `v049-contract.test.mjs`; broader AI/ICS/backup/dependency execution remains a recommended v0.4.13 extension.
+
+## Fixtures, compatibility, and verification boundaries
+Five fictional fixtures live under `artifacts/lifegrid/src/fixtures/`: acceptance calendar, valid/invalid AI v4, and v5/v6 backup shapes. Backup schema remains 6 and v3 AI acceptance code is unchanged; AI interchange remains 4. No browser runner was installed and no manual browser, Google Calendar, production deployment, or external-calendar verification was performed. Run `pnpm --filter @workspace/lifegrid test`, both typechecks/builds, and `git diff --check` for final exact results. Known limitations: no dual departure/arrival timezone and no VTIMEZONE component; TZID consumers use their own timezone data. Recommended v0.4.13: execute fixture-backed AI/ICS/backup/dependency tests and add browser automation when tooling is available.
+
+Branch: `codex/implement-v0.4.12-temporal-workflow-acceptance`; commit/PR URL/deployment status are updated after final release operations.

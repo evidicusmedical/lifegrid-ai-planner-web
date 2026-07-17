@@ -1,6 +1,6 @@
 import { AppData, Event, Task, Category, Person, PersonEvent, Project, ProjectStatus, EventDisplayPriority, EventKind, TaskDueDateType, TaskTriageStatus } from '../types';
-import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version';
-import { temporalErrors } from './temporal';
+import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version.js';
+import { temporalErrors } from './temporal.js';
 
 export const universalSchema = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
 Return one JSON object only: {"lifegridPatchVersion":${AI_INTERCHANGE_VERSION},"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}.\nUse stable ids. Dates are YYYY-MM-DD and times are 24-hour HH:MM or null. Event timeStatus is all-day, timed, unknown, or approximate. Zoned times require an IANA timeZone and timeZoneMode z oned; floating local times use timeZoneMode floating and null timeZone. Preserve source timezone, do not convert all-day dates, and use endDate for overnight events. Categories must be created before references. Supported eventKind values: ${EVENT_KIND_VALUES.join(', ')}. Project status: active, paused, completed, archived. Task status: todo, in-progress, done, blocked; priority: low, medium, high, urgent. Ask clarifying questions for material ambiguity; do not invent names, dates, times, assignments, relationships, clinical/personal information, or unsupported fields. Preserve IDs for updates. Same-patch references may point to approved additions. Final changes must be valid JSON only.`;

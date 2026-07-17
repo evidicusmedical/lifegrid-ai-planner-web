@@ -20,7 +20,8 @@ import { formatDate } from '../lib/format';
 import { downloadCurrentBackup } from '../lib/backup';
 import { dateIsInRange, exportRangeFor, formatExportRange, type ExportPreset, validateDateRange } from '../lib/exportUtils';
 import { exportFilename } from '../lib/exportFilenames';
-import { analyzeTemporalReview, temporalSummary, zonedLocalToInstant } from '../lib/temporal';
+import { analyzeTemporalReview, temporalSummary } from '../lib/temporal';
+import { buildIcsExport } from '../lib/icsExport';
 
 const PRESET_COLORS = [
   '#2563eb', '#7c3aed', '#059669', '#d97706', '#dc2626', '#6b7280',
@@ -653,24 +654,6 @@ function InstallSection() {
 }
 
 
-function escapeIcsText(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
-}
-function foldIcsLine(line: string): string[] { const encoder = new TextEncoder(); const chunks: string[] = []; let chunk = ''; let bytes = 0; for (const char of line) { const size = encoder.encode(char).length; if (bytes + size > 75 && chunk) { chunks.push(chunk); chunk = ' ' + char; bytes = 1 + size; } else { chunk += char; bytes += size; } } if (chunk) chunks.push(chunk); return chunks; }
-
-export function buildIcsExport(app: ReturnType<typeof useAppData>, events = app.events, options: { includeApproximate: boolean; includeUnknown: boolean; timeMode?: 'preserve' | 'utc' } = { includeApproximate: false, includeUnknown: false }): string {
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-  const dayAfter = (date: string) => { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0,10).replace(/-/g,''); };
-  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//LifeGrid AI Planner//EN','CALSCALE:GREGORIAN'];
-  events.filter(e => e.timeStatus !== 'unknown' || options.includeUnknown).filter(e => e.timeStatus !== 'approximate' || options.includeApproximate).sort((a,b) => a.date.localeCompare(b.date)).forEach(e => {
-    const date = e.date.replace(/-/g, ''); const endDate = (e.endDate || e.date).replace(/-/g, '');
-    lines.push('BEGIN:VEVENT', `UID:${e.id}@lifegrid`, `DTSTAMP:${stamp}`);
-    if (e.timeStatus === 'all-day' || e.timeStatus === 'unknown') { lines.push(`DTSTART;VALUE=DATE:${date}`, `DTEND;VALUE=DATE:${dayAfter(e.endDate || e.date)}`); }
-    else { const st = `${date}T${(e.startTime || '00:00').replace(':','')}00`, en = `${endDate}T${(e.endTime || '00:00').replace(':','')}00`; const startInstant = e.timeZone ? zonedLocalToInstant(e.date, e.startTime || '00:00', e.timeZone) : null; const endInstant = e.timeZone ? zonedLocalToInstant(e.endDate || e.date, e.endTime || '00:00', e.timeZone) : null; if (options.timeMode === 'utc' && e.timeZoneMode === 'zoned' && startInstant && endInstant) { const utc = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); lines.push(`DTSTART:${utc(startInstant)}`, `DTEND:${utc(endInstant)}`); } else if (e.timeZoneMode === 'zoned' && e.timeZone) { lines.push(`DTSTART;TZID=${e.timeZone}:${st}`, `DTEND;TZID=${e.timeZone}:${en}`); } else lines.push(`DTSTART:${st}`, `DTEND:${en}`); }
-    lines.push(`SUMMARY:${escapeIcsText(e.title)}`); if (e.timeStatus === 'approximate') lines.push('X-LIFEGRID-APPROXIMATE:TRUE'); if (e.timeStatus === 'unknown') lines.push('X-LIFEGRID-TIME-UNKNOWN:TRUE');
-    const cat = app.categories.find(c => c.id === e.category)?.label ?? e.category; lines.push(`CATEGORIES:${escapeIcsText(cat)}`); if (e.notes) lines.push(`DESCRIPTION:${escapeIcsText(e.notes)}`); lines.push('END:VEVENT');
-  }); lines.push('END:VCALENDAR'); return lines.flatMap(foldIcsLine).join('\r\n') + '\r\n';
-}
 function ExportManager() {
   const app = useAppData();
   const [preset, setPreset] = useState<ExportPreset>('all');

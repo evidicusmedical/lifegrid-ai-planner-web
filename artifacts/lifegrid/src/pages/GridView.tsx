@@ -11,13 +11,14 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
-import { toPng } from 'html-to-image';
 import { toISODate } from '../lib/format';
 import { DayTypePreview } from '../components/DayTypePreview';
 import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, ExportDensity, getDenseDay, getExportDimensions } from '../lib/gridPublication';
 import { getDateTemporalState, truncatePreviewNote, validateExportRange } from '../lib/gridAwareness';
 import { getDisplayedTemporalOccurrence } from '../lib/temporal';
 import { indexEventsByDisplayedDate } from '../lib/performanceSelectors';
+import { gridMark } from '../lib/gridDiagnostics';
+// gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -103,8 +104,6 @@ const ExportPublicationHeader = ({ metadata, legend }: { metadata: { title: stri
   </header>
 );
 
-const gridMark = (name: string) => { if (import.meta.env.DEV && typeof performance !== 'undefined') performance.mark(name); };
-
 export const GridView = () => {
   gridMark('lifegrid:grid-view-mounted');
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
@@ -135,6 +134,8 @@ export const GridView = () => {
     projectId: 'all',
   });
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
+  // Yield once after the shell commits so route feedback paints before annual DOM work.
+  const [gridReady, setGridReady] = useState(false);
 
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
@@ -251,8 +252,14 @@ export const GridView = () => {
   const eventsForGrid = exporting ? exportFilteredEvents.filter(event => event.showInExport !== false) : events;
 
   // Index once per dataset/timezone change; annual cells only perform O(1) lookups.
-  const gridData = useMemo(() => { gridMark('lifegrid:grid-index-start'); const indexed = indexEventsByDisplayedDate(eventsForGrid, activeCalendar.displayTimeZone, sortEventsForCell); gridMark('lifegrid:grid-index-complete'); return indexed; }, [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
-  useEffect(() => { gridMark('lifegrid:grid-first-commit'); requestAnimationFrame(() => { gridMark('lifegrid:grid-first-visible-cell'); requestAnimationFrame(() => gridMark('lifegrid:grid-interaction-ready')); }); }, []);
+  const gridData = useMemo(() => { gridMark('lifegrid:grid-model-start'); gridMark('lifegrid:grid-index-start'); const indexed = indexEventsByDisplayedDate(eventsForGrid, activeCalendar.displayTimeZone, sortEventsForCell); gridMark('lifegrid:grid-index-complete'); gridMark('lifegrid:grid-model-complete'); return indexed; }, [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
+  useEffect(() => {
+    setGridReady(false);
+    gridMark('lifegrid:grid-first-commit');
+    const frame = requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-start'); setGridReady(true); });
+    return () => cancelAnimationFrame(frame);
+  }, [year, activeCalendarId]);
+  useEffect(() => { if (!gridReady) return; gridMark('lifegrid:grid-first-visible-cell'); requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-complete'); gridMark('lifegrid:grid-interaction-ready'); }); }, [gridReady]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>
@@ -366,6 +373,7 @@ export const GridView = () => {
       // Safari frequently renders a blank/partial image on the first pass
       // (fonts/styles not yet inlined). Rendering a few times fixes it.
       const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const { toPng } = await import('html-to-image');
       let dataUrl = await toPng(captureNode, opts);
       if (isSafari) {
         await toPng(captureNode, opts);
@@ -686,8 +694,9 @@ export const GridView = () => {
       </div>
 
       {/* ── Scrollable grid ── */}
-      <div ref={scrollRef} className="flex-1 overflow-auto">
-        <div ref={publicationRef} className={exporting ? "lifegrid-export-publication bg-background p-6" : undefined} style={exporting ? { minWidth: exportDimensions.width, padding: EXPORT_DENSITY[exportDensity].padding } : undefined}>
+      <div ref={scrollRef} className="flex-1 overflow-auto" aria-busy={!gridReady} data-testid="grid-content">
+        {!gridReady && <div className="p-4 text-sm text-muted-foreground" role="status" data-testid="grid-loading">Preparing calendar grid…</div>}
+        {gridReady && <div ref={publicationRef} className={exporting ? "lifegrid-export-publication bg-background p-6" : undefined} style={exporting ? { minWidth: exportDimensions.width, padding: EXPORT_DENSITY[exportDensity].padding } : undefined}>
         {exporting && <ExportPublicationHeader metadata={exportMetadata} legend={exportLegend.entries} />}
         <table
           ref={tableRef}
@@ -855,8 +864,9 @@ export const GridView = () => {
             );})}
           </tbody>
         </table>
-        </div>
+        </div>}
       </div>
+      <p className="sr-only" aria-live="polite">{gridReady ? 'Grid ready' : 'Loading grid'}</p>
 
       {exporting && isTargetedDateExport && (
         <div

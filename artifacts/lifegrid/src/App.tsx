@@ -12,6 +12,8 @@ import { PeopleView } from './pages/PeopleView';
 import { AIView } from './pages/AIView';
 import { SettingsView } from './pages/SettingsView';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { beginGridTransition, gridMark, installGridDiagnostics } from './lib/gridDiagnostics';
+// Development marks include lifegrid:grid-navigation-click (emitted by beginGridTransition).
 
 function AppContent() {
   const validTabs = new Set(['grid', 'tasks', 'people', 'ai', 'settings']);
@@ -19,9 +21,9 @@ function AppContent() {
   const [tab, setTab] = useState(fromHash);
   const online = useOnlineStatus();
   const { storageError } = useAppData();
+  useEffect(() => { installGridDiagnostics(); }, []);
   useEffect(() => { const back = () => setTab(fromHash()); window.addEventListener('popstate', back); return () => window.removeEventListener('popstate', back); }, []);
-  const markGrid = (name: string) => { if (import.meta.env.DEV && typeof performance !== 'undefined') performance.mark(name); };
-  const changeTab = (next: string) => { if (next === tab) return; if (next === 'grid') markGrid('lifegrid:grid-navigation-click'); window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); if (next === 'grid') markGrid('lifegrid:grid-route-state-updated'); };
+  const changeTab = (next: string) => { if (next === tab) return; if (next === 'grid') beginGridTransition(); window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); if (next === 'grid') gridMark('lifegrid:grid-route-state-updated'); };
 
   return (
     <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">

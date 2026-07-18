@@ -1,0 +1,2 @@
+# E2E test contract — v0.5.17
+Playwright uses a locally built Vite preview, isolated browser contexts, deterministic fictional data only, event/visible-state waits, failure-only traces/screenshots, and console/page-error capture. Projects cover Chromium, Firefox, WebKit, and iPhone-sized Chromium/WebKit emulation. Startup smoke validates routes, version metadata, manifest, and retirement-worker endpoints. Full workflow expansion remains a release gate in CI/manual acceptance; real iPhone Safari is not implied by WebKit automation.

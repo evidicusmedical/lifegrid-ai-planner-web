@@ -1,0 +1,9 @@
+# v0.5.4 Handoff — Flagged Items for Review
+
+Repository `/workspace/lifegrid-ai-planner-web` began at `a6d413c` (merge PR #19); expected PR #19 head `9957ce7c55f9b4302eac1e49b532e9cfba41ca21` is present. Baseline APP_VERSION/package were v0.5.3/0.5.3, AI interchange v4, backup schema 6, and Settings had Time Data Review.
+
+Audit: temporal analyzer emitted MISSING_TIME_STATUS, START_WITHOUT_END, END_WITHOUT_START, SAME_START_END, END_BEFORE_START_DATE, ZONED_WITHOUT_TIMEZONE, FLOATING_WITH_TIMEZONE, INVALID_TIMEZONE, DST_GAP, DST_FOLD, INVALID_TEMPORAL_COMBINATION, and MIGRATION_REVIEW_REQUIRED. Temporal validation is blocking; legacy classification ambiguity is now blocking clarification; no version/advisory source was registered; start/end-only recommendation-like findings were removed. EventSheet/PersonEventSheet are the edit entry points; context update/delete APIs are production mutation paths. No ignore preferences existed. AI preflight has no safe structured clarification field, so ingestion is deferred. Normalization uses migrateTemporal.
+
+Implemented generic derived review items, strict eligibility gate, stable key/fingerprint, renamed Settings UI, explicit legacy confirmations, direct editor, and underlying-record deletion. Deferred: advisory ignore/restore storage and reconciliation, atomic selected bulk confirmation, registered version compatibility, reference validation, and allowlisted AI clarification ingestion. No Rapid Review, Projects route, or Project Operations return.
+
+Run the required Node/typecheck/build/diff checks before delivery. Browser tooling was not changed. Branch `codex/implement-v0.5.4-flagged-items-review`; commit/PR URL/deployment status are updated at release finalization. v0.5.5 should add the deferred, fully tested advisory and atomic bulk workflows.

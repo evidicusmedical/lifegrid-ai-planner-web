@@ -22,7 +22,7 @@ test('canonical annual model creates fixed January-to-December slots regardless 
 });
 
 test('current and selected dates remain highlights inside their canonical annual cells', () => {
-  assert.match(grid, /const temporal = getDateTemporalState\(dateStr, todayStr, detailDate\)/);
+  assert.match(grid, /const temporal = getDateTemporalState\(\s*dateStr,\s*todayStr,\s*detailDate,?\s*\)/);
   assert.match(grid, /temporal\.isSelected/);
   assert.match(grid, /setDetailDate\(dateStr\)/);
 });
@@ -36,6 +36,6 @@ test('July priority cannot move July before June in DOM or visual slot order', (
 
 test('annual export reuses the chronological compact table and never a month stack', () => {
   assert.match(grid, /ref=\{tableRef\}/);
-  assert.match(grid, /monthVisible = exporting \|\| renderedMonths\.has\(mIdx\)/);
+  assert.match(grid, /monthVisible =\s*exporting \|\| renderedMonths\.has\(mIdx\)/);
   assert.doesNotMatch(grid, /data-lifegrid-grid-month/);
 });

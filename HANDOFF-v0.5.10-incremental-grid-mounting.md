@@ -1,0 +1,7 @@
+# v0.5.10 handoff
+
+Repository checkout began at merge PR #25 `e21d8f2`, containing expected head `e9765f2`; no local `main` ref exists (checkout branch was `work`). Baseline was v0.5.9/package 0.5.9, AI v4, backup schema v6. Prior Grid initially constructed the entire 12-column × 31-row table (all annual day cells); `renderedMonths` only suppressed event pills, and RAF batches could be painted together.
+
+The route handler is local hash/state only and has no export/analysis work. Grid derives model in `useMemo`; AppData context remains broad, but source audit found no route-time serialization. The observed private ten-second staging was not reproducible here, so exact pre-render/render/commit/paint attribution is unverified; the definitive structural cause removed is annual initial DOM construction.
+
+This release replaces interactive annual construction with memoized admitted months, double-RAF/timeout yield, generation+AbortController cancellation, and StrictMode-safe cleanup. First month remains usable with shared Day Detail/EventSheet; export explicitly full-mounts before capture. No containment was added because the monthly tree is now small and export compatibility wins. Service worker remains Vite PWA managed; diagnostics show controller status. Node tests passed; browser/private/production verification was not performed. Branch/commit/PR/deployment fields must be filled after release automation.

@@ -1,28 +1,14 @@
-/** Development-only, privacy-safe Grid transition marks. No record data is collected. */
-export const GRID_MARKS = [
-  'lifegrid:grid-navigation-click', 'lifegrid:grid-route-state-updated',
-  'lifegrid:grid-view-mounted', 'lifegrid:grid-model-start', 'lifegrid:grid-index-start',
-  'lifegrid:grid-index-complete', 'lifegrid:grid-model-complete', 'lifegrid:grid-dom-start',
-  'lifegrid:grid-first-commit', 'lifegrid:grid-first-visible-cell',
-  'lifegrid:grid-dom-complete', 'lifegrid:grid-interaction-ready',
-] as const;
-
+import { APP_VERSION } from './version';
+/** Local-only, privacy-safe marks. Names contain phases/counts only, never record content. */
+export const GRID_MARKS = ['grid-navigation-click','grid-route-state-updated','grid-view-render-start','grid-view-mounted','grid-shell-commit','grid-shell-paint','grid-model-start','grid-model-complete','grid-first-month-scheduled','grid-first-month-render-start','grid-first-month-commit','grid-first-month-paint','grid-interaction-ready','grid-full-grid-commit','grid-full-grid-paint','grid-full-grid-complete'] as const;
 const enabled = () => import.meta.env.DEV && typeof performance !== 'undefined' && typeof performance.mark === 'function';
-export const gridMark = (name: string) => { if (enabled()) performance.mark(name); };
-
-export const beginGridTransition = () => {
-  if (!enabled()) return;
-  performance.clearMarks?.();
-  performance.clearMeasures?.();
-  gridMark('lifegrid:grid-navigation-click');
-};
-
+export const gridMark = (name: string, mountedMonths?: number) => { if (enabled()) performance.mark(`lifegrid:${name}`, { detail: mountedMonths == null ? undefined : { mountedMonths } }); };
+export const beginGridTransition = () => { if (!enabled()) return; performance.clearMarks?.(); performance.clearMeasures?.(); gridMark('grid-navigation-click'); };
+const entry = (marks: PerformanceEntry[], name: string) => marks.filter(mark => mark.name === `lifegrid:${name}`).at(-1);
+const duration = (a: PerformanceEntry | undefined, b: PerformanceEntry | undefined) => a && b ? Number((b.startTime - a.startTime).toFixed(2)) : null;
 export const installGridDiagnostics = () => {
-  if (!import.meta.env.DEV || typeof window === 'undefined') return;
-  (window as Window & { lifegridGridTiming?: () => Record<string, number | null> }).lifegridGridTiming = () => {
-    const marks = performance.getEntriesByType?.('mark') ?? [];
-    const at = (name: string) => marks.filter(entry => entry.name === name).at(-1)?.startTime;
-    const click = at('lifegrid:grid-navigation-click');
-    return Object.fromEntries(GRID_MARKS.map(name => [name.replace('lifegrid:', ''), click === undefined || at(name) === undefined ? null : Number((at(name)! - click).toFixed(2))]));
-  };
+ if (!import.meta.env.DEV || typeof window === 'undefined') return;
+ const win = window as Window & { lifegridGridTiming?: () => Record<string, unknown>; lifegridGridDomStats?: () => Record<string, unknown> };
+ win.lifegridGridTiming = () => { const marks = performance.getEntriesByType('mark'); const get = (n:string) => entry(marks,n); const click=get('grid-navigation-click'), route=get('grid-route-state-updated'), render=get('grid-view-render-start'), shell=get('grid-shell-commit'), shellPaint=get('grid-shell-paint'), first=get('grid-first-month-commit'), firstPaint=get('grid-first-month-paint'), ready=get('grid-interaction-ready'), complete=get('grid-full-grid-complete'); return { appVersion: APP_VERSION, orderedMarks: marks.filter(m=>m.name.startsWith('lifegrid:grid')).map(m=>({name:m.name.replace('lifegrid:',''), time:Number(m.startTime.toFixed(2)), mountedMonths:(m as PerformanceMark).detail?.mountedMonths ?? null})), clickToRouteState:duration(click,route), routeStateToGridRender:duration(route,render), renderToShellCommit:duration(render,shell), shellCommitToShellPaint:duration(shell,shellPaint), shellPaintToFirstMonthCommit:duration(shellPaint,first), firstMonthCommitToFirstMonthPaint:duration(first,firstPaint), clickToInteractionReady:duration(click,ready), clickToFullGridComplete:duration(click,complete), currentGeneration: document.querySelector('[data-lifegrid-grid-root]')?.getAttribute('data-lifegrid-generation') ?? null, visibilityState:document.visibilityState, reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches, serviceWorkerControlled:!!navigator.serviceWorker?.controller }; };
+ win.lifegridGridDomStats = () => { const root=document.querySelector('[data-lifegrid-grid-root]'); return { appVersion:APP_VERSION, phase:root?.getAttribute('data-lifegrid-phase') ?? 'not-mounted', mountedMonths:root?.querySelectorAll('[data-lifegrid-grid-month]').length ?? 0, weekRows:root?.querySelectorAll('[data-lifegrid-grid-week]').length ?? 0, dayCells:root?.querySelectorAll('[data-lifegrid-grid-day]').length ?? 0, eventPills:root?.querySelectorAll('[data-lifegrid-grid-event]').length ?? 0, totalGridNodes:root?.querySelectorAll('*').length ?? 0 }; };
 };

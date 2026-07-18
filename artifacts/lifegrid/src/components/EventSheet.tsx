@@ -74,9 +74,10 @@ interface EventSheetProps {
   onClose: () => void;
   initialData?: Event | null;
   defaultDate?: string;
+  onSaved?: () => void;
 }
 
-export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initialData, defaultDate }) => {
+export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initialData, defaultDate, onSaved }) => {
   const { addEvent, updateEvent, deleteEvent, deleteEventGroup, events, categories, activeCalendar } = useAppData();
 
   const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
@@ -187,6 +188,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     if (issues.length) { form.setError('date', { message: issues[0] }); return; }
     if (initialData) {
       updateEvent(initialData.id, base);
+      onSaved?.();
       onClose();
       return;
     }

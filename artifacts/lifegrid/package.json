@@ -1,6 +1,6 @@
 {
   "name": "@workspace/lifegrid",
-  "version": "0.4.16",
+  "version": "0.4.17",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "rm -rf .test-build && tsc src/lib/temporal.ts src/lib/icsExport.ts src/lib/aiDependencies.ts src/lib/aiPatchApply.ts src/lib/aiInterchange.ts src/lib/backup.ts src/lib/aiPrompt.ts src/lib/version.ts src/lib/entityOrder.ts src/lib/rapidReview.ts src/lib/gridPublication.ts --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node --experimental-specifier-resolution=node --test tests/*.test.mjs"
+    "test": "rm -rf .test-build && tsc src/lib/temporal.ts src/lib/timeReview.ts src/lib/icsExport.ts src/lib/aiDependencies.ts src/lib/aiPatchApply.ts src/lib/aiInterchange.ts src/lib/backup.ts src/lib/aiPrompt.ts src/lib/version.ts src/lib/entityOrder.ts src/lib/gridPublication.ts --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node --experimental-specifier-resolution=node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

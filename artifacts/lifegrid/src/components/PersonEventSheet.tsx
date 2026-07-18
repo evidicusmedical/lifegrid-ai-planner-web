@@ -46,9 +46,10 @@ interface PersonEventSheetProps {
   onClose: () => void;
   initialData?: PersonEvent | null;
   defaultPerson?: PersonType;
+  onSaved?: () => void;
 }
 
-export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onClose, initialData, defaultPerson }) => {
+export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onClose, initialData, defaultPerson, onSaved }) => {
   const { addPersonEvent, updatePersonEvent, deletePersonEvent, deletePersonEventGroup, personEvents, people, activeCalendar } = useAppData();
 
   const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
@@ -128,6 +129,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
 
     if (initialData) {
       updatePersonEvent(initialData.id, base);
+      onSaved?.();
       onClose();
       return;
     }

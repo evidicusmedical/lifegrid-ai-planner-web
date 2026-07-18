@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
 import { Event, Project, Task } from '../types';
-import { ChevronLeft, ChevronRight, Sun, Moon, Image, Plus, Check, ChevronDown, X, Download, MessageSquareText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sun, Moon, Image, Plus, Check, ChevronDown, X, Download } from 'lucide-react';
 import { EventSheet } from '../components/EventSheet';
 import { DayDetailSheet } from '../components/DayDetailSheet';
 import { Button } from '@/components/ui/button';
@@ -14,9 +14,9 @@ import { toast } from 'sonner';
 import { toISODate } from '../lib/format';
 import { DayTypePreview } from '../components/DayTypePreview';
 import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, ExportDensity, getDenseDay, getExportDimensions } from '../lib/gridPublication';
-import { getDateTemporalState, truncatePreviewNote, validateExportRange } from '../lib/gridAwareness';
+import { getDateTemporalState, validateExportRange } from '../lib/gridAwareness';
 import { getDisplayedTemporalOccurrence } from '../lib/temporal';
-import { indexEventsByDisplayedDate } from '../lib/performanceSelectors';
+import { buildGridViewModel, resolveEventById } from '../lib/gridModel';
 import { gridMark } from '../lib/gridDiagnostics';
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
@@ -136,6 +136,7 @@ export const GridView = () => {
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
   // Yield once after the shell commits so route feedback paints before annual DOM work.
   const [gridReady, setGridReady] = useState(false);
+  const [renderedMonths, setRenderedMonths] = useState<Set<number>>(new Set());
 
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
@@ -143,6 +144,7 @@ export const GridView = () => {
   const publicationRef = useRef<HTMLDivElement>(null);
   const previewTimerRef = useRef<number | null>(null);
   const didScrollRef = useRef(false);
+  const priorGridModelRef = useRef<ReturnType<typeof buildGridViewModel> | undefined>(undefined);
 
   const todayStr   = toISODate(today);
   const todayMonth = today.getMonth();
@@ -249,16 +251,25 @@ export const GridView = () => {
     return weeks;
   }, [exportFilteredEvents, getExportDateRange, sortEventsForCell, activeCalendar.displayTimeZone]);
 
-  const eventsForGrid = exporting ? exportFilteredEvents.filter(event => event.showInExport !== false) : events;
-
-  // Index once per dataset/timezone change; annual cells only perform O(1) lookups.
-  const gridData = useMemo(() => { gridMark('lifegrid:grid-model-start'); gridMark('lifegrid:grid-index-start'); const indexed = indexEventsByDisplayedDate(eventsForGrid, activeCalendar.displayTimeZone, sortEventsForCell); gridMark('lifegrid:grid-index-complete'); gridMark('lifegrid:grid-model-complete'); return indexed; }, [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
+  // The interactive grid deliberately receives summaries only. Export retains full records
+  // and has its own complete range model, so staged UI never changes export semantics.
+  const gridModel = useMemo(() => { gridMark('lifegrid:grid-model-start'); gridMark('lifegrid:grid-index-start'); const model = buildGridViewModel(events, year, activeCalendar.displayTimeZone, categoryRank, priorGridModelRef.current); priorGridModelRef.current = model; gridMark('lifegrid:grid-index-complete'); gridMark('lifegrid:grid-model-complete'); return model; }, [events, year, activeCalendar.displayTimeZone, categoryRank]);
+  const gridData = gridModel.byDate;
   useEffect(() => {
     setGridReady(false);
     gridMark('lifegrid:grid-first-commit');
-    const frame = requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-start'); setGridReady(true); });
+    const frame = requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-start'); setGridReady(true); setRenderedMonths(new Set([year === today.getFullYear() ? todayMonth : 0])); });
     return () => cancelAnimationFrame(frame);
-  }, [year, activeCalendarId]);
+  }, [year, activeCalendarId, today, todayMonth]);
+  useEffect(() => {
+    if (!gridReady) return;
+    let cancelled = false;
+    const preferred = year === today.getFullYear() ? todayMonth : 0;
+    const order = [preferred, preferred - 1, preferred + 1, ...Array.from({ length: 12 }, (_, i) => i)].filter((value, index, values) => value >= 0 && value < 12 && values.indexOf(value) === index);
+    let cursor = 1;
+    const next = () => { if (cancelled) return; setRenderedMonths(previous => { const following = new Set(previous); order.slice(cursor, cursor + 2).forEach(month => following.add(month)); return following; }); cursor += 2; if (cursor < order.length) requestAnimationFrame(next); };
+    const frame = requestAnimationFrame(next); return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [gridReady, year, activeCalendarId, todayMonth]);
   useEffect(() => { if (!gridReady) return; gridMark('lifegrid:grid-first-visible-cell'); requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-complete'); gridMark('lifegrid:grid-interaction-ready'); }); }, [gridReady]);
 
   const isFocusActive = focusedCats.size > 0;
@@ -772,7 +783,10 @@ export const GridView = () => {
                   const dateObj  = new Date(year, mIdx, day);
                   const dow      = DOW_SHORT[dateObj.getDay()];
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
-                  const dayEvents = gridData.get(dateStr) ?? [];
+                  // Noncritical month cells stay structurally present for table/scroll safety,
+                  // but defer event-pill DOM until their deterministic batch is admitted.
+                  const monthVisible = exporting || renderedMonths.has(mIdx);
+                  const dayEvents = monthVisible ? gridData.get(dateStr) ?? [] : [];
                   const denseDay = getDenseDay(dayEvents, exporting ? EXPORT_DENSITY[exportDensity].cellLimit : MAX_VISIBLE_EVENTS);
                   const visEvents = isExpandedExport ? dayEvents : denseDay.visible;
                   const overflow = isExpandedExport ? 0 : denseDay.overflow;
@@ -821,16 +835,16 @@ export const GridView = () => {
                             key={evt.id}
                             className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
                             tabIndex={0}
-                            title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ''}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ''}` : ''}${evt.notes ? ` · ${truncatePreviewNote(evt.notes)}` : ''}`}
-                            aria-label={`${evt.title}${evt.notes ? `. Notes: ${truncatePreviewNote(evt.notes)}` : ''}. Press Enter to open date details.`}
+                            title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ''}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ''}` : ''}`}
+                            aria-label={`${evt.title}. Press Enter to open date details.`}
                             onClick={e => { e.stopPropagation(); setDetailDate(dateStr); }}
-                            onPointerEnter={e => { if (evt.eventKind === 'day-type' && window.matchMedia('(hover: hover)').matches) { previewTimerRef.current = window.setTimeout(() => setPreviewEvent({ event: evt, date: dateStr, anchor: e.currentTarget.getBoundingClientRect() }), 250); } }}
+                            onPointerEnter={e => { const fullEvent = resolveEventById(events, evt.id); if (fullEvent && evt.eventKind === 'day-type' && window.matchMedia('(hover: hover)').matches) { previewTimerRef.current = window.setTimeout(() => setPreviewEvent({ event: fullEvent, date: dateStr, anchor: e.currentTarget.getBoundingClientRect() }), 250); } }}
                             onPointerLeave={() => { if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current); }}
-                            onFocus={e => { if (evt.eventKind === 'day-type') setPreviewEvent({ event: evt, date: dateStr, anchor: e.currentTarget.getBoundingClientRect() }); }}
+                            onFocus={e => { const fullEvent = resolveEventById(events, evt.id); if (fullEvent && evt.eventKind === 'day-type') setPreviewEvent({ event: fullEvent, date: dateStr, anchor: e.currentTarget.getBoundingClientRect() }); }}
                             aria-describedby={previewEvent?.event.id === evt.id ? `day-type-preview-${evt.id}` : undefined}
                             onKeyDown={e => { if (e.key === 'Escape') { setPreviewEvent(null); e.currentTarget.focus(); } if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailDate(dateStr); } }}
                             style={{
-                              backgroundColor: evt.color,
+                              backgroundColor: evt.color ?? undefined,
                               height: isExpandedExport ? EVENT_PILL_H : 10,
                               opacity: dim(evt.category) ? 0.18 : 1,
                             }}
@@ -844,7 +858,6 @@ export const GridView = () => {
                             <span className="text-white font-semibold truncate" style={{ fontSize: 8, lineHeight: 1 }}>
                               {evt.title}
                             </span>
-                            {evt.notes?.trim() && <MessageSquareText aria-label="Has notes" className="ml-auto shrink-0 text-white" size={7} />}
                           </div>
                         ))}
 

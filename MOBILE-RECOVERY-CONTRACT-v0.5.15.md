@@ -1,0 +1,3 @@
+# Mobile recovery contract v0.5.15
+
+Before JavaScript, the root contains a non-private “Starting LifeGrid…” shell. The root boundary catches render/provider/hydration failures and shows recovery rather than blank output. Recovery provides Retry, Reload, cache-only reset/reload, safe raw local payload export when available, diagnostic details, and a privacy-safe copied report. The diagnostic report contains only app/runtime metadata—never calendar records, titles, notes, names, dates, or backup contents. Dynamic-import failures make at most one session-scoped cache/worker reset and cache-busted reload; a repeat displays recovery. Cache reset uses Cache Storage only and does not touch LifeGrid localStorage.

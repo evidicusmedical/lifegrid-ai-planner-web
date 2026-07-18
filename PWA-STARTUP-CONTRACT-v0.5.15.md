@@ -1,0 +1,3 @@
+# PWA startup contract v0.5.15
+
+`/manifest.webmanifest` declares id `/`, start URL `/`, scope `/`, standalone display, startup/theme colors, and 192/512 PNG icons (512 is maskable). `index.html` links the manifest and Apple icon, declares standalone/status-bar metadata and `viewport-fit=cover`. `/` must render Grid; empty, unknown, and legacy `#projects` hashes safely fall back through the existing hash router. Vercel serves HTML without immutable caching and content-hashed assets immutable. No LifeGrid service worker is registered; startup unregisters legacy registrations so an old HTML shell cannot reference a removed Vite chunk.

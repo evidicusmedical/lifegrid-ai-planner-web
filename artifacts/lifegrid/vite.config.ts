@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
-import { VitePWA } from "vite-plugin-pwa";
 
 // PORT defaults to 3000 so the app can be built/served outside Replit
 // (CI, local dev, GitHub Pages build). Override with PORT= env var.
@@ -23,30 +22,7 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
-    VitePWA({
-      registerType: "autoUpdate",
-      includeAssets: ["favicon.svg", "apple-touch-icon.png", "robots.txt", "pwa-icon.svg"],
-      manifest: {
-        name: "LifeGrid AI Planner",
-        short_name: "LifeGrid",
-        description: "Your personal life operating system with AI-powered planning",
-        theme_color: "#2563eb",
-        background_color: "#0f172a",
-        display: "standalone",
-        scope: basePath,
-        start_url: basePath,
-        icons: [
-          { src: "pwa-icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "pwa-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
-        ],
-      },
-      workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-      },
-      devOptions: {
-        enabled: false,
-      },
-    }),
+    // Service workers are deliberately not registered: online launch must not use stale HTML.
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
@@ -70,6 +46,7 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
+    target: "es2020",
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },

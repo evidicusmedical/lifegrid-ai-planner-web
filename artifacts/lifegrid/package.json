@@ -1,6 +1,6 @@
 {
   "name": "@workspace/lifegrid",
-  "version": "0.5.14",
+  "version": "0.5.15",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "rm -rf .test-build && tsc src/lib/temporal.ts src/lib/icsExport.ts src/lib/backup.ts src/lib/gridModel.ts src/lib/projectOperations.ts --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node --experimental-specifier-resolution=node --test tests/local-time-v0514.test.mjs",
+    "test": "rm -rf .test-build && tsc $(find src/lib -maxdepth 1 -name '*.ts' ! -name 'gridDiagnostics.ts' ! -name 'startup.ts') --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node --experimental-specifier-resolution=node --test tests/*.test.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "benchmark:review": "rm -rf .test-build && tsc src/lib/temporal.ts src/lib/timeReview.ts --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node scripts/benchmark-review.mjs",
     "benchmark:grid": "node scripts/benchmark-grid.mjs",

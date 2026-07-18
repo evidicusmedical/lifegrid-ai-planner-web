@@ -388,3 +388,6 @@ input, select, textarea, button { min-width: 0; }
   .task-fab { width: 3rem; height: 3rem; right: .75rem; }
   .task-card-metadata { align-items: flex-start; }
 }
+html, body, #root { min-height: 100vh; min-height: 100svh; min-height: 100dvh; background: hsl(var(--background)); }
+#lifegrid-startup-shell, .startup-recovery { min-height: 100vh; min-height: 100svh; min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding: max(2rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left)); background: #0f172a; color: #f8fafc; text-align: center; }
+.startup-recovery { align-items: stretch; text-align: left; }.startup-recovery h1 { font-size: 1.5rem; font-weight: 700; }.startup-actions { display:flex; flex-wrap:wrap; gap:.75rem; }.startup-actions button { padding:.65rem .85rem; border-radius:.5rem; background:#2563eb; color:#fff; }.startup-recovery pre { padding:1rem; overflow:auto; background:#172033; font-size:.75rem; }.startup-error { overflow-wrap:anywhere; color:#fecaca; }

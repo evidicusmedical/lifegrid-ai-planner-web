@@ -568,3 +568,6 @@ body {
     min-height: 44px;
   }
 }
+
+/* Global dialog layer contract: modal z-[100] obscures nav z-50; hide background navigation while it is open. */
+.lifegrid-export-modal-open .mobile-bottom-nav { visibility: hidden; pointer-events: none; }

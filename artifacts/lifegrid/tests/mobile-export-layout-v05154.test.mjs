@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 const source = readFileSync(new URL('../src/pages/GridView.tsx', import.meta.url), 'utf8');
 const read = (file) => readFileSync(new URL(file, import.meta.url), 'utf8');
 
-test('v0.5.15.4 retains one responsive export form and desktop header controls', () => {
+test('v0.5.15.5 retains one responsive export form and desktop header controls', () => {
   assert.match(source, /compactExportLayout/);
   assert.match(source, /data-testid=\{compactExportLayout \? "panel-export-mobile" : "panel-export-options"\}/);
   assert.match(source, /hidden md:flex items-center rounded-lg bg-muted p-0.5/);
@@ -15,12 +15,12 @@ test('v0.5.15.4 retains one responsive export form and desktop header controls',
 });
 
 test('mobile export sheet owns scrolling, viewport bounds, safe footer, and background lock', () => {
-  assert.match(source, /fixed inset-0 z-40 flex bg-black\/45/);
+  assert.match(source, /export-modal-layer fixed inset-0 z-\[100\] flex bg-black\/45/);
   assert.match(source, /h-\[100vh\] h-\[100dvh\]/);
   assert.match(source, /overflow-y-auto overscroll-contain/);
   assert.match(source, /mobile-export-footer/);
   assert.match(source, /env\(safe-area-inset-bottom\)/);
-  assert.match(source, /document\.body\.style\.overflow = "hidden"/);
+  assert.match(source, /body\.style\.position = "fixed"/);
   assert.match(source, /role=\{compactExportLayout \? "dialog"/);
   assert.match(source, /exportButtonRef\.current\?\.focus\(\)/);
 });
@@ -36,11 +36,11 @@ test('mobile sheet retains every export control and the shared generation handle
   assert.match(source, /button-export-download/);
 });
 
-test('release identity and compatibility contracts are v0.5.15.4', () => {
-  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.15\.4["']/);
-  assert.match(read('../package.json'), /"version": "0\.5\.15-4"/);
-  assert.match(read('../public/version.json'), /"appVersion": "v0\.5\.15\.4"/);
-  assert.match(read('../index.html'), /lifegrid-app-version" content="v0\.5\.15\.4"/);
+test('release identity and compatibility contracts are v0.5.15.5', () => {
+  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.15\.5["']/);
+  assert.match(read('../package.json'), /"version": "0\.5\.15-5"/);
+  assert.match(read('../public/version.json'), /"appVersion": "v0\.5\.15\.5"/);
+  assert.match(read('../index.html'), /lifegrid-app-version" content="v0\.5\.15\.5"/);
   assert.match(read('../src/lib/version.ts'), /AI_INTERCHANGE_VERSION = 4/);
   assert.match(read('../src/lib/backup.ts'), /BACKUP_SCHEMA_VERSION = 7/);
 });

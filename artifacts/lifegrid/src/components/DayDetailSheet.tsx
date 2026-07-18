@@ -5,7 +5,7 @@ import { Plus, Clock } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { Event } from '../types';
 import { formatDateLong } from '../lib/format';
-import { getDisplayedTemporalOccurrence } from '../lib/temporal';
+
 import { eventProjectTags } from '../lib/projectOperations';
 
 interface DayDetailSheetProps {
@@ -20,8 +20,8 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
 
   const dayEvents = date
     ? events
-        .filter(e => getDisplayedTemporalOccurrence(e, activeCalendar.displayTimeZone).displayedStartDate === date)
-        .sort((a, b) => (getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone).displayedStartTime || '99:99').localeCompare(getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone).displayedStartTime || '99:99'))
+        .filter(e => e.date === date)
+        .sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'))
     : [];
 
   const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;
@@ -48,17 +48,11 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-sm leading-tight">{evt.title}</div>
                   <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-muted-foreground wrap-anywhere">
-                    {(evt.startTime || evt.endTime) && (() => { const occurrence = getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone); return (
-                      <span className="flex items-center gap-1">
-                        <Clock size={11} />
-                        {occurrence.displayedStartTime}{occurrence.displayedEndTime ? `–${occurrence.displayedEndTime}` : ''} {occurrence.converted ? activeCalendar.displayTimeZone : ''}
-                      </span>
-                    ); })()}
+                    {(evt.startTime || evt.endTime) && <span className="flex items-center gap-1"><Clock size={11} />{evt.startTime}{evt.endTime ? `–${evt.endTime}` : ''}</span>}
                     <span className="capitalize">{catLabel(evt.category)}</span>
                   </div>
                   {evt.notes && <p className="text-xs text-muted-foreground mt-2 whitespace-pre-wrap leading-relaxed">{evt.notes}</p>}
                   {eventProjectTags(evt, tasks, projects).length > 0 && <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Derived Project Tags">{eventProjectTags(evt, tasks, projects).map(tag => <span key={tag.id} className="flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} /><span className="break-words">{tag.name}</span>{tag.status === 'archived' && <span className="text-muted-foreground">Archived</span>}</span>)}</div>}
-                  {getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone).converted && <p className="text-[11px] text-muted-foreground mt-1">Original: {evt.date} {evt.startTime}–{evt.endTime} {evt.timeZone}</p>}
                 </div>
               </button>
             ))

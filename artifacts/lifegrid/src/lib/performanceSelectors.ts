@@ -1,11 +1,11 @@
 import type { Event, Project, Task } from '../types';
-import { getDisplayedTemporalOccurrence } from './temporal.js';
+import { getLocalTemporalOccurrence } from './temporal.js';
 
 /** Pure indexes shared by views and benchmark tooling. None of these mutate inputs. */
 export const indexEventsByDisplayedDate = (events: readonly Event[], timeZone: string, compare: (a: Event, b: Event) => number) => {
   const byDate = new Map<string, Event[]>();
   for (const event of events) {
-    const date = getDisplayedTemporalOccurrence(event, timeZone).displayedStartDate;
+    const date = getLocalTemporalOccurrence(event).displayedStartDate;
     const bucket = byDate.get(date);
     if (bucket) bucket.push(event); else byDate.set(date, [event]);
   }

@@ -23,7 +23,7 @@ function AppContent() {
   const { storageError } = useAppData();
   useEffect(() => { installGridDiagnostics(); }, []);
   useEffect(() => { const back = () => setTab(fromHash()); window.addEventListener('popstate', back); return () => window.removeEventListener('popstate', back); }, []);
-  const changeTab = (next: string) => { if (next === tab) return; if (next === 'grid') beginGridTransition(); window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); if (next === 'grid') gridMark('grid-route-state-updated'); };
+  const changeTab = (next: string) => { if (next === tab) return; if (next === 'grid') beginGridTransition(); window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); if (next === 'grid') gridMark('lifegrid:grid-route-state-updated'); };
 
   return (
     <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">

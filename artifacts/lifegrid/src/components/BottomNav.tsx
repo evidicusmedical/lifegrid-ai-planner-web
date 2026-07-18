@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, CheckSquare, Users, Cpu, Settings } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Cpu, Settings, FolderOpen } from 'lucide-react';
 
 interface BottomNavProps {
   currentTab: string;
@@ -10,13 +10,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onChange }) =>
   const tabs = [
     { id: 'grid',   label: 'Grid',   icon: Calendar },
     { id: 'tasks',  label: 'Tasks',  icon: CheckSquare },
+    { id: 'projects', label: 'Projects', icon: FolderOpen },
     { id: 'people', label: 'People', icon: Users },
     { id: 'ai',     label: 'AI',     icon: Cpu },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
-    <nav className="h-16 bg-card border-t border-border flex items-center justify-around z-50 px-2 safe-area-inset-bottom" data-testid="bottom-nav">
+    <nav aria-label="Primary navigation" className="mobile-bottom-nav bg-card border-t border-border grid grid-cols-6 z-50 px-1 safe-area-inset-bottom" data-testid="bottom-nav">
       {tabs.map(tab => {
         const active = currentTab === tab.id;
         const Icon = tab.icon;
@@ -24,8 +25,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onChange }) =>
           <button
             key={tab.id}
             onClick={() => onChange(tab.id)}
+            aria-current={active ? 'page' : undefined}
+            aria-label={tab.label}
             data-testid={`nav-${tab.id}`}
-            className={`flex flex-col items-center justify-center flex-1 h-14 gap-0.5 rounded-xl transition-all duration-150 ${
+            className={`flex flex-col items-center justify-center min-w-0 min-h-11 h-14 gap-0.5 rounded-xl transition-all duration-150 ${
               active
                 ? 'text-primary'
                 : 'text-muted-foreground active:scale-95'

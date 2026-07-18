@@ -237,7 +237,7 @@
     @apply border-border;
   }
 
-  body {
+  html, body {
     @apply font-sans antialiased bg-background text-foreground;
     overflow-x: hidden;
   }
@@ -245,6 +245,12 @@
 
 /* Shared mobile foundation: page content cannot make the document wider than the viewport. */
 #root { min-width: 0; min-height: 100svh; min-height: 100dvh; }
+.mobile-bottom-nav { min-height: calc(4rem + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); }
+.mobile-bottom-nav button { min-width: 44px; min-height: 44px; }
+.mobile-sheet { width: 100%; max-width: 100vw; height: 92svh; height: 92dvh; padding-bottom: env(safe-area-inset-bottom, 1rem); }
+.mobile-sheet :is(input, textarea, select) { scroll-margin-block: 5rem; }
+.mobile-scroll { overscroll-behavior: contain; }
+.wrap-anywhere { overflow-wrap: anywhere; word-break: break-word; }
 .app-header { padding: calc(.5rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right)) .5rem calc(1rem + env(safe-area-inset-left)); }
 pre, code { max-width: 100%; }
 pre { overflow-x: auto; }

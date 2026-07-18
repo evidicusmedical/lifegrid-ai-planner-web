@@ -27,7 +27,7 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
 
   return (
     <Sheet open={!!date} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl sm:max-w-md sm:mx-auto sm:right-auto sm:left-1/2 sm:-translate-x-1/2">
+      <SheetContent side="bottom" className="mobile-sheet mobile-scroll max-h-none overflow-y-auto rounded-t-2xl sm:max-w-md sm:mx-auto sm:right-auto sm:left-1/2 sm:-translate-x-1/2" data-testid="day-detail-sheet">
         <SheetHeader>
           <SheetTitle>{date ? formatDateLong(date) : ''}</SheetTitle>
         </SheetHeader>
@@ -40,13 +40,13 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
               <button
                 key={evt.id}
                 onClick={() => onEditEvent(evt)}
-                className="w-full text-left bg-card border border-border rounded-xl p-3 hover:border-primary/40 transition-colors flex items-start gap-3"
+                className="w-full min-h-11 text-left bg-card border border-border rounded-xl p-3 hover:border-primary/40 transition-colors flex items-start gap-3"
                 data-testid={`day-event-${evt.id}`}
               >
                 <span className="w-3 h-3 rounded-full mt-1 shrink-0" style={{ backgroundColor: evt.color }} />
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-sm leading-tight">{evt.title}</div>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-muted-foreground wrap-anywhere">
                     {(evt.startTime || evt.endTime) && (() => { const occurrence = getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone); return (
                       <span className="flex items-center gap-1">
                         <Clock size={11} />

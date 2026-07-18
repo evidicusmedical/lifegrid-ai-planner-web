@@ -22,11 +22,11 @@ function AppContent() {
   const online = useOnlineStatus();
   const { storageError } = useAppData();
   useEffect(() => { installGridDiagnostics(); }, []);
-  useEffect(() => { const back = () => setTab(fromHash()); window.addEventListener('popstate', back); return () => window.removeEventListener('popstate', back); }, []);
+  useEffect(() => { const back = () => setTab(fromHash()); window.addEventListener('popstate', back); window.addEventListener('hashchange', back); return () => { window.removeEventListener('popstate', back); window.removeEventListener('hashchange', back); }; }, []);
   const changeTab = (next: string) => { if (next === tab) return; if (next === 'grid') beginGridTransition(); window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); if (next === 'grid') gridMark('lifegrid:grid-route-state-updated'); };
 
   return (
-    <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
+    <div className="min-h-screen h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
       {!online && (
         <div className="flex-none bg-amber-500 text-white text-center text-xs font-semibold py-1 px-3 z-50">
           You're offline — your data is still available

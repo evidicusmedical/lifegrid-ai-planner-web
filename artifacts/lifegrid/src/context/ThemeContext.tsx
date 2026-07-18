@@ -11,7 +11,7 @@ const ThemeContext = createContext<ThemeContextType>({ theme: 'light', toggleThe
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem('lifegrid_theme') as Theme) ?? 'light';
+    try { const value = localStorage.getItem('lifegrid_theme'); return value === 'dark' ? 'dark' : 'light'; } catch { return 'light'; }
   });
 
   useEffect(() => {
@@ -21,7 +21,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       root.classList.remove('dark');
     }
-    localStorage.setItem('lifegrid_theme', theme);
+    try { localStorage.setItem('lifegrid_theme', theme); } catch { /* storage is optional for theme */ }
   }, [theme]);
 
   const toggleTheme = () => setTheme(t => (t === 'light' ? 'dark' : 'light'));

@@ -70,14 +70,13 @@ export const analyzeTemporalReview = (events: Array<TemporalRecord & { id: strin
  const inspect = (record: TemporalRecord & { id: string; title: string }, recordType: TemporalReviewIssue['recordType']) => {
    const entries: Array<[string, string, boolean]> = [];
    const add = (code: string, explanation: string, blocking = true) => entries.push([code, explanation, blocking]);
-   if (!record.timeStatus) add('MISSING_TIME_STATUS', 'This legacy record has no confirmed temporal classification.');
    if (record.startTime && record.endTime && record.date === (record.endDate ?? record.date) && record.startTime === record.endTime) add('SAME_START_END', 'Choose a later end time or a later end date for an overnight record.');
    if (record.endDate && record.endDate < record.date) add('END_BEFORE_START_DATE', 'Choose a later end date for an overnight record.');
    if (record.timeZoneMode === 'zoned' && !record.timeZone) add('ZONED_WITHOUT_TIMEZONE', 'Select a valid IANA timezone.');
    if (record.timeZoneMode === 'floating' && record.timeZone) add('FLOATING_WITH_TIMEZONE', 'Floating local time cannot include a timezone.');
    if (record.timeZone && !isIanaTimeZone(record.timeZone)) add('INVALID_TIMEZONE', 'Select a valid IANA timezone.');
    for (const message of temporalErrors(record)) { if (message.includes('does not exist')) add('DST_GAP', 'This local time does not exist because of daylight saving time.'); else if (message.includes('ambiguous')) add('DST_FOLD', 'This local time occurs twice; select a different time.'); else if (!entries.some(e => e[0] === 'INVALID_TEMPORAL_COMBINATION')) add('INVALID_TEMPORAL_COMBINATION', message); }
-   if ((record as any).temporalReview) add('MIGRATION_REVIEW_REQUIRED', 'This legacy record has a date but no confirmed temporal classification.');
+   if (!record.timeStatus && (record as any).temporalReview === 'legacy-ambiguous') add('MIGRATION_REVIEW_REQUIRED', 'This older representation requires an explicit temporal choice.');
    return entries.map(([code, explanation, blocking]) => ({ key: `${recordType}:${record.id}:${code}`, recordType, recordId: record.id, title: record.title, date: record.date, code, severity: blocking ? 'blocking' as const : 'advisory' as const, blocking, explanation }));
  };
  return [...events.flatMap(e => inspect(e, 'event')), ...personEvents.flatMap(e => inspect(e, 'person-schedule'))];

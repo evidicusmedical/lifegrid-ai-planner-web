@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
   AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store,
   EventDisplayPriority, EventKind, ProjectStatus, TaskDueDateType, TaskTriageStatus,
@@ -251,6 +251,7 @@ const loadStore = (): Store => {
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [store, setStore] = useState<Store>(loadStore);
   const [storageError, setStorageError] = useState<string | null>(null);
+  const lastSerializedStore = useRef<string | null>(null);
 
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => {
     try { return localStorage.getItem(BACKUP_TS_KEY); } catch { return null; }
@@ -264,7 +265,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      const serialized = JSON.stringify(store);
+      // Store updates may be identity-only (for example selecting the existing
+      // calendar). Avoid an unnecessary synchronous localStorage write.
+      if (serialized === lastSerializedStore.current) return;
+      localStorage.setItem(STORE_KEY, serialized);
+      lastSerializedStore.current = serialized;
       setStorageError(null);
     } catch (error) {
       console.error('Failed to persist LifeGrid store', error);

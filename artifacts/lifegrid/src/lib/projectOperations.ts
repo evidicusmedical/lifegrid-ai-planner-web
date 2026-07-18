@@ -4,6 +4,17 @@ export type ProjectHealth = 'on-track' | 'attention' | 'at-risk' | 'complete' | 
 export type DashboardSort = 'saved' | 'name' | 'status' | 'progress' | 'milestone' | 'health';
 export interface ProjectSummary { project: Project; totalTasks: number; completedTasks: number; openTasks: number; overdueTasks: number; overdueMilestones: number; progress: number; nextAction: Task | null; nextMilestone: Milestone | null; upcomingEvent: Event | null; health: ProjectHealth; healthReason: string; }
 const dateOnly = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+/** Pure detail-editor helpers; IDs, not rendered snapshots, are retained by the UI. */
+export const resolveProjectDetailRecord = <T extends { id: string }>(records: readonly T[], id: string | null): T | null => id ? records.find(record => record.id === id) ?? null : null;
+export const localDateOnly = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+export const validateMilestoneDraft = (draft: Pick<Milestone, 'title'|'targetDate'|'status'|'completedDate'|'notes'>) => {
+  const title = draft.title.trim();
+  if (!title) return { ok: false as const, error: 'Title is required.' };
+  if (draft.targetDate && !dateOnly(draft.targetDate)) return { ok: false as const, error: 'Target date must be YYYY-MM-DD.' };
+  if (draft.status === 'completed' && draft.completedDate && !dateOnly(draft.completedDate)) return { ok: false as const, error: 'Completion date must be YYYY-MM-DD.' };
+  return { ok: true as const, value: { title, targetDate: dateOnly(draft.targetDate), status: draft.status === 'completed' ? 'completed' as const : 'planned' as const, completedDate: draft.status === 'completed' ? dateOnly(draft.completedDate) : null, notes: typeof draft.notes === 'string' && draft.notes.length ? draft.notes : null } };
+};
+export const transitionMilestone = (milestone: Milestone, complete: boolean, date = localDateOnly()): Milestone => ({ ...milestone, status: complete ? 'completed' : 'planned', completedDate: complete ? date : null });
 export const normalizeMilestones = (raw: unknown, projectIds: Iterable<string>): Milestone[] => {
   if (!Array.isArray(raw)) return [];
   const allowed = new Set(projectIds), ids = new Set<string>();

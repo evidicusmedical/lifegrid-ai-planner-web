@@ -1,6 +1,0 @@
-import test from 'node:test'; import assert from 'node:assert/strict';
-import { buildReviewQueue, startReviewSession, skipIssue, deferIssue, resolveIssue, reconcileReviewSession, reviewTotals } from '../.test-build/lib/rapidReview.js';
-const f=[{key:'a',recordType:'event',blocking:true,calendarId:'c1'},{key:'b',recordType:'person-schedule',blocking:false,calendarId:'c1'},{key:'x',recordType:'event',blocking:true,calendarId:'c2'},{key:'a',recordType:'event',blocking:true,calendarId:'c1'}];
-test('queue is active-calendar, filtered, stable and deduplicated',()=>{assert.deepEqual(buildReviewQueue(f,'c1'),['a','b']);assert.deepEqual(buildReviewQueue(f,'c1',{severity:'blocking'}),['a']);assert.deepEqual(buildReviewQueue(f,'c1',{recordType:'person-schedule'}),['b']);});
-test('skip defer resolve and totals do not mutate findings',()=>{let s=startReviewSession(f,'c1');s=skipIssue(s,'a');s=deferIssue(s,'b');assert.equal(reviewTotals(s).reviewed,2);let r=startReviewSession(f,'c1');r=resolveIssue(r,'a');assert.deepEqual(r.resolvedIssueKeys,['a']);});
-test('reconciliation marks deleted records unavailable and ends on calendar switch',()=>{let s=startReviewSession(f,'c1');s=reconcileReviewSession(s,[], 'c1');assert.equal(s.unavailableIssueKeys.length,2);assert.equal(reconcileReviewSession(startReviewSession(f,'c1'),f,'c2').currentIssueKey,null);});

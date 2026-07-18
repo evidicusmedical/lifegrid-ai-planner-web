@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const css = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+const header = readFileSync(new URL('../src/components/AppHeader.tsx', import.meta.url), 'utf8');
+const sheet = readFileSync(new URL('../src/components/ui/sheet.tsx', import.meta.url), 'utf8');
+const settings = readFileSync(new URL('../src/pages/SettingsView.tsx', import.meta.url), 'utf8');
+test('responsive foundation defines phone and tablet breakpoint ranges', () => { for (const width of ['374px', '375px', '430px', '431px', '767px']) assert.match(css, new RegExp(width)); });
+test('header keeps full calendar and timezone accessible with one timer', () => { assert.match(header, /title=\{activeCalendar.name\}/); assert.match(header, /title=\{zone\}/); assert.equal((header.match(/setInterval/g) || []).length, 1); });
+test('sheets use dynamic viewport bounds and safe mobile width', () => { assert.match(sheet, /max-w-\[100vw\]/); assert.match(sheet, /100dvh/); });
+test('review controls are touch-sized, labelled, and mobile-safe', () => { assert.match(settings, /Refresh Time Data Review/); assert.match(settings, /min-h-11/); assert.match(settings, /sm:grid-cols-2/); });

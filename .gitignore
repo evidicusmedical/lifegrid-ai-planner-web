@@ -62,3 +62,6 @@ lifegrid-backup-*.json
 
 # Executable test output
 artifacts/lifegrid/.test-build/
+# Browser runner artifacts (kept out of source control when Playwright is available).
+artifacts/lifegrid/test-results/
+artifacts/lifegrid/playwright-report/

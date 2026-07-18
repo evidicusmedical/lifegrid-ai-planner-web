@@ -6,6 +6,7 @@ import { useAppData } from '../context/AppDataContext';
 import { Event } from '../types';
 import { formatDateLong } from '../lib/format';
 import { getDisplayedTemporalOccurrence } from '../lib/temporal';
+import { eventProjectTags } from '../lib/projectOperations';
 
 interface DayDetailSheetProps {
   date: string | null;
@@ -15,7 +16,7 @@ interface DayDetailSheetProps {
 }
 
 export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, onAddEvent, onEditEvent }) => {
-  const { events, categories, activeCalendar } = useAppData();
+  const { events, tasks, projects, categories, activeCalendar } = useAppData();
 
   const dayEvents = date
     ? events
@@ -56,6 +57,7 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
                     <span className="capitalize">{catLabel(evt.category)}</span>
                   </div>
                   {evt.notes && <p className="text-xs text-muted-foreground mt-2 whitespace-pre-wrap leading-relaxed">{evt.notes}</p>}
+                  {eventProjectTags(evt, tasks, projects).length > 0 && <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Derived Project Tags">{eventProjectTags(evt, tasks, projects).map(tag => <span key={tag.id} className="flex max-w-full items-center gap-1 rounded-full border px-2 py-0.5 text-[11px]"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} /><span className="break-words">{tag.name}</span>{tag.status === 'archived' && <span className="text-muted-foreground">Archived</span>}</span>)}</div>}
                   {getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone).converted && <p className="text-[11px] text-muted-foreground mt-1">Original: {evt.date} {evt.startTime}–{evt.endTime} {evt.timeZone}</p>}
                 </div>
               </button>

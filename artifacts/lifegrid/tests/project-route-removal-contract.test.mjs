@@ -1,0 +1,3 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import fs from 'node:fs';
+const app=fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8'); const nav=fs.readFileSync(new URL('../src/components/BottomNav.tsx',import.meta.url),'utf8');
+test('five primary routes remain and legacy projects hash falls back to tasks',()=>{assert.doesNotMatch(app,/ProjectsView/);assert.match(app,/requested === 'projects'/);assert.match(app,/#tasks/);for(const id of ['grid','tasks','people','ai','settings'])assert.match(nav,new RegExp(`id: '${id}'`));assert.doesNotMatch(nav,/id: 'projects'/);assert.match(nav,/grid-cols-5/);});

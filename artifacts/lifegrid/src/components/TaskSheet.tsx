@@ -291,13 +291,12 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                 </div>
 
                 {/* Project / parent */}
-                {projects.length > 0 && (
-                  <FormField
+                <FormField
                     control={form.control}
                     name="projectId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Project / major event (optional)</FormLabel>
+                        <FormLabel>Project Tag (optional)</FormLabel>
                         <Select
                           onValueChange={v => field.onChange(v === '__none__' ? null : v)}
                           value={field.value ?? '__none__'}
@@ -305,22 +304,21 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                           <FormControl><SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger></FormControl>
                           <SelectContent>
                             <SelectItem value="__none__">No project</SelectItem>
-                            {projects.map(p => (
+                            {projects.filter(p => p.status !== 'archived' || p.id === field.value).map(p => (
                               <SelectItem key={p.id} value={p.id}>
                                 <span className="flex items-center gap-2">
                                   <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                                  {p.name}
+                                  {p.name}{p.status === 'archived' ? ' (archived)' : ''}
                                 </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <FormDescription>Group related subtasks under a project; focus mode in Tasks helps work through them.</FormDescription>
+                        <FormDescription>Project Tags organize Tasks and related Events. Archived Tags are retained for existing assignments.</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                )}
 
                 {/* Advanced planning */}
                 <details className="rounded-xl border border-border bg-muted/20 p-3 group">

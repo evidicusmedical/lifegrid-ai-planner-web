@@ -11,12 +11,11 @@ import { TasksView } from './pages/TasksView';
 import { PeopleView } from './pages/PeopleView';
 import { AIView } from './pages/AIView';
 import { SettingsView } from './pages/SettingsView';
-import { ProjectsView } from './pages/ProjectsView';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 
 function AppContent() {
-  const validTabs = new Set(['grid', 'tasks', 'projects', 'people', 'ai', 'settings']);
-  const fromHash = () => validTabs.has(window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'grid';
+  const validTabs = new Set(['grid', 'tasks', 'people', 'ai', 'settings']);
+  const fromHash = () => { const requested = window.location.hash.slice(1); if (requested === 'projects') { window.history.replaceState({ tab: 'tasks' }, '', '#tasks'); return 'tasks'; } return validTabs.has(requested) ? requested : 'grid'; };
   const [tab, setTab] = useState(fromHash);
   const online = useOnlineStatus();
   const { storageError } = useAppData();
@@ -35,7 +34,6 @@ function AppContent() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {tab === 'grid'   && <GridView />}
         {tab === 'tasks'  && <TasksView />}
-        {tab === 'projects' && <ProjectsView />}
         {tab === 'people' && <PeopleView />}
         {tab === 'ai'     && <AIView />}
         {tab === 'settings' && <SettingsView />}

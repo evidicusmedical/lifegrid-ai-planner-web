@@ -1,72 +1,51 @@
 import type { Event, Milestone, Project, Task } from '../types';
 
-export type ProjectHealth = 'on-track' | 'attention' | 'at-risk' | 'complete' | 'no-activity';
-export type DashboardSort = 'saved' | 'name' | 'status' | 'progress' | 'milestone' | 'health';
-export interface ProjectSummary { project: Project; totalTasks: number; completedTasks: number; openTasks: number; overdueTasks: number; overdueMilestones: number; progress: number; nextAction: Task | null; nextMilestone: Milestone | null; upcomingEvent: Event | null; health: ProjectHealth; healthReason: string; }
 const dateOnly = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
-/** Pure detail-editor helpers; IDs, not rendered snapshots, are retained by the UI. */
-export const resolveProjectDetailRecord = <T extends { id: string }>(records: readonly T[], id: string | null): T | null => id ? records.find(record => record.id === id) ?? null : null;
-export const localDateOnly = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-export const validateMilestoneDraft = (draft: Pick<Milestone, 'title'|'targetDate'|'status'|'completedDate'|'notes'>) => {
-  const title = draft.title.trim();
-  if (!title) return { ok: false as const, error: 'Title is required.' };
-  if (draft.targetDate && !dateOnly(draft.targetDate)) return { ok: false as const, error: 'Target date must be YYYY-MM-DD.' };
-  if (draft.status === 'completed' && draft.completedDate && !dateOnly(draft.completedDate)) return { ok: false as const, error: 'Completion date must be YYYY-MM-DD.' };
-  return { ok: true as const, value: { title, targetDate: dateOnly(draft.targetDate), status: draft.status === 'completed' ? 'completed' as const : 'planned' as const, completedDate: draft.status === 'completed' ? dateOnly(draft.completedDate) : null, notes: typeof draft.notes === 'string' && draft.notes.length ? draft.notes : null } };
-};
-export const transitionMilestone = (milestone: Milestone, complete: boolean, date = localDateOnly()): Milestone => ({ ...milestone, status: complete ? 'completed' : 'planned', completedDate: complete ? date : null });
+/** Preserve legacy milestone records for schema-6 backup compatibility. Milestones have no UI in v0.5.2. */
 export const normalizeMilestones = (raw: unknown, projectIds: Iterable<string>): Milestone[] => {
   if (!Array.isArray(raw)) return [];
   const allowed = new Set(projectIds), ids = new Set<string>();
-  const clean = raw.map((m: any, index) => {
+  return raw.map((m: any, index) => {
     const id = typeof m?.id === 'string' && m.id ? m.id : `milestone-${index}`;
     if (ids.has(id)) throw new Error(`Duplicate milestone id: ${id}`); ids.add(id);
     if (!allowed.has(m?.projectId)) throw new Error(`Milestone ${id} has an orphan project.`);
     return { id, projectId: m.projectId, title: typeof m.title === 'string' && m.title.trim() ? m.title.trim() : 'Untitled milestone', targetDate: dateOnly(m.targetDate), status: m.status === 'completed' ? 'completed' as const : 'planned' as const, completedDate: dateOnly(m.completedDate), notes: typeof m.notes === 'string' && m.notes.trim() ? m.notes : null, order: Number.isFinite(Number(m.order)) ? Number(m.order) : index };
-  });
-  return clean.sort((a,b) => a.order - b.order || a.id.localeCompare(b.id)).map((m, order) => ({ ...m, order }));
+  }).sort((a,b) => a.order-b.order || a.id.localeCompare(b.id)).map((m, order) => ({ ...m, order }));
 };
-export const projectProgress = (project: Project, tasks: Task[]) => {
-  const projectTasks = tasks.filter(t => t.projectId === project.id);
-  if (!projectTasks.length) return project.status === 'completed' ? 100 : 0;
-  return Math.round(projectTasks.filter(t => t.status === 'done').length / projectTasks.length * 100);
+export const normalizeProjectName = (value: string) => value.trim().replace(/\s+/g, ' ');
+export const normalizeAliases = (aliases: readonly string[] | string): string[] => { const values: readonly string[] = typeof aliases === 'string' ? aliases.split(',') : aliases; return [...new Set(values.map(normalizeProjectName).filter(Boolean).map((x: string) => x.toLocaleLowerCase()))]; };
+export const validateProjectTag = (draft: Pick<Project, 'name'|'color'|'aliases'>, projects: readonly Project[], editingId?: string) => {
+  const name = normalizeProjectName(draft.name); if (!name) return { ok: false as const, error: 'Project Tag name is required.' };
+  const folded = name.toLocaleLowerCase();
+  if (projects.some(p => p.id !== editingId && normalizeProjectName(p.name).toLocaleLowerCase() === folded)) return { ok: false as const, error: 'A Project Tag with that name already exists.' };
+  const aliases = normalizeAliases(draft.aliases ?? []);
+  const conflicts = projects.filter(p => p.id !== editingId).find(p => [p.name, ...(p.aliases ?? [])].map(normalizeProjectName).some(v => aliases.includes(v.toLocaleLowerCase())));
+  if (conflicts) return { ok: false as const, error: `Alias conflicts with Project Tag “${conflicts.name}”.` };
+  return { ok: true as const, value: { name, color: draft.color, aliases } };
 };
-export const nextProjectAction = (project: Project, tasks: Task[]): Task | null => {
-  const all = tasks.filter(t => t.projectId === project.id && t.status !== 'done' && t.status !== 'blocked');
-  if (!all.length) return null;
-  return [...all].sort((a,b) => {
-    const priority = (t: Task) => t.nextAction ? 0 : t.priority === 'urgent' ? 1 : t.priority === 'high' ? 2 : 3;
-    return priority(a)-priority(b) || (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);
-  })[0];
+export const sortProjectTags = (projects: readonly Project[]) => [...projects].sort((a,b) => (a.order ?? 0)-(b.order ?? 0) || a.name.localeCompare(b.name));
+export const findProjectTagOptions = (projects: readonly Project[], query: string, selectedId?: string | null, includeArchived = false) => {
+  const q = query.trim().toLocaleLowerCase(); return sortProjectTags(projects).filter(p => (includeArchived || p.status !== 'archived' || p.id === selectedId) && (!q || [p.name, ...(p.aliases ?? [])].some(x => x.toLocaleLowerCase().includes(q))));
 };
-export const groupProjectTasks = (project: Project, tasks: Task[], today: string) => {
-  const result: Record<'nextActions'|'upcoming'|'overdue'|'unscheduled'|'completed', Task[]> = { nextActions: [], upcoming: [], overdue: [], unscheduled: [], completed: [] };
-  const next = nextProjectAction(project, tasks)?.id;
-  tasks.filter(t => t.projectId === project.id).forEach(t => { if (t.status === 'done') result.completed.push(t); else if (t.id === next) result.nextActions.push(t); else if (t.dueDate && t.dueDate < today) result.overdue.push(t); else if (t.dueDate) result.upcoming.push(t); else result.unscheduled.push(t); });
-  Object.values(result).forEach(group => group.sort((a,b) => (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31') || a.name.localeCompare(b.name) || a.id.localeCompare(b.id)));
+export interface ProjectTagUsage { openTasks: number; completedTasks: number; totalTasks: number; relatedEvents: number; }
+export const projectTagUsage = (projects: readonly Project[], tasks: readonly Task[], events: readonly Event[]): Record<string, ProjectTagUsage> => {
+  const result: Record<string, ProjectTagUsage> = Object.fromEntries(projects.map(p => [p.id, {openTasks:0,completedTasks:0,totalTasks:0,relatedEvents:0}]));
+  const taskProject = new Map(tasks.map(t => [t.id, t.projectId]));
+  tasks.forEach(t => { const usage = t.projectId ? result[t.projectId] : undefined; if (usage) { usage.totalTasks++; t.status === 'done' ? usage.completedTasks++ : usage.openTasks++; } });
+  events.forEach(e => new Set((e.linkedTaskIds ?? []).map(id => taskProject.get(id)).filter((id): id is string => !!id && !!result[id])).forEach(id => result[id].relatedEvents++));
   return result;
 };
-export const groupProjectEvents = (project: Project, tasks: Task[], events: Event[], today: string) => {
-  const taskIds = new Set(tasks.filter(t => t.projectId === project.id).map(t => t.id)); const seen = new Set<string>();
-  const result: Record<'upcoming'|'past'|'unknown'|'approximate', Event[]> = { upcoming: [], past: [], unknown: [], approximate: [] };
-  events.forEach(e => { if (seen.has(e.id) || !e.linkedTaskIds?.some(id => taskIds.has(id))) return; seen.add(e.id); if (e.timeStatus === 'unknown') result.unknown.push(e); else if (e.timeStatus === 'approximate') result.approximate.push(e); else if (e.date >= today) result.upcoming.push(e); else result.past.push(e); });
-  Object.values(result).forEach(group => group.sort((a,b) => a.date.localeCompare(b.date) || (a.startTime ?? '').localeCompare(b.startTime ?? '') || a.id.localeCompare(b.id))); return result;
+export const eventProjectTags = (event: Event, tasks: readonly Task[], projects: readonly Project[]) => {
+  const taskProjects = new Map(tasks.map(t => [t.id, t.projectId])); const ids = new Set((event.linkedTaskIds ?? []).map(id => taskProjects.get(id)).filter((id): id is string => !!id));
+  return sortProjectTags(projects).filter(p => ids.has(p.id));
 };
-export const projectSummary = (project: Project, tasks: Task[], milestones: Milestone[], events: Event[], today: string): ProjectSummary => {
-  const mine = tasks.filter(t => t.projectId === project.id), done = mine.filter(t => t.status === 'done').length, open = mine.length-done, overdue = mine.filter(t => t.status !== 'done' && t.dueDate && t.dueDate < today).length;
-  const planned = milestones.filter(m => m.projectId === project.id && m.status === 'planned').sort((a,b)=>(a.targetDate ?? '9999-12-31').localeCompare(b.targetDate ?? '9999-12-31') || a.order-b.order);
-  const overdueMilestones = planned.filter(m => m.targetDate && m.targetDate < today).length, nextAction = nextProjectAction(project,tasks), eventGroups = groupProjectEvents(project,tasks,events,today), progress = projectProgress(project,tasks);
-  let health: ProjectHealth = 'on-track', healthReason = 'An actionable task or planned work is present.';
-  if (project.status === 'completed' || (mine.length > 0 && progress === 100)) { health='complete'; healthReason='Project is completed or all linked tasks are complete.'; }
-  else if (overdue + overdueMilestones >= 2) { health='at-risk'; healthReason=`${overdue + overdueMilestones} overdue task or milestone items need attention.`; }
-  else if (overdue || overdueMilestones) { health='attention'; healthReason='An incomplete task or planned milestone is overdue.'; }
-  else if (!mine.length && !planned.length) { health='no-activity'; healthReason='No linked tasks or planned milestones are available yet.'; }
-  else if (!nextAction) { health='attention'; healthReason='No unblocked incomplete task is available as a next action.'; }
-  return { project, totalTasks: mine.length, completedTasks: done, openTasks: open, overdueTasks: overdue, overdueMilestones, progress, nextAction, nextMilestone: planned[0] ?? null, upcomingEvent: eventGroups.upcoming[0] ?? null, health, healthReason };
-};
-export const filterAndSortProjects = (summaries: ProjectSummary[], filters: { search?: string; status?: string; health?: string; category?: string; overdue?: boolean; upcomingMilestone?: boolean; noNextAction?: boolean }, sort: DashboardSort = 'saved') => {
-  const search = filters.search?.trim().toLowerCase() ?? '';
-  const visible = summaries.filter(s => (!search || s.project.name.toLowerCase().includes(search)) && (!filters.status || filters.status === 'all' || s.project.status === filters.status) && (!filters.health || filters.health === 'all' || s.health === filters.health) && (!filters.category || filters.category === 'all' || s.project.color === filters.category) && (!filters.overdue || s.overdueTasks > 0) && (!filters.upcomingMilestone || !!s.nextMilestone) && (!filters.noNextAction || !s.nextAction));
-  const healthOrder: Record<ProjectHealth, number> = {'at-risk':0,attention:1,'no-activity':2,'on-track':3,complete:4};
-  return [...visible].sort((a,b) => sort === 'name' ? a.project.name.localeCompare(b.project.name) : sort === 'status' ? a.project.status.localeCompare(b.project.status) || a.project.order-b.project.order : sort === 'progress' ? b.progress-a.progress || a.project.order-b.project.order : sort === 'milestone' ? (a.nextMilestone?.targetDate ?? '9999-12-31').localeCompare(b.nextMilestone?.targetDate ?? '9999-12-31') || a.project.order-b.project.order : sort === 'health' ? healthOrder[a.health]-healthOrder[b.health] || a.project.order-b.project.order : a.project.order-b.project.order || a.project.name.localeCompare(b.project.name));
+export type ProjectDeletionPolicy = 'clear' | 'reassign';
+export const planProjectTagDeletion = (data: { projects: readonly Project[]; tasks: readonly Task[]; events: readonly Event[]; milestones: readonly Milestone[] }, sourceId: string, policy?: ProjectDeletionPolicy, destinationId?: string) => {
+  const source = data.projects.find(p => p.id === sourceId); if (!source) return { ok:false as const, error:'Project Tag was not found.' };
+  if (data.milestones.some(m => m.projectId === sourceId)) return { ok:false as const, error:'This Project Tag has preserved legacy milestones. Archive it instead; deletion is blocked to preserve legacy data.' };
+  const used = data.tasks.some(t => t.projectId === sourceId); if (used && !policy) return { ok:false as const, error:'Choose clear or reassign before deleting a used Project Tag.' };
+  if (policy === 'reassign') { const destination = data.projects.find(p => p.id === destinationId); if (!destination || destination.id === sourceId || destination.status === 'archived') return { ok:false as const, error:'Choose a different active Project Tag for reassignment.' }; }
+  const tasks = data.tasks.map(t => t.projectId !== sourceId ? t : {...t, projectId: policy === 'reassign' ? destinationId! : null});
+  if (tasks.some(t => t.projectId && !data.projects.some(p => p.id !== sourceId && p.id === t.projectId))) return { ok:false as const, error:'Final Task Project Tag references are invalid.' };
+  return { ok:true as const, value:{ projects:data.projects.filter(p => p.id !== sourceId), tasks, events:[...data.events], milestones:[...data.milestones] } };
 };

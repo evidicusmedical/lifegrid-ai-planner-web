@@ -42,7 +42,7 @@ export const buildExportMetadata = (options: { calendarName: string; start: stri
   return { title, subtitle, metadata };
 };
 
-export const getDenseDay = <T>(records: T[], limit: number) => ({ visible: records.slice(0, limit), overflow: Math.max(0, records.length - limit), overflowLabel: `${Math.max(0, records.length - limit)} more records; open day details` });
+export const getDenseDay = <T>(records: readonly T[], limit: number) => ({ visible: records.slice(0, limit), overflow: Math.max(0, records.length - limit), overflowLabel: `${Math.max(0, records.length - limit)} more records; open day details` });
 
 export const getExportDimensions = (density: ExportDensity, legendEntries: number, isTargeted = false) => {
   const config = EXPORT_DENSITY[density];

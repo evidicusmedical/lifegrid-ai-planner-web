@@ -1,0 +1,7 @@
+# v0.5.9 handoff
+
+Repository `/workspace/lifegrid-ai-planner-web` began on merged main-equivalent `d7ed8d8`; PR #24 and expected head `fbc9ce2` are present. Baseline was v0.5.8/0.5.8, AI interchange 4 and backup schema 6. This release is v0.5.9 and retains interchange/schema.
+
+Audit found the old `GridView` called `indexEventsByDisplayedDate(events, ...)` before year filtering. It normalized every Event and sent full Event objects (including notes, AI/source notes, links and recurrence) through annual cells; cells constructed note title/ARIA content and Day Type previews. The v0.5.7 RAF only delayed full annual construction by one frame. The new `gridModel` selects intersection first, projects display-only summaries, memoizes month signatures, resolves full records on demand, and stages current/first month, neighbours, then two-month RAF batches; cleanup cancels stale batches.
+
+Grid navigation itself does not call persistence, exports or review. Context still recreates its broad value on data mutations, but display-only signatures prevent note-only Grid month replacement. Full records remain storage/backup/editor/detail/ICS/export authority. Node benchmark and test/typecheck/build results are recorded by the release command output. Browser tooling, user-backup/manual and deployment verification are not performed here. Recommended future release: v0.6.0 native recurrence/derived occurrences after compatibility design. Branch `codex/implement-v0.5.9-real-data-grid-scaling`; PR URL and commit are filled after release workflow.

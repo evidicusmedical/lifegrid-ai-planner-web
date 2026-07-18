@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+const read = file => readFileSync(new URL(file, import.meta.url), 'utf8');
+const grid = read('../src/pages/GridView.tsx');
+const css = read('../src/index.css');
+test('v0.5.15.3 preserves a visible, touch-sized mobile Grid export entry point', () => { assert.match(grid, /data-testid="button-export"/); assert.match(grid, /setExportOptionsOpen\(true\)/); assert.match(grid, /min-h-11/); });
+test('export controls are lazy, bounded, accessible, and retain mobile save paths', () => { assert.match(grid, /const exportUiActive = exportOptionsOpen \|\| exporting \|\| exportUrl/); assert.match(grid, /if \(!exportUiActive\) return \[\]/); assert.match(grid, /max-h-\[calc\(100dvh-10rem\)\].*overflow-y-auto/); assert.match(grid, /role="status" aria-live="polite"/); assert.match(grid, /button-export-generate/); assert.match(grid, /button-export-share/); assert.match(grid, /button-export-download/); });
+test('global responsive guard preserves the annual Grid as the intentional x-scroller', () => { assert.match(css, /\[data-testid="grid-content"\][\s\S]*max-width: 100%/); assert.match(css, /wrap-anywhere/); assert.match(grid, /minWidth: DAY_COL_W \+ MONTHS.length \* MONTH_COL_W/); });
+test('release identity and schema/interchange compatibility remain correct', () => { assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.15\.3["']/); assert.match(read('../package.json'), /"version": "0\.5\.15-3"/); assert.match(read('../src/lib/version.ts'), /AI_INTERCHANGE_VERSION = 4/); assert.match(read('../src/lib/backup.ts'), /BACKUP_SCHEMA_VERSION = 7/); });

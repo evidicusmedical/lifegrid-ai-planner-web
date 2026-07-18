@@ -4,6 +4,7 @@ import { generateUniversalCurrentPackage, generateUniversalStarterPrompt, parseA
 import { downloadCurrentBackup } from '../lib/backup';
 import { analyzeDependencies, cascadeDeselection } from '../lib/aiDependencies';
 import { getPatchReadiness, patchProposalKey } from '../lib/aiPatchApply';
+import { resolveProposalDisplayLabel } from '../lib/aiEntityQuality';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,7 +44,7 @@ export const AIView = () => {
     : generateUniversalCurrentPackage(app, app.activeCalendar, preset === 'all' ? { start: null, end: null } : { start, end });
   const copy = async () => { if (preset !== 'all' && workflow === 'current' && (!start || !end || start > end)) { toast.error('Choose a valid date range.'); return; } const value = build(); setPrompt(value); await navigator.clipboard.writeText(value); toast.success('Complete AI package copied'); };
   const download = () => { const value = prompt || build(); setPrompt(value); const url = URL.createObjectURL(new Blob([value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = `lifegrid-ai-package-${iso(new Date())}.txt`; a.click(); URL.revokeObjectURL(url); };
-  const recordGroups = useMemo(() => preview ? toRecordGroups(preview) : [], [preview]);
+  const recordGroups = useMemo(() => preview ? toRecordGroups(preview, app.activeCalendar.data) : [], [preview, app.activeCalendar.data]);
   const dependencyAnalysis = useMemo(() => preview ? analyzeDependencies(preview, app, selectedRecords) : null, [preview, app.categories, app.people, app.projects, app.tasks, app.events, app.personEvents, selectedRecords]);
   const blockedKeys = dependencyAnalysis ? new Set([...dependencyAnalysis.blocked].filter(([key]) => selectedRecords.has(key)).map(([key]) => key)) : new Set<string>();
   const readiness = useMemo(() => preview ? getPatchReadiness(app.activeCalendar.data, preview, selectedRecords) : null, [preview, app.activeCalendar.data, selectedRecords]);
@@ -51,7 +52,7 @@ export const AIView = () => {
   const patchSessionId = preview ? JSON.stringify(preview) : null;
   useEffect(() => {
     if (!preview || !patchSessionId || initializedSession.current === patchSessionId) return;
-    const proposals = toRecordGroups(preview).flatMap(group => group.records);
+    const proposals = toRecordGroups(preview, app.activeCalendar.data).flatMap(group => group.records);
     const candidateKeys = new Set(proposals.map(proposal => proposal.key));
     const initialReadiness = getPatchReadiness(app.activeCalendar.data, preview, candidateKeys);
     const blockingKeys = new Set(initialReadiness.findings.filter(f => f.severity === 'blocking' && f.section && f.operation && f.recordId).map(f => patchProposalKey(f.section! as Exclude<NonNullable<typeof f.section>, 'patch'>, f.operation!, f.recordId!)));
@@ -88,22 +89,22 @@ function WorkflowCard({ selected, onClick, title, description }: { selected: boo
 
 
 type PreviewRecord = { key: string; group: string; operation: 'New' | 'Update'; label: string; id: string; detail?: string };
-const toRecordGroups = (update: ParsedUpdate): { title: string; records: PreviewRecord[] }[] => {
+const toRecordGroups = (update: ParsedUpdate, current: any): { title: string; records: PreviewRecord[] }[] => {
   const groups: { title: string; records: PreviewRecord[] }[] = [];
-  const add = (title: string, entityType: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule', source: any, label: (record: any) => string, detail: (record: any) => string | undefined = () => undefined) => {
-    const records = ['add', 'update'].flatMap(operation => (source?.[operation] ?? []).map((record: any, index: number) => ({ key: patchProposalKey(entityType, operation as 'add' | 'update', String(record.id)), group: title, operation: operation === 'add' ? 'New' as const : 'Update' as const, label: label(record), id: String(record.id), detail: detail(record) })));
+  const add = (title: string, entityType: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule', source: any, detail: (record: any) => string | undefined = () => undefined) => {
+    const records = ['add', 'update'].flatMap(operation => (source?.[operation] ?? []).map((record: any) => ({ key: patchProposalKey(entityType, operation as 'add' | 'update', String(record.id)), group: title, operation: operation === 'add' ? 'New' as const : 'Update' as const, label: resolveProposalDisplayLabel(entityType, operation as 'add'|'update', record, current), id: String(record.id), detail: detail(record) })));
     if (records.length) groups.push({ title, records });
   };
-  add('Categories', 'categories', update.categories, r => r.label ?? 'Untitled category');
-  add('People', 'people', update.people, r => r.label ?? 'Untitled person');
-  add('Projects', 'projects', update.projects, r => r.name ?? 'Untitled project');
-  add('Tasks', 'tasks', update.tasks, r => r.name ?? 'Untitled task', r => [r.dueDate, r.projectId && `Project: ${r.projectId}`].filter(Boolean).join(' · ') || undefined);
-  add('Events', 'events', update.events, r => r.title ?? 'Untitled event', r => [r.date, r.category && `Category: ${r.category}`].filter(Boolean).join(' · ') || undefined);
-  add('Schedule or Availability', 'peopleSchedule', update.peopleSchedule, r => r.title ?? 'Availability', r => [r.date, r.person && `Person: ${r.person}`].filter(Boolean).join(' · ') || undefined);
+  add('Categories', 'categories', update.categories);
+  add('People', 'people', update.people);
+  add('Projects', 'projects', update.projects);
+  add('Tasks', 'tasks', update.tasks, r => [r.dueDate, r.projectId && `Project: ${r.projectId}`].filter(Boolean).join(' · ') || undefined);
+  add('Events', 'events', update.events, r => [r.date, r.category && `Category: ${r.category}`].filter(Boolean).join(' · ') || undefined);
+  add('Schedule or Availability', 'peopleSchedule', update.peopleSchedule, r => [r.date, r.person && `Person: ${r.person}`].filter(Boolean).join(' · ') || undefined);
   return groups;
 };
 const filterSelectedUpdate = (update: ParsedUpdate, selected: Set<string>): ParsedUpdate => {
-  const groups = toRecordGroups(update); const allowed = new Set(groups.flatMap(group => group.records.filter(record => selected.has(record.key)).map(record => record.key)));
+  const allowed = selected;
   const clone: ParsedUpdate = JSON.parse(JSON.stringify(update));
   const sources: Array<keyof Pick<ParsedUpdate, 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule'>> = ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'];
   sources.forEach(sourceKey => { const source: any = clone[sourceKey]; if (!source) return; ['add','update'].forEach(operation => { source[operation] = (source[operation] ?? []).filter((record: any) => allowed.has(patchProposalKey(sourceKey, operation as 'add' | 'update', String(record.id)))); }); });

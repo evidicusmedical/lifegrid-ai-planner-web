@@ -2,66 +2,48 @@ import { AppData, Event, Task, Category, Person, PersonEvent, Project, ProjectSt
 import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version.js';
 import { temporalErrors } from './temporal.js';
 
-export const universalSchema = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
-Return one JSON object only: {"lifegridPatchVersion":${AI_INTERCHANGE_VERSION},"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}.\nUse stable ids. Dates are YYYY-MM-DD and times are 24-hour HH:MM or null. Event timeStatus is all-day, timed, unknown, or approximate. Times are plain local calendar values: never emit timeZone, timeZoneMode, UTC timestamps, offsets, or conversions. Preserve entered dates and times; use endDate for overnight events. Unknown and all-day events use null startTime and endTime. Timed events require both valid HH:MM values. Adds require meaningful titles; updates may omit unchanged titles. Categories must be created before references. Supported eventKind values: ${EVENT_KIND_VALUES.join(', ')}. Projects are lightweight organizational tags for Tasks; Events derive Project Tag context through linked Tasks. Do not invent project health, progress, next actions, or milestone patch operations. Project status: active, paused, completed, archived. Task status: todo, in-progress, done, blocked; priority: low, medium, high, urgent. Ask clarifying questions for material ambiguity; do not invent names, dates, times, assignments, relationships, clinical/personal information, or unsupported fields. Preserve IDs for updates. Milestones in CURRENT context are optional project checkpoints, not tasks or events; do not invent or return milestone patch operations because v4 imports do not support them. Same-patch references may point to approved additions. Final changes must be valid JSON only.`;
+export const aiPromptContract = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
+
+OUTPUT ENVELOPE (return this exact shape, with raw JSON only):
+{"lifegridPatchVersion":4,"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}
+
+OPERATIONS AND IDENTITY
+Only add and update operations are supported. Use add only for a record that does not exist. Use update only with an exact stable ID from CURRENT LIFEGRID CONTEXT; never invent an update ID or use a name as an ID. Never place an existing ID under add. Updates contain only changed fields; omitted fields remain unchanged, null clears nullable fields, and empty relationship arrays clear relationships. Every update changes at least one field besides id. Unsupported deletion, removal, merge, archive, standalone rename, Project Operation, and milestone operation requests belong in warnings for human review.
+
+ENTITY GUIDE
+Tasks are actionable work with a completion state. Events are dated occurrences, commitments, shifts, trips, reminders, protected blocks, or Day Types. A Day Type is one all-day Event that summarizes capacity for a date, not a replacement for every Task. People Schedule is another person's availability, not the user's Task or Event. Projects are lightweight Project Tags for Tasks. Categories are shared Task/Event classifications. People are real referenced people. When classification is materially ambiguous, emit a warning instead of guessing.
+
+MEANINGFUL ADDITION IDENTITIES
+Every addition needs Task.name, Event.title, PeopleSchedule.title, Project.name, Category.label, or Person.label. The identity must be concrete and human-readable. Never emit empty, whitespace-only, Untitled, New task, New event, Task, Event, Item, TBD, Unknown, Placeholder, To do, Title, Name, punctuation-only, UUID-only, generated-ID-only, date-only, or time-only identities. A meaningful phrase containing one of those words is allowed. Prefer actionable, independently distinguishable Task names and specific Event titles. eventKind placeholder never permits a generic title.
+
+UNCERTAINTY
+When facts are insufficient, do not fabricate titles, names, dates, times, categories, Project Tags, people, assignments, completion, clinical facts, links, or stable IDs. Omit the uncertain record and put the minimum required clarification in warnings. For example, never emit {"id":"evt-generated-1","title":"Untitled event"}; instead emit {"warnings":["A possible appointment was mentioned for 2026-08-12, but its purpose was not identified. Clarify what the appointment is before adding an Event."]}.
+
+LOCAL TIME
+Dates are YYYY-MM-DD. Times are local 24-hour HH:MM or null. Never emit timeZone, timeZoneMode, displayTimeZone, UTC Event timestamps, offsets, or conversions. Never convert a supplied Event time. Use endDate for overnight Events. All-day Events use null times and timeStatus all-day; unknown-time Events use null times and timeStatus unknown; timed Events require both times. Never invent a clock time; a Task due date is not an Event time.
+
+EXAMPLES BEFORE CURRENT LIFEGRID CONTEXT
+Task add: {"id":"task-example-confirm-key-pickup","name":"Confirm apartment key-pickup window","category":"moving-logistics","dueDate":"2026-07-19","status":"todo","owner":"self","nextAction":"Call the leasing office and record the confirmed pickup window.","notes":null,"priority":"high","schedulingNotes":"Complete before departure.","projectId":null,"dueDateType":"real-deadline","triageStatus":"ready","parentTaskId":null,"linkedEventIds":[],"recurringGroupId":null}
+Timed Event add: {"id":"evt-example-unit-checkin","date":"2026-07-21","endDate":"2026-07-21","title":"Unit check-in","category":"work","startTime":"08:00","endTime":"08:30","timeStatus":"timed","color":"#dc2626","notes":"Bring identification and onboarding documents.","displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"fixed-appointment","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
+Unknown-time Event: {"id":"evt-example-key-pickup","date":"2026-07-20","endDate":"2026-07-20","title":"Apartment key pickup — time unconfirmed","category":"moving-logistics","startTime":null,"endTime":null,"timeStatus":"unknown","color":"#d97706","notes":null,"displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"placeholder","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
+Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Same-patch dependencies may reference a Category or Project added in this patch.
+
+Before final output, internally verify version 4, the exact supported keys and operations, meaningful additions, real update IDs, changed update fields, resolvable references, no duplicates, no Project Operations or milestone operations, no time-zone fields or invented dates/times, and unresolved facts as warnings. Do not output this checklist.`;
+export const universalSchema = aiPromptContract;
 
 export const generateUniversalStarterPrompt = () => `
 ROLE AND OBJECTIVE
-You prepare a human-reviewed LifeGrid v3 import patch from supplied information. Be model-agnostic, provider-independent, and local-first. Do not reveal private reasoning.
+Prepare a human-reviewed LifeGrid patch from supplied information. Do not reveal private reasoning. Extract observable facts, resolve existing versus new entities using stable IDs, and use warnings when safe classification or identity is unavailable.
 
-CAPABILITY AND SOURCE-ACCESS LIMITATIONS
-Do not claim to have read a source that was not available. Do not infer unreadable image or file contents. Process usable sources when another is unavailable; add a concise warning, and ask a focused clarification only if missing information prevents a safe patch.
-
-SOURCE INVENTORY
-Conceptually inventory every supplied user instruction, existing LifeGrid export, image, screenshot, photograph, PDF, table, spreadsheet/worksheet, email/message thread, calendar export, schedule, handwritten note, or narrative text. Internally distinguish accessible, unreadable, truncated, duplicated, conflicting, authoritative, new-information, and existing-record information.
-
-EVIDENCE EXTRACTION
-Use this sequence: inventory sources; extract observable facts; normalize supported facts; identify duplicates/conflicts; resolve existing versus new entities; classify facts into LifeGrid entities; construct the patch; validate it. Never convert unsupported inference into fact. Preserve decision-relevant constraints, conditionality, preparation, recovery, travel, dependencies, blockers, and material uncertainty in concise notes; do not copy whole source documents.
-
-TEMPORAL NORMALIZATION
-Dates are YYYY-MM-DD and times are 24-hour HH:MM. Relative dates need a reliable reference date. A timezone must come from the user/source and must not be invented. Intentional all-day events use null startTime and endTime; unknown time is not automatically all-day—consider a due-date task, reminder, placeholder, Day Type context, or warning. v3 has no end date for overnight events: do not use identical times unless supplied current data uses it and the user explicitly approves; ask when material.
-
-ENTITY RESOLUTION AND PRECEDENCE
-Match in order: exact stable ID; exact supported external ID; exact normalized label plus corroborating fields; strong semantic candidate; unresolved. Only the first three normally permit automatic update. Semantic similarity produces a warning, never an overwrite. Preserve IDs for updates. Namespaces are independent (a category ID and person ID may match as text). Resolve conflicts by: current user correction; current authoritative LifeGrid export for existing IDs/state; confirmed structured/official schedule; newer explicit source; older/less-specific source; inference. Inference never silently overrides sourced information.
-
-MATERIAL AMBIGUITY
-Ask the minimum focused questions when uncertainty could change identity, add versus update, date, timing, person, ownership, relationship, event versus task, completion, project/task status, duplicates, or sensitive personal data. Harmless uncertainty may be a note, warning, task, placeholder, or allowed null.
-
-LIFEGRID DOMAIN-FIELD REFERENCE
-${universalSchema()}
-Categories add require id, label, color. People add require id, label, color. Projects add require id, name, color, order, aliases (array), status (active|paused|completed|archived), notes (string|null). Tasks add require id, name, category, dueDate (YYYY-MM-DD|null), status (todo|in-progress|done|blocked), owner, nextAction (string|null), notes (string|null), priority (low|medium|high|urgent), schedulingNotes (string|null), projectId (string|null), dueDateType (real-deadline|target-date|someday-backlog|needs-clarification|project-subtask), triageStatus (ready|needs-review|blocked|waiting|duplicate-candidate|needs-scheduling|scheduled|backlog), parentTaskId (string|null), linkedEventIds (array), recurringGroupId (optional string). Events add require id, date, title, category, startTime/endTime (HH:MM|null), color, notes (string|null), displayPriority (1|2|3|4|5), showInGrid/showInExport (boolean), eventKind (${EVENT_KIND_VALUES.join('|')} or omitted), linkedTaskIds (array), aiNotes/sourceNotes (string|null), recurringGroupId (optional string). PeopleSchedule add requires id, person, date, title, notes (string|null), color, with optional startTime/endTime and recurringGroupId. Updates require existing id and only changed supported fields: omitted fields remain unchanged; explicit null clears nullable fields; empty relationship arrays clear those links.
-
-PLANNING POLICY
-Fixed commitments remain fixed unless explicitly changed. Due dates are not scheduled times. Day Types describe identity, constraints, and capacity. Do not turn flexible tasks into timed events without support. Travel, preparation, recovery, and protected time consume capacity; do not displace protected time or move real deadlines without authorization. Target dates can adjust when overloaded; backlog need not be calendar entries; Day Type notes summarize context.
-
-PATCH-CONSTRUCTION RULES
-Use only v3 top-level keys. No deletion or merge operations. Parents must precede same-patch dependents. Use add only for new IDs and update only for existing IDs.
-
-DETERMINISTIC FINAL VALIDATION
-Before final output verify valid JSON; correct lifegridPatchVersion; exact supported keys; no Markdown/comments/unsupported fields; unique proposed IDs; no add reusing an existing ID; update IDs exist; valid enums/dates/times; timed same-day end later than start; valid category/project/person/task-parent/linked references; no parent cycles; non-empty required names/titles; no obvious duplicate additions; and parent records precede dependents.
-
-FINAL-OUTPUT RULES
-Before final patch mode you may ask concise questions. In final patch mode return JSON only.`;
+${aiPromptContract()}`;
 
 export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
   const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);
-  const events = data.events.filter(e => inside(e.date));
-  const schedule = data.personEvents.filter(e => inside(e.date));
-  const categoryIds = new Set(events.map(e => e.category));
-  const taskIds = new Set(events.flatMap(e => e.linkedTaskIds ?? []));
-  const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate));
-  tasks.forEach(t => categoryIds.add(t.category));
-  const context = {
-    metadata: { application: 'LifeGrid', applicationVersion: APP_VERSION, exportFormatVersion: AI_INTERCHANGE_VERSION, exportedAt: new Date().toISOString(), calendarId: calendar.id, calendarName: calendar.name, selectedDateRange: range },
-    categories: data.categories.filter(c => categoryIds.has(c.id) || c.id === 'other').map((c, order) => ({ ...c, order, protected: c.id === 'other' })),
-    people: data.people.filter(p => schedule.some(s => s.person === p.id)).concat(data.people.filter(p => !schedule.some(s => s.person === p.id))),
-    projects: data.projects,
-    tasks,
-    events,
-    peopleSchedule: schedule,
-    milestones: data.milestones ?? [],
-  };
-  return `Export Current LifeGrid to AI\nYou can analyze, resolve conflicts, reorganize tasks, create/update projects, schedule entries, Day Types, categories, people, and workload plans. Do not apply changes yourself: return JSON for human review.\n\n${universalSchema()}\n\nCURRENT LIFEGRID CONTEXT\n${JSON.stringify(context, null, 2)}`;
+  const events = data.events.filter(e => inside(e.date)); const schedule = data.personEvents.filter(e => inside(e.date));
+  const categoryIds = new Set(events.map(e => e.category)); const taskIds = new Set(events.flatMap(e => e.linkedTaskIds ?? []));
+  const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate)); tasks.forEach(t => categoryIds.add(t.category));
+  const context = { metadata: { application:'LifeGrid', applicationVersion:APP_VERSION, exportFormatVersion:AI_INTERCHANGE_VERSION, exportedAt:new Date().toISOString(), calendarId:calendar.id, calendarName:calendar.name, selectedDateRange:range }, categories:data.categories.filter(c=>categoryIds.has(c.id)||c.id==='other'), people:data.people, projects:data.projects, tasks, events, peopleSchedule:schedule };
+  return `Export Current LifeGrid to AI\n${aiPromptContract()}\n\nCURRENT LIFEGRID CONTEXT\n${JSON.stringify(context, null, 2)}`;
 };
 
 const today = () => new Date().toISOString().split('T')[0];
@@ -189,192 +171,12 @@ ${encodeProjects(data)}
 ` : ''}`;
 
 // ─── Concrete schema + example the AI can mirror exactly ─────────────────────
-const schemaReference = (categories: Category[]): string => {
-  const ids = categories.map(c => c.id);
-  const catUnion = ids.map(i => `"${i}"`).join(' | ') || '"other"';
-  const colorLines = categories.map(c => `${c.id}=${c.color}`).join('  ');
-  const firstCat = ids[0] ?? 'other';
-  return `
-${aiReviewInstructions()}
+const schemaReference = (_categories: Category[]): string => aiPromptContract();
 
-==================================================
-OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON, nothing else
-==================================================
+const patchSchemaReference = (_categories: Category[]): string => aiPromptContract();
 
-{
-  "lifegridPatchVersion": 2,
-  "notes": [],
-  "warnings": [],
-  "projects": {
-    "add": [],
-    "update": [],
-    "delete": []
-  },
-  "events": {
-    "add": [
-      {
-        "id": "evt-001",
-        "date": "YYYY-MM-DD",
-        "title": "Short event name",
-        "category": "${firstCat}",
-        "tag": "${firstCat}",
-        "startTime": "09:00",
-        "endTime": "10:00",
-        "color": "${categories[0]?.color ?? '#6b7280'}",
-        "notes": null,
-        "displayPriority": 2,
-        "showInGrid": true,
-        "showInExport": true,
-        "eventKind": "fixed-appointment",
-        "linkedTaskIds": [],
-        "aiNotes": null,
-        "sourceNotes": null
-      }
-    ],
-    "update": [],
-    "delete": []
-  },
-  "tasks": {
-    "add": [
-      {
-        "id": "task-001",
-        "name": "Task name",
-        "category": "${firstCat}",
-        "tag": "${firstCat}",
-        "dueDate": "YYYY-MM-DD",
-        "dueDateType": "target-date",
-        "triageStatus": "ready",
-        "status": "todo",
-        "owner": "Me",
-        "priority": "medium",
-        "projectId": null,
-        "parentTaskId": null,
-        "linkedEventIds": [],
-        "nextAction": "First step",
-        "notes": null,
-        "schedulingNotes": null
-      }
-    ],
-    "update": [],
-    "delete": [],
-    "complete": []
-  }
-}
-
-FIELD RULES — follow exactly:
-  date / dueDate : YYYY-MM-DD only (today is ${today()})
-  category/tag   : ${catUnion}
-  startTime      : "HH:MM" 24-hour, or null
-  endTime        : "HH:MM" 24-hour, or null
-  task status    : "todo" | "in-progress" | "done" | "blocked"
-  priority       : "low" | "medium" | "high" | "urgent"
-  dueDateType    : "real-deadline" | "target-date" | "someday-backlog" | "needs-clarification" | "project-subtask"
-  triageStatus   : "ready" | "needs-review" | "blocked" | "waiting" | "duplicate-candidate" | "needs-scheduling" | "scheduled" | "backlog"
-  project status : "active" | "paused" | "completed" | "archived"
-  eventKind      : optional ${EVENT_KIND_RULE}; omit if unknown
-  color          : hex that matches category when possible — ${colorLines}
-  projectId      : optional project id from PROJECTS, or null
-
-EXTRA RULES:
-  - Use ONLY the category ids listed above. If nothing fits, use "other".
-  - To EDIT an existing project/event/task, put its exact stable "id" in the update array with only changed fields.
-  - To REMOVE an existing project/event/task, put its exact stable "id" string in the delete array.
-  - Never delete by title/date/time matching. Title/date/time matches are review-only evidence for later safe reorganization support.
-  - If eventKind is missing, treat it as unknown and not safe to delete.
-  - To complete tasks, prefer tasks.complete with stable task IDs.
-  - Omit arrays or leave them empty if there are no entries.
-  - If a year is missing from a date, use ${new Date().getFullYear()} (or ${nextYear()} if the date has already passed).
-  - Multi-day events: one entry per calendar day.
-  - Recurring events: expand each occurrence individually for the next 3 months.
-  - Do NOT wrap the JSON in markdown code fences.
-  - Do NOT include any text before or after the JSON.
-==================================================
-`;
-};
-
-const patchSchemaReference = (categories: Category[]): string => {
-  const ids = categories.map(c => c.id);
-  const catUnion = ids.map(i => `"${i}"`).join(' | ') || '"other"';
-  return `
-${aiReviewInstructions()}
-
-==================================================
-OUTPUT FORMAT — return ONLY this LifeGrid patch v2 JSON
-==================================================
-
-{
-  "lifegridPatchVersion": 2,
-  "notes": [],
-  "warnings": [],
-  "projects": {
-    "add": [],
-    "update": [],
-    "delete": []
-  },
-  "events": {
-    "add": [],
-    "update": [],
-    "delete": [],
-    "mergeIntoDayType": [],
-    "convertTimedBlockToTask": [],
-    "candidateDeletes": []
-  },
-  "tasks": {
-    "add": [],
-    "update": [],
-    "delete": [],
-    "complete": []
-  },
-  "reviewItems": {
-    "add": []
-  }
-}
-
-PROJECT FIELDS:
-  id, name, color, order, aliases, status ("active" | "paused" | "completed" | "archived"), notes
-
-EVENT FIELDS:
-  id, date, title, category/tag, startTime, endTime, color, notes,
-  displayPriority (1-5), showInGrid, showInExport, eventKind, linkedTaskIds, aiNotes, sourceNotes, recurringGroupId
-  eventKind is optional: ${EVENT_KIND_RULE}. Missing eventKind means unknown and is not safe to delete.
-
-TASK FIELDS:
-  id, name, category/tag, dueDate, dueDateType, triageStatus, status, owner, priority,
-  projectId, parentTaskId, linkedEventIds, nextAction, notes, schedulingNotes, recurringGroupId
-
-RULES:
-  - Return raw JSON only. No markdown fences and no explanation.
-  - Do not repeat unchanged projects, events, or tasks.
-  - Category/tag must be one of: ${catUnion}. Tags and categories are the same LifeGrid classification system. Use "other" if needed.
-  - For simple task completion, put stable task IDs in tasks.complete.
-  - Use exact stable IDs for update/delete. Do not delete items without stable IDs.
-  - Never delete by title/date/time matching. Title/date/time matches are review-only evidence for later safe reorganization support.
-  - Treat missing eventKind as unknown and not safe to delete.
-  - Use project IDs when known. If matching by project name or alias is uncertain, add a warning instead of guessing.
-  - Do not move real-deadline tasks unless I explicitly approved the move.
-  - If something is ambiguous, add a short string to warnings or notes instead of guessing.
-
-Backward compatibility accepted by LifeGrid, but prefer patch v2:
-  new_events, updated_events, deleted_event_ids, new_tasks, updated_tasks, completed_task_ids, deleted_task_ids, notes
-==================================================
-`;
-};
-
-// ─── Compact event encoding (collapses repeated titles to cut prompt size) ────
-const eventLinkSummary = (e: Event): string => [
-  `id:${e.id}`,
-  `kind:${e.eventKind ?? 'unknown'}`,
-  (e.linkedTaskIds?.length ? `linkedTaskIds:${JSON.stringify(e.linkedTaskIds)}` : ''),
-  (e.recurringGroupId ? `recurringGroupId:${e.recurringGroupId}` : ''),
-].filter(Boolean).join('  ');
-
-const taskLinkSummary = (t: Task): string => [
-  `id:${t.id}`,
-  `project:${t.projectId ?? 'none'}`,
-  (t.parentTaskId ? `parentTaskId:${t.parentTaskId}` : ''),
-  (t.linkedEventIds?.length ? `linkedEventIds:${JSON.stringify(t.linkedEventIds)}` : ''),
-  (t.recurringGroupId ? `recurringGroupId:${t.recurringGroupId}` : ''),
-].filter(Boolean).join('  ');
+const eventLinkSummary = (event: Event): string => event.linkedTaskIds?.length ? `tasks:${event.linkedTaskIds.join(',')}` : '';
+const taskLinkSummary = (task: Task): string => task.linkedEventIds?.length ? `events:${task.linkedEventIds.join(',')}` : '';
 
 const encodeEventsCompact = (events: Event[]): string => {
   if (events.length === 0) return '  (none)';
@@ -470,7 +272,7 @@ const OBJECTIVE: Record<PromptType, string> = {
 1. Events that overlap in time on the same day
 2. Same-day commitments that are physically impossible (e.g. two cities)
 3. Tasks due on already-overloaded days
-List each conflict clearly, then propose "update"/"delete"/"add" fixes.`,
+List each conflict clearly, then propose "update"/"add" fixes.`,
   freetime: `Focus ONLY on free time:
 1. Identify open days and time gaps in the focus period
 2. Suggest where unscheduled tasks could be placed
@@ -937,7 +739,7 @@ Analyze the schedule below and return a JSON object of proposed changes I can im
 ${rangeHeader}${OBJECTIVE[promptType]}
 
 Return your analysis as plain text first, then end with the JSON change set.
-Only include items in "add"/"update"/"delete" that you are actually recommending — leave arrays empty or omit them if there is nothing to change.
+Only include items in "add"/"update" that you are actually recommending — leave arrays empty or omit them if there is nothing to change.
 
 ==================================================
 ${scoped ? `EVENTS IN FOCUS PERIOD (${focusEvents.length})` : `MY EVENTS (${data.events.length})`}
@@ -1163,7 +965,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   if (parsed.peopleSchedule || parsed.availability) {
     const source = parsed.peopleSchedule ?? parsed.availability;
     const peopleAfterAdds = new Set([...(existingData?.people.map(p => p.id) ?? []), ...((result.people?.add ?? []).map(p => p.id))]);
-    const add = unique(Array.isArray(source.add) ? source.add : [], 'schedule entry').filter(e => peopleAfterAdds.has(e.person) && fixDate(e.date)).map((e, i) => ({ id: String(e.id), person: String(e.person), date: fixDate(e.date)!, title: String(e.title ?? 'Availability'), notes: e.notes ?? null, color: validHex(e.color) ? e.color : '#6b7280', startTime: fixTime(e.startTime), endTime: fixTime(e.endTime) } as PersonEvent));
+    const add = unique(Array.isArray(source.add) ? source.add : [], 'schedule entry').filter(e => peopleAfterAdds.has(e.person) && fixDate(e.date)).map((e, i) => ({ id: String(e.id), person: String(e.person), date: fixDate(e.date)!, title: String(e.title ?? ''), notes: e.notes ?? null, color: validHex(e.color) ? e.color : '#6b7280', startTime: fixTime(e.startTime), endTime: fixTime(e.endTime) } as PersonEvent));
     result.peopleSchedule = { add, update: (Array.isArray(source.update) ? source.update : []).filter((e: any) => e?.id).map((e: any) => ({ ...e, id: String(e.id), ...(e.date ? { date: fixDate(e.date) } : {}) })) };
   }
 
@@ -1359,7 +1161,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
       return {
         id:        String(e.id ?? `imp-evt-${Date.now()}-${i}`),
         date,
-        title:     String(e.title ?? 'Untitled'),
+        title:     String(e.title ?? ''),
         category:  cat,
         startTime: fixTime(e.startTime),
         endTime:   fixTime(e.endTime),
@@ -1385,7 +1187,7 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
     .filter(t => t && typeof t === 'object')
     .map((t, i) => ({
       id:              String(t.id ?? `imp-task-${Date.now()}-${i}`),
-      name:            String(t.name ?? 'Untitled Task'),
+      name:            String(t.name ?? ''),
       category:        validCats.has(t.category ?? t.tag ?? (Array.isArray(t.tags) ? t.tags[0] : undefined)) ? (t.category ?? t.tag ?? t.tags?.[0]) : 'other',
       dueDate:         t.dueDate ? fixDate(t.dueDate) : null,
       status:          VALID_STA.has(t.status) ? t.status : 'todo',
@@ -1462,7 +1264,7 @@ function normalizeProjects(arr: any[]): Project[] {
     .filter(p => p && typeof p === 'object')
     .map((p, i) => ({
       id:      String(p.id ?? `imp-proj-${Date.now()}-${i}`),
-      name:    String(p.name ?? 'Untitled Project'),
+      name:    String(p.name ?? ''),
       color:   String(p.color ?? '#6b7280'),
       order:   typeof p.order === 'number' ? p.order : i,
       aliases: Array.isArray(p.aliases) ? p.aliases.map(String) : [],

@@ -1,9 +1,10 @@
 import type { AppData } from '../types';
 import { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
+import { identityField, validateAddedEntityIdentity } from './aiEntityQuality.js';
 export { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
 
 export type ValidationSeverity = 'blocking' | 'warning' | 'info';
-export type ValidationFinding = { code: string; severity: ValidationSeverity; section?: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule'|'patch'; operation?: 'add'|'update'; recordId?: string; message: string; dependencyRecordIds?: string[] };
+export type ValidationFinding = { code: string; severity: ValidationSeverity; section?: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule'|'patch'; operation?: 'add'|'update'; recordId?: string; fieldPath?: string; correction?: string; message: string; dependencyRecordIds?: string[] };
 export type PatchReadiness = { selectedCount: number; blockingCount: number; warningCount: number; infoCount: number; canApply: boolean; disabledReason: string | null };
 const groups = ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'] as const;
 const collection: Record<string, keyof AppData> = { categories: 'categories', people: 'people', projects: 'projects', tasks: 'tasks', events: 'events', peopleSchedule: 'personEvents' };
@@ -26,20 +27,27 @@ export function preflightPatch(current: AppData, patch: any, selected?: Set<stri
     if (id && seen.has(identity)) findings.push({ code:'duplicate-operation', severity:'blocking', section:item.group, operation:item.operation, recordId:id, message:`Conflicting operations target ${item.group} ${id}.` });
     else if (id) seen.set(identity, item.key);
     if (item.operation === 'add' && id) addIds[item.group].add(id);
+    if (item.operation === 'add') {
+      const issue = validateAddedEntityIdentity(item.group, item.record);
+      if (issue) findings.push({ code:issue.code, severity:issue.severity, section:item.group, operation:'add', recordId:id, fieldPath:`${item.group}.add[${item.index}].${issue.field}`, correction:issue.correction, message:issue.explanation });
+      const existing = (current as any)[collection[item.group]]?.find((record: any) => record.id === id);
+      if (existing) findings.push({ code:'ADDITION_ID_ALREADY_EXISTS', severity:'blocking', section:item.group, operation:'add', recordId:id, fieldPath:`${item.group}.add[${item.index}].id`, correction:'Use update with this exact existing ID, or choose a new ID.', message:`${item.group} add reuses an existing ID.` });
+    }
+    if (item.operation === 'update' && Object.keys(item.record ?? {}).filter(field => field !== 'id').length === 0) findings.push({ code:'UPDATE_MISSING_CHANGED_FIELDS', severity:'blocking', section:item.group, operation:'update', recordId:id, fieldPath:`${item.group}.update[${item.index}]`, correction:'Include at least one changed field besides id.', message:`${item.group} update contains no changed fields.` });
   });
   const next = clone(current) as any;
   // Establish all additions first so same-patch references resolve regardless of ordering.
   for (const group of groups) {
     const records: any[] = next[collection[group]] ?? [];
     for (const item of active.filter(x => x.group === group && x.operation === 'add')) {
-      const r = item.record; if (!r?.id || records.some(x => x.id === r.id)) { if (r?.id) findings.push({ code:'duplicate-id', severity:'blocking', section:group, operation:'add', recordId:r.id, message:`${group} id ${r.id} already exists.` }); continue; }
+      const r = item.record; if (!r?.id || records.some(x => x.id === r.id)) { if (r?.id) findings.push({ code:'ADDITION_ID_ALREADY_EXISTS', severity:'blocking', section:group, operation:'add', recordId:r.id, message:`${group} id ${r.id} already exists.` }); continue; }
       records.push(clone(r));
     }
     next[collection[group]] = records;
   }
   for (const group of groups) for (const item of active.filter(x => x.group === group && x.operation === 'update')) {
     const r = item.record; const records: any[] = next[collection[group]] ?? []; const index = records.findIndex(x => x.id === r?.id);
-    if (index < 0) { findings.push({ code:'update-target-missing', severity:'blocking', section:group, operation:'update', recordId:r?.id, message:`Cannot update missing ${group} id: ${r?.id ?? 'missing'}.` }); continue; }
+    if (index < 0) { findings.push({ code:'UPDATE_TARGET_NOT_FOUND', severity:'blocking', section:group, operation:'update', recordId:r?.id, message:`Cannot update missing ${group} id: ${r?.id ?? 'missing'}.` }); continue; }
     if (group === 'categories' && r.id === 'other') { findings.push({ code:'protected-identity', severity:'blocking', section:group, operation:'update', recordId:r.id, message:'The protected Other category cannot be updated by an AI patch.' }); continue; }
     const merged = { ...records[index] };
     Object.keys(r).forEach(field => { if (field !== 'id' && has(r, field)) merged[field] = clone(r[field]); });

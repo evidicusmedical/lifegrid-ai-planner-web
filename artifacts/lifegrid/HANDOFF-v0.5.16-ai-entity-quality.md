@@ -1,0 +1,4 @@
+# v0.5.16 handoff
+PR #37 is merged in starting commit `58ef8c1` and includes head `7b5e7c84d556f06f43a1c5caa3360795953540d9`. Baseline was v0.5.15.5 / package 0.5.15-5, interchange 4, backup schema 7. AI generators and parser/review paths were audited. The stale starter wording identified v3/time-zone/deletion semantics; review labels read sparse patch fields and normalizers manufactured Untitled defaults.
+
+v0.5.16 centralizes prompt wording in `aiPromptContract`, removes exported current-context display timezone, adds identity normalization and structured blocking findings, and uses merged existing records for update labels. Tests: 61 pass, 0 fail, 0 skipped. Benchmarks and deployment were not run at handoff time. Branch: `codex/implement-v0.5.16-ai-entity-quality`; PR URL and commit are filled after release tooling returns them. Known limitation: external AI behavior and physical mobile devices were not tested.

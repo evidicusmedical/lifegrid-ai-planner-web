@@ -17,6 +17,7 @@ import { DayTypePreview } from '../components/DayTypePreview';
 import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, ExportDensity, getDenseDay, getExportDimensions } from '../lib/gridPublication';
 import { getDateTemporalState, truncatePreviewNote, validateExportRange } from '../lib/gridAwareness';
 import { getDisplayedTemporalOccurrence } from '../lib/temporal';
+import { indexEventsByDisplayedDate } from '../lib/performanceSelectors';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -246,17 +247,8 @@ export const GridView = () => {
 
   const eventsForGrid = exporting ? exportFilteredEvents.filter(event => event.showInExport !== false) : events;
 
-  const gridData = useMemo(() => {
-    const map = new Map<string, Event[]>();
-    eventsForGrid.forEach(e => {
-      const displayed = getDisplayedTemporalOccurrence(e, activeCalendar.displayTimeZone);
-      const arr = map.get(displayed.displayedStartDate) ?? [];
-      arr.push(e);
-      map.set(displayed.displayedStartDate, arr);
-    });
-    map.forEach(arr => arr.sort(sortEventsForCell));
-    return map;
-  }, [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
+  // Index once per dataset/timezone change; annual cells only perform O(1) lookups.
+  const gridData = useMemo(() => indexEventsByDisplayedDate(eventsForGrid, activeCalendar.displayTimeZone, sortEventsForCell), [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>

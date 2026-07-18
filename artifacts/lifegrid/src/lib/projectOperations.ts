@@ -1,4 +1,5 @@
 import type { Event, Milestone, Project, Task } from '../types';
+import { indexProjectUsage } from './performanceSelectors.js';
 
 const dateOnly = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 /** Preserve legacy milestone records for schema-6 backup compatibility. Milestones have no UI in v0.5.2. */
@@ -33,13 +34,7 @@ export const findProjectTagOptions = (projects: readonly Project[], query: strin
 export const projectTagQuickCreateValidation = (query: string, projects: readonly Project[]) =>
   query.trim() ? validateProjectTag({ name: query, color: '#2563eb', aliases: [] }, projects) : { ok: false as const, error: 'Enter a Project Tag name first.' };
 export interface ProjectTagUsage { openTasks: number; completedTasks: number; totalTasks: number; relatedEvents: number; }
-export const projectTagUsage = (projects: readonly Project[], tasks: readonly Task[], events: readonly Event[]): Record<string, ProjectTagUsage> => {
-  const result: Record<string, ProjectTagUsage> = Object.fromEntries(projects.map(p => [p.id, {openTasks:0,completedTasks:0,totalTasks:0,relatedEvents:0}]));
-  const taskProject = new Map(tasks.map(t => [t.id, t.projectId]));
-  tasks.forEach(t => { const usage = t.projectId ? result[t.projectId] : undefined; if (usage) { usage.totalTasks++; t.status === 'done' ? usage.completedTasks++ : usage.openTasks++; } });
-  events.forEach(e => new Set((e.linkedTaskIds ?? []).map(id => taskProject.get(id)).filter((id): id is string => !!id && !!result[id])).forEach(id => result[id].relatedEvents++));
-  return result;
-};
+export const projectTagUsage = indexProjectUsage;
 export const eventProjectTags = (event: Event, tasks: readonly Task[], projects: readonly Project[]) => {
   const taskProjects = new Map(tasks.map(t => [t.id, t.projectId])); const ids = new Set((event.linkedTaskIds ?? []).map(id => taskProjects.get(id)).filter((id): id is string => !!id));
   return sortProjectTags(projects).filter(p => ids.has(p.id));

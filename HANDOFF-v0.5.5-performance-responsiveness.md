@@ -1,0 +1,9 @@
+# v0.5.5 handoff
+
+Repository `/workspace/lifegrid-ai-planner-web`, checkout starting main-equivalent commit `2c6e62f` (merge PR #20) contains expected preceding head `aff0ac58904039510ab2ce25508c1ef004b029e0`. Baseline APP_VERSION/package were v0.5.4/0.5.4; AI interchange was 4 and backup schema was 6. Production build command is `pnpm --filter @workspace/lifegrid build`.
+
+Audit: routes conditionally mount page components in App.tsx. Grid indexed events but performed conversion/sorting during its route render; Tasks repeatedly derives filters/sorts and now has shared indexing primitives; Settings eagerly ran temporal analysis in state initialization. Context constructs actions/value in render (remaining limitation); storage serializes the complete store after store updates. The highest measured Node cost at large scale is full JSON serialization (about 80ms), then backup serialization.
+
+Implemented: deterministic benchmark; event-by-date, task, and project-usage indexes; Grid memoized index; deferred Settings review; unchanged review strict-noise analyzer; skip byte-identical synchronous persistence writes. Rejected: persistence debounce (would weaken durability without flush coverage), virtualization (not measured necessary), and export lazy split (offline behavior not verified). Review cache is mount-local, invalidates on active calendar change, and recomputes only upon opening/Refresh; unrelated tag changes do not trigger it.
+
+Browser tooling was not installed or run; no browser or production timings are claimed. Run the manual procedure in PERFORMANCE-BASELINE. Build chunk output and PWA implications are in BUNDLE-ANALYSIS. Remaining risks: context-wide rerenders, full-store serialization, large DOM rendering, and image-export bundle boundary. Recommended v0.5.6: browser profiler/traces plus safe action/data context split if measured.

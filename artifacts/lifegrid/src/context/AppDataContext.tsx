@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
-  AppData, Event, Task, PersonEvent, Category, Person, Project, Milestone, Calendar, Store,
+  AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store,
   EventDisplayPriority, EventKind, ProjectStatus, TaskDueDateType, TaskTriageStatus,
 } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
@@ -12,7 +12,7 @@ import { browserTimeZone, migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
 import { moveEntity, normalizeEntityOrder } from '../lib/entityOrder';
 import { classifyStorageError } from '../lib/storageError';
-import { normalizeMilestones } from '../lib/projectOperations';
+import { normalizeMilestones, planProjectTagDeletion } from '../lib/projectOperations';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -50,12 +50,8 @@ export interface AppDataContextType extends AppData {
   // Project CRUD
   addProject: (project: Project) => void;
   updateProject: (id: string, update: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
+  deleteProject: (id: string, policy?: 'clear' | 'reassign', destinationId?: string) => void;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
-  addMilestone: (milestone: Milestone) => void;
-  updateMilestone: (id: string, update: Partial<Milestone>) => void;
-  deleteMilestone: (id: string) => void;
-  reorderMilestones: (projectId: string, fromIndex: number, toIndex: number) => void;
 
   // Calendar versioning
   createCalendar: (name: string, seed?: CalendarSeedMode) => string;
@@ -370,19 +366,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateProject = (id: string, update: Partial<Project>) =>
     mutate(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...update } : p)) }));
   const reorderProjects = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, projects: normalizeEntityOrder(moveEntity(d.projects, fromIndex, toIndex)) }));
-  const deleteProject = (id: string) =>
-    mutate(d => ({
-      ...d,
-      projects: d.projects.filter(p => p.id !== id),
-      milestones: d.milestones.filter(m => m.projectId !== id),
-      // Detach tasks from deleted project
-      tasks: d.tasks.map(t => (t.projectId === id ? { ...t, projectId: null } : t)),
-    }));
-
-  const addMilestone = (milestone: Milestone) => mutate(d => ({ ...d, milestones: normalizeMilestones([...d.milestones, { ...milestone, order: d.milestones.filter(m => m.projectId === milestone.projectId).length }], d.projects.map(p => p.id)) }));
-  const updateMilestone = (id: string, update: Partial<Milestone>) => mutate(d => ({ ...d, milestones: normalizeMilestones(d.milestones.map(m => m.id === id ? { ...m, ...update } : m), d.projects.map(p => p.id)) }));
-  const deleteMilestone = (id: string) => mutate(d => ({ ...d, milestones: normalizeMilestones(d.milestones.filter(m => m.id !== id), d.projects.map(p => p.id)) }));
-  const reorderMilestones = (projectId: string, fromIndex: number, toIndex: number) => mutate(d => { const mine=d.milestones.filter(m=>m.projectId===projectId); const moved=moveEntity(mine,fromIndex,toIndex); const others=d.milestones.filter(m=>m.projectId!==projectId); return {...d,milestones: normalizeMilestones([...others,...moved],d.projects.map(p=>p.id))}; });
+  const deleteProject = (id: string, policy?: 'clear' | 'reassign', destinationId?: string) =>
+    mutate(d => { const plan = planProjectTagDeletion(d, id, policy, destinationId); if (!plan.ok) throw new Error(plan.error); return { ...d, ...plan.value }; });
 
   // ── Calendar versioning ──
   const createCalendar = (name: string, seed: CalendarSeedMode = 'empty'): string => {
@@ -609,7 +594,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPersonEvent, updatePersonEvent, deletePersonEvent,
         addCategory, updateCategory, deleteCategory, reorderCategories,
         addPerson, updatePerson, deletePerson, reorderPeople,
-        addProject, updateProject, deleteProject, reorderProjects, addMilestone, updateMilestone, deleteMilestone, reorderMilestones,
+        addProject, updateProject, deleteProject, reorderProjects,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar, updateCalendarDisplayTimeZone,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,

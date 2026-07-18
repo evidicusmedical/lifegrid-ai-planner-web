@@ -23,6 +23,7 @@ import { exportFilename } from '../lib/exportFilenames';
 import { analyzeTemporalReview, temporalSummary } from '../lib/temporal';
 import { compareReviewFindings, reviewRefreshMessage } from '../lib/timeReview';
 import { buildIcsExport } from '../lib/icsExport';
+import { planProjectTagDeletion, projectTagUsage, sortProjectTags, validateProjectTag } from '../lib/projectOperations';
 import { EventSheet } from '../components/EventSheet';
 import { PersonEventSheet } from '../components/PersonEventSheet';
 
@@ -39,7 +40,7 @@ export const SettingsView = () => {
     <div className="flex flex-col h-full bg-background overflow-y-auto">
       <div className="flex-none p-4 pb-3 border-b border-border bg-card sticky top-0 z-10">
         <h1 className="text-xl font-bold tracking-tight">Settings</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Customize categories, people, projects, versions, and your data.</p>
+        <p className="text-xs text-muted-foreground mt-0.5">Customize categories, people, Project Tags, versions, and your data.</p>
       </div>
 
       <div className="p-4 pb-24 space-y-6">
@@ -310,163 +311,21 @@ function CategoryRow({ cat, idx, total, onUpdate, onDelete, onMoveUp, onMoveDown
   );
 }
 
-// ─── Projects ────────────────────────────────────────────────────────────────
+// ─── Project Tags ───────────────────────────────────────────────────────────
 function ProjectManager() {
-  const { projects, tasks, addProject, updateProject, deleteProject } = useAppData();
-  const [adding, setAdding] = useState(false);
-  const [label, setLabel] = useState('');
-  const [color, setColor] = useState(PRESET_COLORS[2]);
-
-  const taskCountForProject = (id: string) => tasks.filter(t => t.projectId === id).length;
-
-  const submit = () => {
-    const l = label.trim();
-    if (!l) { toast.error('Enter a project name'); return; }
-    const id = `proj-${Date.now()}`;
-    addProject({ id, name: l, color, order: projects.length, aliases: [], status: 'active', notes: null });
-    setLabel(''); setColor(PRESET_COLORS[2]); setAdding(false);
-    toast.success(`Added project "${l}"`);
-  };
-
-  return (
-    <Section icon={<FolderOpen size={16} />} title="Projects" subtitle="Use projects for large efforts; keep tasks small and actionable.">
-      {projects.length === 0 && !adding && (
-        <p className="text-xs text-muted-foreground text-center py-2">No projects yet — add one to group related subtasks for focus mode.</p>
-      )}
-      {[...projects].sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name)).map(proj => (
-        <ProjectRow
-          key={proj.id}
-          proj={proj}
-          taskCount={taskCountForProject(proj.id)}
-          onUpdate={updateProject}
-          onDelete={deleteProject}
-        />
-      ))}
-
-      {adding ? (
-        <div className="p-2 rounded-lg border border-border space-y-2">
-          <Input value={label} onChange={e => setLabel(e.target.value)} placeholder="Project name…" className="h-8 text-xs" autoFocus data-testid="input-new-project" />
-          <ColorPicker value={color} onChange={setColor} />
-          <div className="flex gap-2">
-            <Button size="sm" onClick={submit} className="flex-1 h-8" data-testid="button-save-project">Add</Button>
-            <Button size="sm" variant="outline" onClick={() => { setAdding(false); setLabel(''); }} className="flex-1 h-8">Cancel</Button>
-          </div>
-        </div>
-      ) : (
-        <Button size="sm" variant="secondary" onClick={() => setAdding(true)} className="w-full gap-1 h-9" data-testid="button-add-project">
-          <Plus size={14} /> Add project
-        </Button>
-      )}
-    </Section>
-  );
-}
-
-function ProjectRow({ proj, taskCount, onUpdate, onDelete }: {
-  proj: Project; taskCount: number;
-  onUpdate: (id: string, u: Partial<Project>) => void;
-  onDelete: (id: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [label, setLabel] = useState(proj.name);
-  const [color, setColor] = useState(proj.color);
-  const [order, setOrder] = useState(String(proj.order ?? 0));
-  const [aliases, setAliases] = useState((proj.aliases ?? []).join(', '));
-  const [status, setStatus] = useState<ProjectStatus>(proj.status ?? 'active');
-  const [notes, setNotes] = useState(proj.notes ?? '');
-
-  if (editing) {
-    return (
-      <div className="p-2 rounded-lg border border-border space-y-2">
-        <Input value={label} onChange={e => setLabel(e.target.value)} className="h-8 text-xs" />
-        <ColorPicker value={color} onChange={setColor} />
-        <details className="rounded-lg border border-border bg-muted/20 p-2 group">
-          <summary className="cursor-pointer list-none text-xs font-semibold text-foreground flex items-center justify-between">
-            Advanced project details
-            <span className="text-[10px] text-muted-foreground group-open:hidden">Show</span>
-          </summary>
-          <div className="space-y-2 mt-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] font-semibold text-muted-foreground">Order</label>
-                <Input type="number" value={order} onChange={e => setOrder(e.target.value)} className="h-8 text-xs" />
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold text-muted-foreground">Status</label>
-                <select
-                  value={status}
-                  onChange={e => setStatus(e.target.value as ProjectStatus)}
-                  className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
-                >
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="completed">Completed</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground">Aliases</label>
-              <Input value={aliases} onChange={e => setAliases(e.target.value)} placeholder="Comma-separated alternate names" className="h-8 text-xs" />
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground">Notes</label>
-              <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional project context..." className="text-xs min-h-16" />
-            </div>
-          </div>
-        </details>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => {
-            onUpdate(proj.id, {
-              name: label.trim() || proj.name,
-              color,
-              order: Number.isFinite(Number(order)) ? Number(order) : (proj.order ?? 0),
-              aliases: aliases.split(',').map(a => a.trim()).filter(Boolean),
-              status,
-              notes: notes.trim() || null,
-            });
-            setEditing(false);
-          }} className="flex-1 h-8">Save</Button>
-          <Button size="sm" variant="outline" onClick={() => {
-            setEditing(false); setLabel(proj.name); setColor(proj.color); setOrder(String(proj.order ?? 0));
-            setAliases((proj.aliases ?? []).join(', ')); setStatus(proj.status ?? 'active'); setNotes(proj.notes ?? '');
-          }} className="flex-1 h-8">Cancel</Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
-      <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: proj.color }} />
-      <div className="flex-1 min-w-0">
-        <span className="text-sm font-medium block truncate">{proj.name}</span>
-        <span className="text-[10px] text-muted-foreground">{taskCount} task{taskCount !== 1 ? 's' : ''} · {proj.status ?? 'active'}</span>
-        {proj.aliases?.length > 0 && <span className="text-[10px] text-muted-foreground block truncate">Aliases: {proj.aliases.join(', ')}</span>}
-      </div>
-      <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground hover:text-foreground" data-testid={`edit-proj-${proj.id}`}>
-        <Pencil size={14} />
-      </button>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <button className="p-1.5 text-muted-foreground hover:text-destructive" data-testid={`del-proj-${proj.id}`}>
-            <Trash2 size={14} />
-          </button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete "{proj.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the project. The {taskCount} task{taskCount !== 1 ? 's' : ''} linked to it will remain but will no longer have a project. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => onDelete(proj.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Delete</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
+  const app = useAppData(); const [open,setOpen]=useState(false), [search,setSearch]=useState(''), [draft,setDraft]=useState<Project | null>(null), [deleting,setDeleting]=useState<Project | null>(null), [policy,setPolicy]=useState<'clear'|'reassign'>('clear'), [destination,setDestination]=useState('');
+  const usage=useMemo(()=>projectTagUsage(app.projects,app.tasks,app.events),[app.projects,app.tasks,app.events]); const tags=sortProjectTags(app.projects).filter(p=>!search.trim() || [p.name,...(p.aliases??[])].some(v=>v.toLowerCase().includes(search.toLowerCase())));
+  const save=()=>{ if(!draft)return; const valid=validateProjectTag(draft,app.projects,draft.id); if(!valid.ok){toast.error(valid.error);return;} if(app.projects.some(p=>p.id===draft.id)) app.updateProject(draft.id,{...valid.value,status:draft.status,notes:draft.notes??null}); else app.addProject({...draft,...valid.value,order:app.projects.length,status:'active',notes:null}); setDraft(null); toast.success('Project Tag saved'); };
+  const remove=()=>{if(!deleting)return; const plan=planProjectTagDeletion(app,deleting.id,policy,destination); if(!plan.ok){toast.error(plan.error);return;} try {app.deleteProject(deleting.id,policy,destination); setDeleting(null);toast.success('Project Tag deleted');}catch(e){toast.error(e instanceof Error?e.message:'Unable to delete Project Tag');}};
+  return <Section icon={<FolderOpen size={16}/>} title="Project Tags" subtitle="Project Tags organize Tasks and related Events without creating a separate project-management workspace.">
+    <button className="text-xs underline" onClick={()=>setOpen(!open)} aria-expanded={open}>{open?'Collapse Project Tags':'Manage Project Tags'}</button>
+    {open&&<div className="space-y-2" data-testid="project-tag-manager"><Label htmlFor="project-tag-search">Search Project Tags</Label><div className="flex gap-2"><Input id="project-tag-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or alias"/><Button type="button" variant="outline" onClick={()=>setSearch('')}>Clear search</Button></div>
+    {!tags.length&&<p className="py-3 text-center text-xs text-muted-foreground">No Project Tags match. Create one to organize Tasks.</p>}
+    {tags.map((p,i)=>{const u=usage[p.id];return <div key={p.id} className="rounded-lg border p-3" data-testid={`project-tag-${p.id}`}><div className="flex flex-wrap items-start gap-2"><span className="mt-1 h-3 w-3 rounded-full" style={{backgroundColor:p.color}} aria-label={`${p.name} color`}/><div className="min-w-0 flex-1"><strong className="wrap-anywhere">{p.name}</strong>{p.status==='archived'&&<span className="ml-2 text-xs">Archived</span>}<p className="wrap-anywhere text-xs text-muted-foreground">{p.aliases?.length?`Aliases: ${p.aliases.join(', ')}`:'No aliases'} · {u.openTasks} open, {u.completedTasks} completed, {u.relatedEvents} related events</p></div><div className="flex flex-wrap gap-1"><Button size="sm" variant="outline" aria-label={`Move ${p.name} up`} disabled={!i} onClick={()=>app.reorderProjects(i,i-1)}>↑</Button><Button size="sm" variant="outline" aria-label={`Move ${p.name} down`} disabled={i===tags.length-1} onClick={()=>app.reorderProjects(i,i+1)}>↓</Button><Button size="sm" variant="outline" onClick={()=>setDraft({...p,aliases:[...(p.aliases??[])]})}>Edit</Button><Button size="sm" variant="outline" onClick={()=>app.updateProject(p.id,{status:p.status==='archived'?'active':'archived'})}>{p.status==='archived'?'Unarchive':'Archive'}</Button><Button size="sm" variant="outline" onClick={()=>setDeleting(p)}>Delete</Button></div></div></div>})}
+    <Button className="w-full" variant="secondary" onClick={()=>setDraft({id:`proj-${crypto.randomUUID()}`,name:'',color:PRESET_COLORS[2],aliases:[],order:app.projects.length,status:'active',notes:null})}>Create Project Tag</Button></div>}
+    {draft&&<div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center" role="dialog" aria-label="Project Tag editor"><div className="w-full space-y-3 rounded-t-xl bg-background p-4 sm:max-w-md sm:rounded-xl"><h2>{app.projects.some(p=>p.id===draft.id)?'Edit':'Create'} Project Tag</h2><Label>Name<Input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></Label><ColorPicker value={draft.color} onChange={color=>setDraft({...draft,color})}/><Label>Aliases (comma-separated)<Input value={draft.aliases.join(', ')} onChange={e=>setDraft({...draft,aliases:e.target.value.split(',')})}/></Label><Label>Notes<Textarea value={draft.notes??''} onChange={e=>setDraft({...draft,notes:e.target.value||null})}/></Label><div className="flex gap-2"><Button onClick={save}>Save</Button><Button variant="outline" onClick={()=>setDraft(null)}>Cancel</Button></div></div></div>}
+    {deleting&&<AlertDialog open onOpenChange={v=>!v&&setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete Project Tag “{deleting.name}”?</AlertDialogTitle><AlertDialogDescription>{usage[deleting.id].totalTasks?`${usage[deleting.id].openTasks} open Tasks, ${usage[deleting.id].completedTasks} completed Tasks, and ${usage[deleting.id].relatedEvents} related Events will remain. Choose how to update Task tags.`:'This unused Project Tag can be deleted.'}</AlertDialogDescription></AlertDialogHeader>{usage[deleting.id].totalTasks>0&&<><Label>Task handling<select className="ml-2" value={policy} onChange={e=>setPolicy(e.target.value as 'clear'|'reassign')}><option value="clear">Remove Project Tag from Tasks</option><option value="reassign">Reassign Tasks</option></select></Label>{policy==='reassign'&&<Label>Reassign to<select className="ml-2" value={destination} onChange={e=>setDestination(e.target.value)}><option value="">Choose active Project Tag</option>{app.projects.filter(p=>p.id!==deleting.id&&p.status!=='archived').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></Label>}</>}<AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={remove}>Delete Project Tag</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+  </Section>;
 }
 
 // ─── People ───────────────────────────────────────────────────────────────────

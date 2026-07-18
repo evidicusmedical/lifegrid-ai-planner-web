@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, CheckSquare, Users, Cpu, Settings, FolderOpen } from 'lucide-react';
+import { Calendar, CheckSquare, Users, Cpu, Settings } from 'lucide-react';
 
 interface BottomNavProps {
   currentTab: string;
@@ -10,14 +10,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({ currentTab, onChange }) =>
   const tabs = [
     { id: 'grid',   label: 'Grid',   icon: Calendar },
     { id: 'tasks',  label: 'Tasks',  icon: CheckSquare },
-    { id: 'projects', label: 'Projects', icon: FolderOpen },
     { id: 'people', label: 'People', icon: Users },
     { id: 'ai',     label: 'AI',     icon: Cpu },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (
-    <nav aria-label="Primary navigation" className="mobile-bottom-nav bg-card border-t border-border grid grid-cols-6 z-50 px-1 safe-area-inset-bottom" data-testid="bottom-nav">
+    <nav aria-label="Primary navigation" className="mobile-bottom-nav bg-card border-t border-border grid grid-cols-5 z-50 px-1 safe-area-inset-bottom" data-testid="bottom-nav">
       {tabs.map(tab => {
         const active = currentTab === tab.id;
         const Icon = tab.icon;

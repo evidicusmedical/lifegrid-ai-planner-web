@@ -1,6 +1,6 @@
 {
   "name": "@workspace/lifegrid",
-  "version": "0.5.16",
+  "version": "0.5.17",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,7 +13,15 @@
     "benchmark:review": "rm -rf .test-build && tsc src/lib/temporal.ts src/lib/timeReview.ts --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node scripts/benchmark-review.mjs",
     "benchmark:grid": "node scripts/benchmark-grid.mjs",
     "benchmark:temporal": "node scripts/benchmark-grid.mjs",
-    "benchmark:real-shape": "node scripts/benchmark-grid.mjs"
+    "benchmark:real-shape": "node scripts/benchmark-grid.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:chromium": "playwright test --project=chromium",
+    "test:e2e:firefox": "playwright test --project=firefox",
+    "test:e2e:webkit": "playwright test --project=webkit",
+    "test:e2e:mobile": "playwright test --project=mobile-chromium --project=mobile-webkit",
+    "test:e2e:smoke": "playwright test --project=chromium --grep @smoke",
+    "test:e2e:full": "playwright test",
+    "test:e2e:report": "playwright show-report"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -79,7 +87,8 @@
     "vite": "catalog:",
     "vite-plugin-pwa": "^1.3.0",
     "wouter": "^3.3.5",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "@playwright/test": "1.55.0"
   },
   "dependencies": {
     "html-to-image": "^1.11.13",

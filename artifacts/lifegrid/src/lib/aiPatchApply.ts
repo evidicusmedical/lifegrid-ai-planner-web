@@ -11,6 +11,35 @@ const collection: Record<string, keyof AppData> = { categories: 'categories', pe
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const key = (group: string, operation: string, id: string) => patchProposalKey(group as PatchEntityType, operation as PatchOperation, id);
 const has = (value: object, field: string) => Object.prototype.hasOwnProperty.call(value, field);
+const normalizeDuplicateText = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toLocaleLowerCase();
+const duplicateKey = (group: string, record: any): string | null => {
+  switch (group) {
+    case 'events': return [normalizeDuplicateText(record.title), record.date ?? '', record.endDate ?? '', record.startTime ?? '', record.endTime ?? '', record.timeStatus ?? '', record.category ?? '', record.recurringGroupId ?? ''].join('|');
+    case 'tasks': return [normalizeDuplicateText(record.name), record.dueDate ?? '', record.category ?? '', record.projectId ?? '', record.parentTaskId ?? '', record.recurringGroupId ?? ''].join('|');
+    case 'peopleSchedule': return [normalizeDuplicateText(record.title), record.person ?? record.personId ?? '', record.date ?? '', record.startTime ?? '', record.endTime ?? ''].join('|');
+    case 'categories': return normalizeDuplicateText(record.label);
+    case 'people': return normalizeDuplicateText(record.label ?? record.name);
+    case 'projects': return [normalizeDuplicateText(record.name), ...(Array.isArray(record.aliases) ? record.aliases.map(normalizeDuplicateText) : [])].join('|');
+    default: return null;
+  }
+};
+const duplicateLabel = (group: string, record: any) => group === 'events' || group === 'peopleSchedule' ? String(record.title ?? '') : String(record.name ?? record.label ?? '');
+/** Indexes are built once per preflight; exact identity is blocking, title-only similarity is advisory. */
+function addDuplicateFindings(current: AppData, active: any[], findings: ValidationFinding[]) {
+  const exact = new Map<string, string>(); const names = new Map<string, string>();
+  groups.forEach(group => ((current as any)[collection[group]] ?? []).forEach((record: any) => {
+    const identity = duplicateKey(group, record); if (identity) exact.set(`${group}:${identity}`, record.id);
+    const name = normalizeDuplicateText(duplicateLabel(group, record)); if (name) names.set(`${group}:${name}`, record.id);
+  }));
+  active.filter(item => item.operation === 'add').forEach(item => {
+    const identity = duplicateKey(item.group, item.record); const name = normalizeDuplicateText(duplicateLabel(item.group, item.record));
+    const match = identity && exact.get(`${item.group}:${identity}`);
+    if (match) findings.push({ code:'EXACT_DUPLICATE_ADDITION', severity:'blocking', section:item.group, operation:'add', recordId:item.record.id, fieldPath:`${item.group}.add[${item.index}]`, correction:'Use the existing record or change the duplicate-defining fields.', message:`${item.group} add exactly duplicates ${match}.` });
+    else if (name && names.has(`${item.group}:${name}`)) findings.push({ code:'POSSIBLE_DUPLICATE_ADDITION', severity:'warning', section:item.group, operation:'add', recordId:item.record.id, fieldPath:`${item.group}.add[${item.index}]`, correction:'Review the similar existing record before applying.', message:`${item.group} add may duplicate ${names.get(`${item.group}:${name}`)}.` });
+    if (identity) exact.set(`${item.group}:${identity}`, item.record.id);
+    if (name) names.set(`${item.group}:${name}`, item.record.id);
+  });
+}
 
 /** Builds a complete, immutable post-patch plan. Updates are field-presence patches, never replacements. */
 export function preflightPatch(current: AppData, patch: any, selected?: Set<string>) {
@@ -19,6 +48,7 @@ export function preflightPatch(current: AppData, patch: any, selected?: Set<stri
   const all = groups.flatMap(group => ['add','update'].flatMap(operation => (patch?.[group]?.[operation] ?? []).map((record: any, index: number) => ({ group, operation: operation as 'add'|'update', record, index, key: key(group, operation, String(record?.id ?? '')) }))));
   const active = selected ? all.filter(x => selectedKeys.has(x.key)) : all;
   const addIds: Record<string, Set<string>> = Object.fromEntries(groups.map(g => [g, new Set<string>()]));
+  addDuplicateFindings(current, active, findings);
   const seen = new Map<string, string>();
   active.forEach(item => {
     const id = typeof item.record?.id === 'string' ? item.record.id : '';

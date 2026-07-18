@@ -1,0 +1,2 @@
+# Data integrity contract — v0.5.17
+Calendars remain isolated and AI application remains atomic. Updates are sparse; patch keys and the selected proposal-key set remain authoritative. Exact duplicate additions are blocking (`EXACT_DUPLICATE_ADDITION`) using preflight-built normalized indexes; bounded same-name/title comparisons are advisory (`POSSIBLE_DUPLICATE_ADDITION`). Keys include event/task/person-schedule temporal/reference fields and category/person/project names (with project aliases). No timezone semantics are added; backup schema is 7 and interchange is 4.

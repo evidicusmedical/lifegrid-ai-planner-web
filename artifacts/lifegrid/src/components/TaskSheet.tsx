@@ -17,6 +17,7 @@ import {
 import { useAppData } from '../context/AppDataContext';
 import { Task, TaskDueDateType, TaskTriageStatus } from '../types';
 import { X } from 'lucide-react';
+import { ProjectTagCombobox } from './ProjectTagCombobox';
 
 const schema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -83,7 +84,7 @@ interface TaskSheetProps {
 }
 
 export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialData }) => {
-  const { addTask, updateTask, deleteTask, deleteTaskGroup, tasks, categories, projects } = useAppData();
+  const { addTask, updateTask, deleteTask, deleteTaskGroup, addProject, tasks, categories, projects } = useAppData();
 
   const [confirmDelete, setConfirmDelete] = useState<'none' | 'single' | 'group'>('none');
   const [repeat, setRepeat] = useState(false);
@@ -297,23 +298,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Project Tag (optional)</FormLabel>
-                        <Select
-                          onValueChange={v => field.onChange(v === '__none__' ? null : v)}
-                          value={field.value ?? '__none__'}
-                        >
-                          <FormControl><SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger></FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">No project</SelectItem>
-                            {projects.filter(p => p.status !== 'archived' || p.id === field.value).map(p => (
-                              <SelectItem key={p.id} value={p.id}>
-                                <span className="flex items-center gap-2">
-                                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.color }} />
-                                  {p.name}{p.status === 'archived' ? ' (archived)' : ''}
-                                </span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <ProjectTagCombobox projects={projects} value={field.value} onChange={field.onChange} onCreate={addProject} />
                         <FormDescription>Project Tags organize Tasks and related Events. Archived Tags are retained for existing assignments.</FormDescription>
                         <FormMessage />
                       </FormItem>

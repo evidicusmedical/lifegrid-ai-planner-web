@@ -18,6 +18,8 @@ export const validateProjectTag = (draft: Pick<Project, 'name'|'color'|'aliases'
   const name = normalizeProjectName(draft.name); if (!name) return { ok: false as const, error: 'Project Tag name is required.' };
   const folded = name.toLocaleLowerCase();
   if (projects.some(p => p.id !== editingId && normalizeProjectName(p.name).toLocaleLowerCase() === folded)) return { ok: false as const, error: 'A Project Tag with that name already exists.' };
+  const nameAliasConflict = projects.find(p => p.id !== editingId && (p.aliases ?? []).map(normalizeProjectName).some(alias => alias.toLocaleLowerCase() === folded));
+  if (nameAliasConflict) return { ok: false as const, error: `Project Tag name conflicts with alias on “${nameAliasConflict.name}”.` };
   const aliases = normalizeAliases(draft.aliases ?? []);
   const conflicts = projects.filter(p => p.id !== editingId).find(p => [p.name, ...(p.aliases ?? [])].map(normalizeProjectName).some(v => aliases.includes(v.toLocaleLowerCase())));
   if (conflicts) return { ok: false as const, error: `Alias conflicts with Project Tag “${conflicts.name}”.` };
@@ -27,6 +29,9 @@ export const sortProjectTags = (projects: readonly Project[]) => [...projects].s
 export const findProjectTagOptions = (projects: readonly Project[], query: string, selectedId?: string | null, includeArchived = false) => {
   const q = query.trim().toLocaleLowerCase(); return sortProjectTags(projects).filter(p => (includeArchived || p.status !== 'archived' || p.id === selectedId) && (!q || [p.name, ...(p.aliases ?? [])].some(x => x.toLocaleLowerCase().includes(q))));
 };
+/** Shared guard for the compact Task editor creation flow. */
+export const projectTagQuickCreateValidation = (query: string, projects: readonly Project[]) =>
+  query.trim() ? validateProjectTag({ name: query, color: '#2563eb', aliases: [] }, projects) : { ok: false as const, error: 'Enter a Project Tag name first.' };
 export interface ProjectTagUsage { openTasks: number; completedTasks: number; totalTasks: number; relatedEvents: number; }
 export const projectTagUsage = (projects: readonly Project[], tasks: readonly Task[], events: readonly Event[]): Record<string, ProjectTagUsage> => {
   const result: Record<string, ProjectTagUsage> = Object.fromEntries(projects.map(p => [p.id, {openTasks:0,completedTasks:0,totalTasks:0,relatedEvents:0}]));

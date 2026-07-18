@@ -28,21 +28,24 @@ export const selectEventsIntersectingYear = (events: readonly Event[], year: num
   });
 };
 
-export const toGridEventSummary = (event: Event, _timeZone?: string): GridEventSummary => Object.freeze({ id: event.id, date: event.date, endDate: event.endDate ?? event.date,
+export const toGridEventSummary = (event: Event): GridEventSummary => Object.freeze({ id: event.id, date: event.date, endDate: event.endDate ?? event.date,
     title: event.title, category: event.category, color: event.color ?? null, displayPriority: event.displayPriority ?? 4,
     timeStatus: event.timeStatus, startTime: event.startTime ?? null, endTime: event.endTime ?? null,
     eventKind: event.eventKind ?? null, showInGrid: event.showInGrid !== false });
 
-export const gridSummarySignature = (event: Event, timeZone: string) => {
-  const s = toGridEventSummary(event, timeZone);
+export const gridSummarySignature = (event: Event) => {
+  const s = toGridEventSummary(event);
   return [s.id,s.date,s.endDate,s.title,s.category,s.color,s.displayPriority,s.timeStatus,s.startTime,s.endTime,s.eventKind,s.showInGrid].join('|');
 };
 
 const compare = (rank: ReadonlyMap<string, number>) => (a: GridEventSummary, b: GridEventSummary) =>
   a.displayPriority - b.displayPriority || Number(!a.startTime) - Number(!b.startTime) || (a.startTime ?? '').localeCompare(b.startTime ?? '') || (rank.get(a.category) ?? 999) - (rank.get(b.category) ?? 999) || a.title.localeCompare(b.title);
 
-export const buildGridViewModel = (events: readonly Event[], year: number, timeZone = 'local', categoryRank = new Map<string, number>(), previous?: GridViewModel): GridViewModel => {
-  const summaries = selectEventsIntersectingYear(events, year, timeZone).map(event => toGridEventSummary(event, timeZone)).filter(summary => summary.date.slice(0, 4) === String(year));
+export const buildGridViewModel = (events: readonly Event[], year: number, legacyOrRank: string | ReadonlyMap<string, number> = new Map<string, number>(), rankOrPrevious?: ReadonlyMap<string, number> | GridViewModel, previous?: GridViewModel): GridViewModel => {
+  const legacyCall = typeof legacyOrRank === 'string';
+  const categoryRank = (legacyCall ? rankOrPrevious : legacyOrRank) as ReadonlyMap<string, number>;
+  const prior = (legacyCall ? previous : rankOrPrevious) as GridViewModel | undefined;
+  const summaries = selectEventsIntersectingYear(events, year).map(event => toGridEventSummary(event)).filter(summary => summary.date.slice(0, 4) === String(year));
   const byDate = new Map<string, GridEventSummary[]>();
   for (const summary of summaries) { const bucket = byDate.get(summary.date) ?? []; bucket.push(summary); byDate.set(summary.date, bucket); }
   byDate.forEach(bucket => bucket.sort(compare(categoryRank)));
@@ -50,7 +53,7 @@ export const buildGridViewModel = (events: readonly Event[], year: number, timeZ
     const month = `${year}-${String(index + 1).padStart(2, '0')}`;
     const entries = [...byDate.entries()].filter(([date]) => date.startsWith(month));
     const signature = entries.map(([date, values]) => `${date}:${values.map(value => [value.id,value.title,value.category,value.color,value.startTime,value.endTime,value.displayPriority].join('~')).join(',')}`).join(';');
-    const old = previous?.months[index];
+    const old = prior?.months[index];
     if (old?.monthKey === month && old.signature === signature) return old;
     return Object.freeze({ monthKey: month, eventsByDate: new Map(entries.map(([date, values]) => [date, Object.freeze([...values])])), eventCount: entries.reduce((n, [, values]) => n + values.length, 0), signature });
   });

@@ -3,7 +3,7 @@ import { APP_VERSION } from './lib/version';
 
 type Diagnostic = Record<string, unknown>;
 type RetirementResult = { reloadRequired: boolean; registrationsRemoved: number; cachesRemoved: number };
-const diagnostics: Diagnostic = { appVersion: APP_VERSION, phase: 'module', manifestUrl: '/manifest.webmanifest' };
+const diagnostics: Diagnostic = { appVersion: APP_VERSION, deployedVersion: null, phase: 'module', manifestUrl: '/manifest.webmanifest' };
 const recoveryKey = 'lifegrid_chunk_recovery_v1';
 const retirementKey = 'lifegrid_sw_retirement_v05151';
 const retirementReloadKey = 'lifegrid_sw_retirement_reload_v05151';
@@ -25,7 +25,7 @@ export const installStartupDiagnostics = () => {
     userAgent: navigator.userAgent, path: location.pathname, hash: location.hash,
     visibility: document.visibilityState, standalone: safe(() => matchMedia('(display-mode: standalone)').matches),
     navigatorStandalone: safe(() => (navigator as Navigator & { standalone?: boolean }).standalone === true),
-    storage: safe(() => { localStorage.getItem('lifegrid_store_v5'); return 'available'; }),
+    storage: safe(() => { const raw = localStorage.getItem('lifegrid_store_v5'); diagnostics.compatibilityMetadataPresent = !!raw && /\"displayTimeZone\"/.test(raw); return 'available'; }),
     indexedDB: typeof indexedDB !== 'undefined', serviceWorkerController: !!navigator.serviceWorker?.controller,
   });
   if (import.meta.env.DEV) (window as Window & { lifegridStartupDiagnostics?: () => Diagnostic }).lifegridStartupDiagnostics = startupDiagnostics;
@@ -80,6 +80,7 @@ export const checkDeployedVersion = async () => {
   try {
     const response = await fetch('/version.json', { cache: 'no-store' });
     const release = await response.json() as { appVersion?: string };
+    diagnostics.deployedVersion = release.appVersion ?? null;
     if (response.ok && release.appVersion && release.appVersion !== APP_VERSION) {
       diagnostics.versionMismatch = `${APP_VERSION} != ${release.appVersion}`;
       const advisory = document.createElement('div');
@@ -105,12 +106,12 @@ export const recoverChunkOnce = async (reason: unknown) => {
 export class StartupBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null };
   static getDerivedStateFromError(error: Error) { return { error }; }
-  componentDidCatch(error: Error, info: ErrorInfo) { diagnostics.errorType = error.name; diagnostics.errorMessage = error.message; diagnostics.errorStack = `${error.stack ?? ''}\n${info.componentStack ?? ''}`.slice(0, 2000); markStartupPhase('failed'); }
+  componentDidCatch(error: Error, info: ErrorInfo) { diagnostics.errorName = error.name; diagnostics.errorMessage = error.message; diagnostics.route = location.hash || location.pathname; diagnostics.gridMount = /GridView/.test(info.componentStack ?? ''); diagnostics.errorStack = `${error.stack ?? ''}\n${info.componentStack ?? ''}`.slice(0, 2000); markStartupPhase('failed'); }
   render() { return this.state.error ? <RecoveryScreen error={this.state.error} retry={() => this.setState({ error: null })} /> : this.props.children; }
 }
 
 export const RecoveryScreen = ({ error, retry }: { error?: Error; retry?: () => void }) => {
   const copy = async () => { try { await navigator.clipboard?.writeText(diagnosticSummary()); } catch { /* clipboard permission is optional */ } };
   const exportRaw = () => { const raw = safe(() => localStorage.getItem('lifegrid_store_v5')); if (typeof raw !== 'string') return; const blob = new Blob([raw], { type: 'application/json' }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'lifegrid-local-recovery.json'; link.click(); URL.revokeObjectURL(link.href); };
-  return <main role="alert" className="min-h-screen bg-background text-foreground p-6 flex items-center justify-center"><section className="max-w-lg space-y-4 rounded-lg border bg-card p-6 shadow"><h1 className="text-xl font-bold">LifeGrid could not finish starting.</h1><p>Calendar data was not cleared. Cached application files are separate from your LifeGrid calendar data.</p><div className="flex flex-wrap gap-2"><button onClick={retry}>Retry</button><button onClick={() => location.reload()}>Reload application</button><button onClick={() => void clearAssetCaches().then(() => location.reload())}>Clear cached app files and reload</button><button onClick={exportRaw}>Export raw local recovery data</button><button onClick={() => alert(diagnosticSummary())}>Open diagnostic details</button><button onClick={() => void copy()}>Copy Diagnostic Summary</button></div>{error && <p className="text-sm text-muted-foreground">{error.name}: {error.message}</p>}</section></main>;
+  return <main role="alert" className="min-h-screen bg-background text-foreground p-6 flex items-center justify-center"><section className="max-w-lg space-y-4 rounded-lg border bg-card p-6 shadow"><h1 className="text-xl font-bold">LifeGrid could not finish starting.</h1>{error && /invalid time zone: local/i.test(error.message) && <p>LifeGrid encountered obsolete calendar timezone metadata. Your Event dates and times were not changed.</p>}<p>Calendar data was not cleared. Cached application files are separate from your LifeGrid calendar data.</p><div className="flex flex-wrap gap-2"><button onClick={retry}>Retry</button><button onClick={() => location.reload()}>Reload application</button><button onClick={() => void clearAssetCaches().then(() => location.reload())}>Clear cached app files and reload</button><button onClick={exportRaw}>Export raw local recovery data</button><button onClick={() => alert(diagnosticSummary())}>Open diagnostic details</button><button onClick={() => void copy()}>Copy Diagnostic Summary</button></div>{error && <p className="text-sm text-muted-foreground">{error.name}: {error.message}</p>}</section></main>;
 };

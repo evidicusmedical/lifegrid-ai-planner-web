@@ -89,7 +89,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   const [repeatCount, setRepeatCount] = useState(4);
   const [timeStatus, setTimeStatus] = useState<TimeStatus>('all-day');
   const [timeZoneMode, setTimeZoneMode] = useState<TimeZoneMode>('zoned');
-  const [timeZone, setTimeZone] = useState(activeCalendar.displayTimeZone);
+  const [timeZone, setTimeZone] = useState('');
   const [temporalEndDate, setTemporalEndDate] = useState('');
 
   const groupId = initialData?.recurringGroupId;
@@ -125,7 +125,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       setRepeatCount(4);
       setTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day'));
       setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
-      setTimeZone(initialData?.timeZone ?? activeCalendar.displayTimeZone);
+      setTimeZone(initialData?.timeZone ?? '');
       setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? defaultDate ?? '');
       if (initialData) {
         form.reset({
@@ -341,7 +341,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                   </div>
                 )}
 
-                <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={activeCalendar.displayTimeZone} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
+                <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={''} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
 
                 {/* ── Repeat (new events only, disabled when multi-day) ── */}
                 {!initialData && !multiDay && (

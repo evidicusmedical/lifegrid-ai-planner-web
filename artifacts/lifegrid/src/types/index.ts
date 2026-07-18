@@ -143,7 +143,6 @@ export interface Calendar {
   name: string;
   createdAt: string; // ISO timestamp
   data: AppData;
-  displayTimeZone: string;
 }
 
 export interface Store {

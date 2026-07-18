@@ -1,0 +1,3 @@
+# Handoff — v0.5.15.2
+
+Starting main-equivalent commit was `f3b219c` (merge PR #33); it contained v0.5.15.1, package 0.5.15-1, AI interchange 4, and backup schema 7. PR #32 was not merged. The audit found the prohibited Grid `clockNow` interval and `clockFor` formatter with `timeZone`; it also found compatibility metadata propagation through Grid, settings, exports, filenames, and AI context. This release removes that runtime use, strips metadata on hydration/import, and retains only locale formatting with no timezone option plus ICS metadata behavior. The required real-device Safari/Home Screen checks were not performed in this environment.

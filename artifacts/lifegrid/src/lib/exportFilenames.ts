@@ -21,18 +21,16 @@ export const sanitizeExportName = (value: string | null | undefined, fallback = 
   return slug && slug !== '.' && slug !== '..' ? slug : fallback;
 };
 
-export const formatExportTimestamp = (generatedAt: Date, timeZone?: string) => {
-  const safeZone = (() => { try { if (timeZone) new Intl.DateTimeFormat('en-CA', { timeZone }); return timeZone; } catch { return 'UTC'; } })();
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: safeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(generatedAt);
-  const value = (name: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === name)?.value ?? '00';
-  return `${value('year')}-${value('month')}-${value('day')}_${value('hour')}-${value('minute')}-${value('second')}`;
+export const formatExportTimestamp = (generatedAt: Date) => {
+  const value = (number: number) => String(number).padStart(2, '0');
+  return `${generatedAt.getFullYear()}-${value(generatedAt.getMonth() + 1)}-${value(generatedAt.getDate())}_${value(generatedAt.getHours())}-${value(generatedAt.getMinutes())}-${value(generatedAt.getSeconds())}`;
 };
 
-export const buildLifeGridExportFilename = ({ kind, calendarName, generatedAt = new Date(), timeZone, collisionIndex = 1 }: { kind: LifeGridExportKind; calendarName?: string | null; generatedAt?: Date; timeZone?: string; collisionIndex?: number }) => {
+export const buildLifeGridExportFilename = ({ kind, calendarName, generatedAt = new Date(), collisionIndex = 1 }: { kind: LifeGridExportKind; calendarName?: string | null; generatedAt?: Date; timeZone?: string; collisionIndex?: number }) => {
   const config = KINDS[kind];
   const suffix = collisionIndex > 1 ? `_${collisionIndex}` : '';
-  return `lifegrid_${config.descriptor}_${sanitizeExportName(calendarName)}_${formatExportTimestamp(generatedAt, timeZone)}${suffix}.${config.extension}`;
+  return `lifegrid_${config.descriptor}_${sanitizeExportName(calendarName)}_${formatExportTimestamp(generatedAt)}${suffix}.${config.extension}`;
 };
 
 /** Compatibility wrapper for existing text export callers. */
-export const exportFilename = (kind: 'text_export', calendarName: string, date = new Date(), timeZone?: string) => buildLifeGridExportFilename({ kind, calendarName, generatedAt: date, timeZone });
+export const exportFilename = (kind: 'text_export', calendarName: string, date = new Date()) => buildLifeGridExportFilename({ kind, calendarName, generatedAt: date });

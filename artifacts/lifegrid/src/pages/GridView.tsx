@@ -15,7 +15,7 @@ import { toISODate } from '../lib/format';
 import { DayTypePreview } from '../components/DayTypePreview';
 import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, ExportDensity, getDenseDay, getExportDimensions } from '../lib/gridPublication';
 import { getDateTemporalState, validateExportRange } from '../lib/gridAwareness';
-import { getDisplayedTemporalOccurrence } from '../lib/temporal';
+import { getLocalTemporalOccurrence } from '../lib/temporal';
 import { buildGridViewModel, resolveEventById } from '../lib/gridModel';
 import { gridMark } from '../lib/gridDiagnostics';
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
@@ -203,8 +203,8 @@ export const GridView = () => {
   const sortEventsForCell = useCallback((a: Event, b: Event) => {
     const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
     if (byPriority !== 0) return byPriority;
-    const aDisplayed = getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone);
-    const bDisplayed = getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone);
+    const aDisplayed = getLocalTemporalOccurrence(a);
+    const bDisplayed = getLocalTemporalOccurrence(b);
     const aAllDay = !aDisplayed.displayedStartTime;
     const bAllDay = !bDisplayed.displayedStartTime;
     if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
@@ -231,7 +231,7 @@ export const GridView = () => {
     const startDow = parseISODate(start).getDay();
     const filteredByDate = new Map<string, Event[]>();
     exportFilteredEvents.forEach(e => {
-      const displayed = getDisplayedTemporalOccurrence(e, activeCalendar.displayTimeZone);
+      const displayed = getLocalTemporalOccurrence(e);
       const arr = filteredByDate.get(displayed.displayedStartDate) ?? [];
       arr.push(e);
       filteredByDate.set(displayed.displayedStartDate, arr);

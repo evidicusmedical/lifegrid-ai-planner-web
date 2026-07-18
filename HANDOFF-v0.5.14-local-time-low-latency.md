@@ -1,0 +1,2 @@
+# Handoff v0.5.14
+Started at `c2c34c5`, merge PR #29, which contains preceding head `8440278310cf3f8a3067e275949f7dfda45e6028`. Baseline was v0.5.13 / schema 6 / AI v4. Removed runtime temporal callers: minute scan, zone formatter conversion, Grid projection conversion, ICS instant conversion, and header clocks. Remaining `displayTimeZone` is compatibility calendar metadata only; Event calculations never read it.

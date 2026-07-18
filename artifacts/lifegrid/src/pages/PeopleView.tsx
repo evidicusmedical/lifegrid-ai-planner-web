@@ -4,7 +4,7 @@ import { Plus, Settings2 } from 'lucide-react';
 import { PersonEventSheet } from '../components/PersonEventSheet';
 import { PersonEvent } from '../types';
 import { formatDate } from '../lib/format';
-import { getDisplayedTemporalOccurrence, temporalSummary } from '../lib/temporal';
+import { getLocalTemporalOccurrence, temporalSummary } from '../lib/temporal';
 
 export const PeopleView = () => {
   const { personEvents, people, activeCalendar } = useAppData();
@@ -21,7 +21,7 @@ export const PeopleView = () => {
       if (arr) arr.push(e);
       else map.set(e.person, [e]);
     });
-    map.forEach(arr => arr.sort((a, b) => { const ao = getDisplayedTemporalOccurrence(a, activeCalendar.displayTimeZone); const bo = getDisplayedTemporalOccurrence(b, activeCalendar.displayTimeZone); return `${ao.displayedStartDate} ${ao.displayedStartTime ?? ''}`.localeCompare(`${bo.displayedStartDate} ${bo.displayedStartTime ?? ''}`); }));
+    map.forEach(arr => arr.sort((a, b) => { const ao = getLocalTemporalOccurrence(a); const bo = getLocalTemporalOccurrence(b); return `${ao.displayedStartDate} ${ao.displayedStartTime ?? ''}`.localeCompare(`${bo.displayedStartDate} ${bo.displayedStartTime ?? ''}`); }));
     return map;
   }, [personEvents, orderedPeople, activeCalendar.displayTimeZone]);
 
@@ -78,7 +78,7 @@ export const PeopleView = () => {
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm truncate">{evt.title}</div>
                           <div className="text-xs text-muted-foreground mt-0.5">
-                            {(() => { const occurrence = getDisplayedTemporalOccurrence(evt, activeCalendar.displayTimeZone); return `${formatDate(occurrence.displayedStartDate)} · ${temporalSummary({ ...evt, date: occurrence.displayedStartDate, endDate: occurrence.displayedEndDate, startTime: occurrence.displayedStartTime, endTime: occurrence.displayedEndTime })}${occurrence.converted ? ` · original ${evt.timeZone}` : ''}`; })()}
+                            {(() => { const occurrence = getLocalTemporalOccurrence(evt); return `${formatDate(occurrence.displayedStartDate)} · ${temporalSummary({ ...evt, date: occurrence.displayedStartDate, endDate: occurrence.displayedEndDate, startTime: occurrence.displayedStartTime, endTime: occurrence.displayedEndTime })}${occurrence.converted ? ` · original ${evt.timeZone}` : ''}`; })()}
                           </div>
                         </div>
                       </div>

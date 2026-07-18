@@ -542,7 +542,7 @@ body {
   }
 }
 
-/* v0.5.15.3: keep responsive pages bounded; the annual table is the sole intentional x-scroller. */
+/* v0.5.15.4: keep responsive pages bounded; the annual table is the sole intentional x-scroller. */
 [data-testid="grid-content"] {
   min-width: 0;
   max-width: 100%;

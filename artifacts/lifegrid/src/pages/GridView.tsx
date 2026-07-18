@@ -232,12 +232,15 @@ export const GridView = () => {
     projectId: "all",
   });
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
+  const [compactExportLayout, setCompactExportLayout] = useState(false);
   const exportUiActive = exportOptionsOpen || exporting || exportUrl;
   // Yield once after the shell commits so route feedback paints before annual DOM work.
   const [gridReady, setGridReady] = useState(false);
   const [renderedMonths, setRenderedMonths] = useState<Set<number>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
+  const exportDialogRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const targetedExportRef = useRef<HTMLDivElement>(null);
   const publicationRef = useRef<HTMLDivElement>(null);
@@ -523,6 +526,29 @@ export const GridView = () => {
     exportFilters.categoryMode === "all" &&
     exportFilters.projectId === "all";
   const exportFilterSummary = `${exportRange.start || "Start"} → ${exportRange.end || "End"} · ${exportFilters.categoryMode === "all" ? "All tags" : `${exportFilters.selectedCategoryIds.length} tag${exportFilters.selectedCategoryIds.length === 1 ? "" : "s"}`} · ${exportFilters.projectId === "all" ? "All projects" : (sortedProjects.find((p) => p.id === exportFilters.projectId)?.name ?? "Project")}`;
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 639px), (max-height: 600px) and (pointer: coarse)");
+    const update = () => setCompactExportLayout(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!exportOptionsOpen || !compactExportLayout) return;
+    const priorOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    exportDialogRef.current?.focus();
+    return () => {
+      document.body.style.overflow = priorOverflow;
+      exportButtonRef.current?.focus();
+    };
+  }, [exportOptionsOpen, compactExportLayout]);
+
+  const closeExportOptions = () => {
+    if (!exporting) setExportOptionsOpen(false);
+  };
 
   useEffect(() => {
     if (didScrollRef.current) return;
@@ -853,6 +879,7 @@ export const GridView = () => {
           </div>
           <button
             onClick={() => setExportOptionsOpen(true)}
+            ref={exportButtonRef}
             disabled={exporting}
             aria-describedby={
               exportRangeError ? "export-range-error" : undefined
@@ -880,9 +907,40 @@ export const GridView = () => {
 
       {exportOptionsOpen && (
         <div
-          className="flex-none max-h-[calc(100dvh-10rem)] min-w-0 overflow-y-auto border-b border-border bg-card/95 px-3 py-3 space-y-3 overscroll-contain"
-          data-testid="panel-export-options"
+          className={compactExportLayout ? "fixed inset-0 z-40 flex bg-black/45 p-0" : "flex-none"}
+          onMouseDown={(event) => {
+            if (compactExportLayout && event.target === event.currentTarget) closeExportOptions();
+          }}
+          data-testid={compactExportLayout ? "export-mobile-scrim" : undefined}
         >
+          <div
+            ref={exportDialogRef}
+            tabIndex={-1}
+            role={compactExportLayout ? "dialog" : undefined}
+            aria-modal={compactExportLayout || undefined}
+            aria-labelledby={compactExportLayout ? "mobile-export-title" : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") closeExportOptions();
+              if (compactExportLayout && event.key === "Tab") {
+                const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])"));
+                const first = focusable[0], last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+              }
+            }}
+            className={compactExportLayout
+              ? "flex h-[100vh] h-[100dvh] w-full min-w-0 flex-col overflow-hidden bg-card shadow-2xl"
+              : "flex-none max-h-[calc(100dvh-10rem)] min-w-0 overflow-y-auto border-b border-border bg-card/95 px-3 py-3 space-y-3 overscroll-contain"}
+            data-testid={compactExportLayout ? "panel-export-mobile" : "panel-export-options"}
+          >
+            {compactExportLayout && (
+              <header className="flex flex-none items-center justify-between gap-3 border-b border-border bg-card px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+                <div className="min-w-0"><h2 id="mobile-export-title" className="text-sm font-bold">Image export</h2><p className="truncate text-[11px] text-muted-foreground">{exportFilterSummary}</p></div>
+                <Button type="button" variant="outline" onClick={closeExportOptions} disabled={exporting} className="min-h-11 shrink-0" aria-label="Close image export">Close</Button>
+              </header>
+            )}
+            <div className={compactExportLayout ? "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-gutter:stable]" : undefined}>
+            <div className={compactExportLayout ? "space-y-4" : undefined}>
           <div>
             <div className="text-xs font-bold text-foreground">
               Image export filters
@@ -891,6 +949,13 @@ export const GridView = () => {
               {exportFilterSummary}
             </div>
           </div>
+
+          {compactExportLayout && (
+            <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/60 p-3 text-xs">
+              <div><div className="mb-1 font-bold">Grid content</div><div className="flex rounded-md bg-muted p-0.5"><button type="button" onClick={() => setExportMode("visible")} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportMode === "visible" ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Visible</button><button type="button" onClick={() => setExportMode("expanded")} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportMode === "expanded" ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Expanded</button></div></div>
+              <div><div className="mb-1 font-bold">Image quality</div><div className="flex rounded-md bg-muted p-0.5"><button type="button" onClick={() => setExportPixelRatio(1)} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportPixelRatio === 1 ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Fast</button><button type="button" onClick={() => setExportPixelRatio(2)} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportPixelRatio === 2 ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Sharp</button></div></div>
+            </div>
+          )}
 
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs font-semibold">
@@ -1076,26 +1141,16 @@ export const GridView = () => {
             Creates a readable grid image from the selected date range and
             filters. Notes are not included.
           </p>
-          <div className="flex flex-wrap gap-2 border-t border-border pt-3">
-            <Button
-              type="button"
-              onClick={handleExport}
-              disabled={exporting || !!exportRangeError}
-              className="min-h-11 flex-1 gap-2"
-              data-testid="button-export-generate"
-            >
-              <Image size={16} />{" "}
-              {exporting ? "Generating image…" : "Generate image"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setExportOptionsOpen(false)}
-              className="min-h-11"
-              disabled={exporting}
-            >
-              Close
-            </Button>
+          <div className={compactExportLayout ? "sticky bottom-0 -mx-4 border-t border-border bg-card px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3" : "flex flex-wrap gap-2 border-t border-border pt-3"} data-testid={compactExportLayout ? "mobile-export-footer" : undefined}>
+            <div className="flex gap-2">
+              <Button type="button" onClick={handleExport} disabled={exporting || !!exportRangeError} className="min-h-11 flex-1 gap-2" data-testid="button-export-generate">
+                <Image size={16} /> {exporting ? "Generating image…" : "Generate image"}
+              </Button>
+              <Button type="button" variant="outline" onClick={closeExportOptions} className="min-h-11" disabled={exporting}>Close</Button>
+            </div>
+          </div>
+            </div>
+            </div>
           </div>
         </div>
       )}

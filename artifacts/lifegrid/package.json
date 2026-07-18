@@ -1,6 +1,6 @@
 {
   "name": "@workspace/lifegrid",
-  "version": "0.5.15-3",
+  "version": "0.5.15-4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "rm -rf .test-build && tsc src/lib/*.ts --rootDir src --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck --types vite/client && node --experimental-specifier-resolution=node --test tests/{ai-atomic-apply,ai-patch-approval-v0512,ai-selection-state-v0513,entity-ordering,export-filename,grid-annual-layout-contract,grid-performance-markers-contract,grid-real-data-contract,image-export-publication,local-time-v0514,performance-indexes,project-route-removal-contract,project-tag-hardening,startup-v0515,service-worker-retirement-v05151,safari-timezone-runtime-v05152,mobile-layout-export-v05153}.test.mjs",
+    "test": "rm -rf .test-build && tsc src/lib/*.ts --rootDir src --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck --types vite/client && node --experimental-specifier-resolution=node --test tests/{ai-atomic-apply,ai-patch-approval-v0512,ai-selection-state-v0513,entity-ordering,export-filename,grid-annual-layout-contract,grid-performance-markers-contract,grid-real-data-contract,image-export-publication,local-time-v0514,performance-indexes,project-route-removal-contract,project-tag-hardening,startup-v0515,service-worker-retirement-v05151,safari-timezone-runtime-v05152,mobile-layout-export-v05153,mobile-export-layout-v05154}.test.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "benchmark:review": "rm -rf .test-build && tsc src/lib/temporal.ts src/lib/timeReview.ts --outDir .test-build --module esnext --moduleResolution bundler --target es2022 --skipLibCheck && node scripts/benchmark-review.mjs",
     "benchmark:grid": "node scripts/benchmark-grid.mjs",

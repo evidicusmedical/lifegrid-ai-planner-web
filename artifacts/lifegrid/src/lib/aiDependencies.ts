@@ -4,11 +4,16 @@ import type { ParsedUpdate } from './aiPrompt';
 export type ProposalKey = string;
 export type DependencyAnalysis = { blocked: Map<ProposalKey, string>; dependents: Map<ProposalKey, ProposalKey[]>; keys: Map<string, ProposalKey> };
 const groups = ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'] as const;
-export const proposalKey = (group: string, operation: string, id: string, index: number) => `${group}:${operation}:${id}:${index}`;
+export type PatchEntityType = typeof groups[number];
+export type PatchOperation = 'add' | 'update';
+/** Canonical identity shared by review controls, preflight, dependencies, and apply. */
+export const patchProposalKey = (entityType: PatchEntityType, operation: PatchOperation, recordId: string) => `${entityType}:${operation}:${recordId}`;
+/** @deprecated Use patchProposalKey. */
+export const proposalKey = (group: string, operation: string, id: string, _index?: number) => patchProposalKey(group as PatchEntityType, operation as PatchOperation, id);
 export function analyzeDependencies(update: ParsedUpdate, data: AppData, selected: Set<ProposalKey>): DependencyAnalysis {
   const keys = new Map<string, ProposalKey>(); const dependents = new Map<ProposalKey, ProposalKey[]>(); const blocked = new Map<ProposalKey, string>();
   const existing: Record<string, Set<string>> = { categories: new Set(data.categories.map(x => x.id)), people: new Set(data.people.map(x => x.id)), projects: new Set(data.projects.map(x => x.id)), tasks: new Set(data.tasks.map(x => x.id)), events: new Set(data.events.map(x => x.id)), peopleSchedule: new Set(data.personEvents.map(x => x.id)) };
-  groups.forEach(group => ['add', 'update'].forEach(operation => ((update[group] as any)?.[operation] ?? []).forEach((r: any, i: number) => { const key = proposalKey(group, operation, String(r.id), i); keys.set(`${group}:${r.id}`, key); })));
+  groups.forEach(group => ['add', 'update'].forEach(operation => ((update[group] as any)?.[operation] ?? []).forEach((r: any, i: number) => { if (operation === 'add') { const key = patchProposalKey(group, 'add', String(r.id)); keys.set(`${group}:${r.id}`, key); } })));
   const refs = (group: string, r: any): [string, string][] => {
     if (group === 'events') return [['categories', r.category], ...((r.linkedTaskIds ?? []).map((id: string) => ['tasks', id] as [string, string]))].filter((x): x is [string,string] => !!x[1]);
     if (group === 'tasks') return [['categories', r.category], ['projects', r.projectId], ['tasks', r.parentTaskId], ...((r.linkedEventIds ?? []).map((id: string) => ['events', id] as [string,string]))].filter((x): x is [string,string] => !!x[1]);
@@ -17,7 +22,7 @@ export function analyzeDependencies(update: ParsedUpdate, data: AppData, selecte
     return [];
   };
   groups.forEach(group => ['add', 'update'].forEach(operation => ((update[group] as any)?.[operation] ?? []).forEach((r: any, i: number) => {
-    const child = proposalKey(group, operation, String(r.id), i);
+    const child = patchProposalKey(group, operation as PatchOperation, String(r.id));
     refs(group, r).forEach(([parentGroup, id]) => { const parent = keys.get(`${parentGroup}:${id}`); if (parent) { const list = dependents.get(parent) ?? []; list.push(child); dependents.set(parent, list); if (!selected.has(parent)) blocked.set(child, `Blocked: ${parentGroup.slice(0, -1)} ${id} is not selected`); } else if (!existing[parentGroup].has(id)) blocked.set(child, `Blocked: ${parentGroup.slice(0, -1)} ${id} does not exist`); });
   })));
   // A simple cycle detector covers task/event same-patch links.

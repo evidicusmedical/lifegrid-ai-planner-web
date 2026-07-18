@@ -1,4 +1,6 @@
 import type { AppData } from '../types';
+import { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
+export { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
 
 export type ValidationSeverity = 'blocking' | 'warning' | 'info';
 export type ValidationFinding = { code: string; severity: ValidationSeverity; section?: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule'|'patch'; operation?: 'add'|'update'; recordId?: string; message: string; dependencyRecordIds?: string[] };
@@ -6,14 +8,14 @@ export type PatchReadiness = { selectedCount: number; blockingCount: number; war
 const groups = ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'] as const;
 const collection: Record<string, keyof AppData> = { categories: 'categories', people: 'people', projects: 'projects', tasks: 'tasks', events: 'events', peopleSchedule: 'personEvents' };
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
-const key = (group: string, operation: string, id: string, index: number) => `${group}:${operation}:${id}:${index}`;
+const key = (group: string, operation: string, id: string) => patchProposalKey(group as PatchEntityType, operation as PatchOperation, id);
 const has = (value: object, field: string) => Object.prototype.hasOwnProperty.call(value, field);
 
 /** Builds a complete, immutable post-patch plan. Updates are field-presence patches, never replacements. */
 export function preflightPatch(current: AppData, patch: any, selected?: Set<string>) {
   const findings: ValidationFinding[] = [];
   const selectedKeys = selected ?? new Set<string>();
-  const all = groups.flatMap(group => ['add','update'].flatMap(operation => (patch?.[group]?.[operation] ?? []).map((record: any, index: number) => ({ group, operation: operation as 'add'|'update', record, index, key: key(group, operation, String(record?.id ?? ''), index) }))));
+  const all = groups.flatMap(group => ['add','update'].flatMap(operation => (patch?.[group]?.[operation] ?? []).map((record: any, index: number) => ({ group, operation: operation as 'add'|'update', record, index, key: key(group, operation, String(record?.id ?? '')) }))));
   const active = selected ? all.filter(x => selectedKeys.has(x.key)) : all;
   const addIds: Record<string, Set<string>> = Object.fromEntries(groups.map(g => [g, new Set<string>()]));
   const seen = new Map<string, string>();

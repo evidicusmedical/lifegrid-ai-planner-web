@@ -1,0 +1,8 @@
+# v0.5.12 handoff
+PR #27 is merged: starting main-equivalent commit was `997234a`, containing expected preceding head `f8d1650`. Baseline was v0.5.11/package 0.5.11, AI v4, backup schema 6.
+
+The old UI predicate was `disabled={!selectedRecords.size || !!blockedKeys.size}`. `blockedKeys` was derived from every dependency finding, including unselected operations and advisory/parser warnings represented as dependency failures. This incorrectly made warning-heavy patches inapplicable and offered no reason.
+
+The new preflight builds an immutable selected transaction plan, merges sparse updates using own-property checks, adds selected additions provisionally, resolves references, validates the resulting graph, detects no-ops, and exposes blocking/warning/info readiness. `canApply = selectedCount > 0 && blockingCount === 0`; the UI displays its exact disabled reason and controls for valid/all/blocking selections. Application works on a cloned calendar and persists via the existing single mutation path only after validation. Omitted fields remain unchanged; permitted explicit null/empty-array values clear fields. Unknown fields are not persisted; unsupported mutation is blocking. Milestones remain unsupported.
+
+Changed: `src/lib/aiPatchApply.ts`, `src/lib/aiPrompt.ts`, `src/pages/AIView.tsx`, versions, and the Grid contract expectation. Added regression test and four release documents. Removed: none. Private real patch content was not committed. Branch: `codex/implement-v0.5.12-ai-patch-approval-repair`; commit/PR/deployment are recorded after release tooling completes. Browser tooling was not available for private-patch verification.

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
-  AppData, Event, Task, PersonEvent, Category, Person, Project, Calendar, Store,
+  AppData, Event, Task, PersonEvent, Category, Person, Project, Milestone, Calendar, Store,
   EventDisplayPriority, EventKind, ProjectStatus, TaskDueDateType, TaskTriageStatus,
 } from '../types';
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
@@ -12,6 +12,7 @@ import { browserTimeZone, migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
 import { moveEntity, normalizeEntityOrder } from '../lib/entityOrder';
 import { classifyStorageError } from '../lib/storageError';
+import { normalizeMilestones } from '../lib/projectOperations';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -51,6 +52,10 @@ export interface AppDataContextType extends AppData {
   updateProject: (id: string, update: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
+  addMilestone: (milestone: Milestone) => void;
+  updateMilestone: (id: string, update: Partial<Milestone>) => void;
+  deleteMilestone: (id: string) => void;
+  reorderMilestones: (projectId: string, fromIndex: number, toIndex: number) => void;
 
   // Calendar versioning
   createCalendar: (name: string, seed?: CalendarSeedMode) => string;
@@ -134,6 +139,7 @@ const normalizeAppData = (raw: any): AppData => {
     people: normalizeEntityOrder(Array.isArray(raw?.people) ? raw.people : DEFAULT_PEOPLE.map(p => ({ ...p }))),
     // Projects are optional — existing data migrates with empty list.
     projects: normalizeEntityOrder(Array.isArray(raw?.projects) ? raw.projects.map(normalizeProject) : []),
+    milestones: [],
   };
   // Make sure every event/task category exists; fall back to "other".
   const catIds = new Set(data.categories.map(c => c.id));
@@ -144,6 +150,7 @@ const normalizeAppData = (raw: any): AppData => {
   const eventIds = new Set(data.events.map(e => e.id).filter(Boolean));
   const taskIds = new Set(data.tasks.map(t => t.id).filter(Boolean));
   const projectIds = new Set(data.projects.map(p => p.id));
+  data.milestones = normalizeMilestones(raw?.milestones, projectIds);
 
   data.events = data.events.map(e => {
     e = migrateTemporal(e) as any;
@@ -367,9 +374,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mutate(d => ({
       ...d,
       projects: d.projects.filter(p => p.id !== id),
+      milestones: d.milestones.filter(m => m.projectId !== id),
       // Detach tasks from deleted project
       tasks: d.tasks.map(t => (t.projectId === id ? { ...t, projectId: null } : t)),
     }));
+
+  const addMilestone = (milestone: Milestone) => mutate(d => ({ ...d, milestones: normalizeMilestones([...d.milestones, { ...milestone, order: d.milestones.filter(m => m.projectId === milestone.projectId).length }], d.projects.map(p => p.id)) }));
+  const updateMilestone = (id: string, update: Partial<Milestone>) => mutate(d => ({ ...d, milestones: normalizeMilestones(d.milestones.map(m => m.id === id ? { ...m, ...update } : m), d.projects.map(p => p.id)) }));
+  const deleteMilestone = (id: string) => mutate(d => ({ ...d, milestones: normalizeMilestones(d.milestones.filter(m => m.id !== id), d.projects.map(p => p.id)) }));
+  const reorderMilestones = (projectId: string, fromIndex: number, toIndex: number) => mutate(d => { const mine=d.milestones.filter(m=>m.projectId===projectId); const moved=moveEntity(mine,fromIndex,toIndex); const others=d.milestones.filter(m=>m.projectId!==projectId); return {...d,milestones: normalizeMilestones([...others,...moved],d.projects.map(p=>p.id))}; });
 
   // ── Calendar versioning ──
   const createCalendar = (name: string, seed: CalendarSeedMode = 'empty'): string => {
@@ -574,7 +587,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearActiveCalendar = () =>
-    mutate(d => ({ ...d, events: [], tasks: [], personEvents: [] }));
+    mutate(d => ({ ...d, events: [], tasks: [], personEvents: [], projects: [], milestones: [] }));
 
   // ── Recurring / multi-day group deletes ──
   const deleteEventGroup = (groupId: string) =>
@@ -596,7 +609,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addPersonEvent, updatePersonEvent, deletePersonEvent,
         addCategory, updateCategory, deleteCategory, reorderCategories,
         addPerson, updatePerson, deletePerson, reorderPeople,
-        addProject, updateProject, deleteProject, reorderProjects,
+        addProject, updateProject, deleteProject, reorderProjects, addMilestone, updateMilestone, deleteMilestone, reorderMilestones,
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar, updateCalendarDisplayTimeZone,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,

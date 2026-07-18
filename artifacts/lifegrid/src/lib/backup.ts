@@ -1,13 +1,14 @@
 import type { AppData, Calendar, Store } from '../types';
 import { browserTimeZone, migrateTemporal } from './temporal.js';
+import { normalizeMilestones } from './projectOperations.js';
 
 export const BACKUP_SCHEMA_VERSION = 6;
 const deepCopy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const safeZone = (zone: unknown) => { try { if (typeof zone === 'string') { Intl.DateTimeFormat(undefined, { timeZone: zone }); return zone; } } catch {} return browserTimeZone(); };
 const appData = (raw: any): AppData => {
   if (!raw || typeof raw !== 'object') throw new Error('Backup calendar data is invalid.');
-  for (const key of ['events','tasks','personEvents','categories','people','projects']) if (raw[key] !== undefined && !Array.isArray(raw[key])) throw new Error(`Backup collection ${key} must be an array.`);
-  return { events: (raw.events ?? []).map((x: any) => migrateTemporal(deepCopy(x))), tasks: deepCopy(raw.tasks ?? []), personEvents: (raw.personEvents ?? []).map((x: any) => migrateTemporal(deepCopy(x))), categories: deepCopy(raw.categories ?? []), people: deepCopy(raw.people ?? []), projects: deepCopy(raw.projects ?? []) } as AppData;
+  for (const key of ['events','tasks','personEvents','categories','people','projects','milestones']) if (raw[key] !== undefined && !Array.isArray(raw[key])) throw new Error(`Backup collection ${key} must be an array.`);
+  const projects = deepCopy(raw.projects ?? []); return { events: (raw.events ?? []).map((x: any) => migrateTemporal(deepCopy(x))), tasks: deepCopy(raw.tasks ?? []), personEvents: (raw.personEvents ?? []).map((x: any) => migrateTemporal(deepCopy(x))), categories: deepCopy(raw.categories ?? []), people: deepCopy(raw.people ?? []), projects, milestones: normalizeMilestones(raw.milestones, projects.map((p: any) => p.id)) } as AppData;
 };
 export const serializeBackup = (store: Store, exportedAt = new Date().toISOString()) => JSON.stringify({ app: 'lifegrid', version: BACKUP_SCHEMA_VERSION, exportedAt, store: deepCopy(store) }, null, 2);
 export const parseBackup = (json: string) => { try { return JSON.parse(json); } catch { throw new Error('Backup JSON could not be parsed.'); } };

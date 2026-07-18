@@ -52,6 +52,18 @@ export interface Project {
   notes: string | null;
 }
 
+/** A date-only project checkpoint.  Milestones intentionally are neither tasks nor events. */
+export interface Milestone {
+  id: string;
+  projectId: string;
+  title: string;
+  targetDate: string | null;
+  status: 'planned' | 'completed';
+  completedDate: string | null;
+  notes: string | null;
+  order: number;
+}
+
 export interface Event {
   id: string;
   date: string; // YYYY-MM-DD
@@ -122,6 +134,7 @@ export interface AppData {
   categories: Category[];
   people: Person[];
   projects: Project[];
+  milestones: Milestone[];
 }
 
 // ─── Calendar versioning ──────────────────────────────────────────────────────

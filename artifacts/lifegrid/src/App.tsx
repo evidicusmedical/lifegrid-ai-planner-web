@@ -20,7 +20,8 @@ function AppContent() {
   const online = useOnlineStatus();
   const { storageError } = useAppData();
   useEffect(() => { const back = () => setTab(fromHash()); window.addEventListener('popstate', back); return () => window.removeEventListener('popstate', back); }, []);
-  const changeTab = (next: string) => { if (next === tab) return; window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); };
+  const markGrid = (name: string) => { if (import.meta.env.DEV && typeof performance !== 'undefined') performance.mark(name); };
+  const changeTab = (next: string) => { if (next === tab) return; if (next === 'grid') markGrid('lifegrid:grid-navigation-click'); window.history.pushState({ tab: next }, '', `#${next}`); setTab(next); if (next === 'grid') markGrid('lifegrid:grid-route-state-updated'); };
 
   return (
     <div className="h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">

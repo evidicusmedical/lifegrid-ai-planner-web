@@ -103,7 +103,10 @@ const ExportPublicationHeader = ({ metadata, legend }: { metadata: { title: stri
   </header>
 );
 
+const gridMark = (name: string) => { if (import.meta.env.DEV && typeof performance !== 'undefined') performance.mark(name); };
+
 export const GridView = () => {
+  gridMark('lifegrid:grid-view-mounted');
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
 
@@ -248,7 +251,8 @@ export const GridView = () => {
   const eventsForGrid = exporting ? exportFilteredEvents.filter(event => event.showInExport !== false) : events;
 
   // Index once per dataset/timezone change; annual cells only perform O(1) lookups.
-  const gridData = useMemo(() => indexEventsByDisplayedDate(eventsForGrid, activeCalendar.displayTimeZone, sortEventsForCell), [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
+  const gridData = useMemo(() => { gridMark('lifegrid:grid-index-start'); const indexed = indexEventsByDisplayedDate(eventsForGrid, activeCalendar.displayTimeZone, sortEventsForCell); gridMark('lifegrid:grid-index-complete'); return indexed; }, [eventsForGrid, sortEventsForCell, activeCalendar.displayTimeZone]);
+  useEffect(() => { gridMark('lifegrid:grid-first-commit'); requestAnimationFrame(() => { gridMark('lifegrid:grid-first-visible-cell'); requestAnimationFrame(() => gridMark('lifegrid:grid-interaction-ready')); }); }, []);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>

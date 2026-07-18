@@ -1,0 +1,4 @@
+import { performance } from 'node:perf_hooks';
+import { deriveFlaggedReviewState } from '../.test-build/lib/timeReview.js';
+const make = (n, p) => Array.from({length:n},(_,i)=>({id:`${p}-${i}`,title:`${p} ${i}`,date:'2026-07-18',endDate:'2026-07-18',timeStatus:i%10===0?undefined:'all-day',temporalReview:i%10===0?'legacy-ambiguous':undefined,startTime:null,endTime:null,timeZone:null,timeZoneMode:null}));
+for (const [name,e,p] of [['small',100,25],['medium',1000,200],['large',5000,500]]) { const events=make(e,'e'), personEvents=make(p,'p'); const times=[]; let result; for(let i=0;i<20;i++){const start=performance.now();result=deriveFlaggedReviewState({events,personEvents});times.push(performance.now()-start)} times.sort((a,b)=>a-b); console.log(`${name}: iterations=20 median=${times[10].toFixed(2)}ms min=${times[0].toFixed(2)}ms max=${times.at(-1).toFixed(2)}ms visible=${result.items.length} unmapped=${result.unmappedFindings.length}`); }

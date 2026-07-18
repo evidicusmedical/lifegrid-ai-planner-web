@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { analyzeTemporalReview } from '../.test-build/lib/temporal.js';
 import { quickTemporalConfirmation, toFlaggedReviewItems } from '../.test-build/lib/timeReview.js';
 
-const legacy = { id: 'event-1', title: 'School drop-off', date: '2026-07-18', endDate: null, timeStatus: undefined, startTime: null, endTime: null, timeZone: null, timeZoneMode: null, temporalReview: 'legacy-unspecified', notes: 'keep' };
+const legacy = { id: 'event-1', title: 'School drop-off', date: '2026-07-18', endDate: null, timeStatus: undefined, startTime: null, endTime: null, timeZone: null, timeZoneMode: null, temporalReview: 'legacy-ambiguous', notes: 'keep' };
 test('legacy ambiguity is a deterministic blocking flagged item with explicit choices', () => {
   const items = toFlaggedReviewItems(analyzeTemporalReview([legacy], []));
   assert.ok(items.length); assert.equal(items[0].severity, 'blocking');

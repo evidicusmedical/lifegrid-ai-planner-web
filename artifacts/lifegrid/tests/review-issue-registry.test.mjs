@@ -1,0 +1,5 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { deriveFlaggedReviewState, requiresLegacyTemporalClarification } from '../.test-build/lib/timeReview.js';
+const base={id:'x',title:'X',date:'2026-07-18',endDate:'2026-07-18',startTime:null,endTime:null,timeZone:null,timeZoneMode:null};
+test('registry exposes only concrete registered current risks',()=>{ const legacy={...base,timeStatus:undefined,temporalReview:'legacy-ambiguous'}, invalid={...base,id:'bad',timeStatus:'timed',startTime:'10:00',endTime:'09:00',timeZoneMode:'floating'}; const state=deriveFlaggedReviewState({events:[legacy,invalid],personEvents:[]}); assert.ok(state.items.length >= 2); assert.equal(state.items[0].source,'temporal-validation'); assert.ok(state.items.some(x=>x.source==='legacy-migration')); });
+test('canonical and unknown findings are never generic fallbacks',()=>{ const state=deriveFlaggedReviewState({events:[{...base,timeStatus:'all-day',temporalReview:undefined}],personEvents:[]}); assert.equal(state.items.length,0); assert.equal(requiresLegacyTemporalClarification({...base,timeStatus:undefined,temporalReview:'legacy-unspecified'}),false); });

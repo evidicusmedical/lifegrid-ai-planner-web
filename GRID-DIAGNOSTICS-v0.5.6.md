@@ -1,0 +1,4 @@
+# Grid Diagnostics v0.5.6
+Observed user baseline: approximately 11 seconds; it was not reproduced in this environment. Development-only marks, in expected order: `lifegrid:grid-navigation-click`, `lifegrid:grid-route-state-updated`, `lifegrid:grid-view-mounted`, `lifegrid:grid-index-start`, `lifegrid:grid-index-complete`, `lifegrid:grid-first-commit`, `lifegrid:grid-first-visible-cell`, `lifegrid:grid-interaction-ready`.
+
+In Chrome DevTools Performance, record while selecting Grid, stop after it is usable, inspect long tasks, React commits, localStorage calls, chunk/service-worker requests, and layout/paint; export the trace with the download button. Record browser/device/dataset and each mark timestamp. v0.5.7 should use this trace to evaluate index work, context rerenders, date formatting, persistence and chunk/service-worker delay. No telemetry or network transmission is added.

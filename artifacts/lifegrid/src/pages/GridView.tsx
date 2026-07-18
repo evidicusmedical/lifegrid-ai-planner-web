@@ -153,10 +153,6 @@ export const GridView = () => {
   const getDaysForMonth = (m: number) => (m === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[m]);
 
   const activeCalendar = calendars.find(c => c.id === activeCalendarId)!;
-  const [clockNow, setClockNow] = useState(() => new Date());
-  useEffect(() => { const timer = window.setInterval(() => setClockNow(new Date()), 60_000); return () => window.clearInterval(timer); }, []);
-  const clockFor = (zone: string) => new Intl.DateTimeFormat('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false, timeZoneName: 'short' }).format(clockNow);
-
   const categoryRank = useMemo(() => new Map(categories.map((c, idx) => [c.id, idx])), [categories]);
   const sortedProjects = useMemo(() => [...projects].sort(sortProjectsForExport), [projects]);
 
@@ -215,7 +211,7 @@ export const GridView = () => {
     const byCat = (categoryRank.get(a.category) ?? 999) - (categoryRank.get(b.category) ?? 999);
     if (byCat !== 0) return byCat;
     return a.title.localeCompare(b.title);
-  }, [categoryRank, activeCalendar.displayTimeZone]);
+  }, [categoryRank]);
 
   const isTargetedDateExport = useMemo(() => {
     if (exportFilters.datePreset === 'current') return false;
@@ -249,11 +245,11 @@ export const GridView = () => {
       weeks.push(week);
     }
     return weeks;
-  }, [exportFilteredEvents, getExportDateRange, sortEventsForCell, activeCalendar.displayTimeZone]);
+  }, [exportFilteredEvents, getExportDateRange, sortEventsForCell]);
 
   // The interactive grid deliberately receives summaries only. Export retains full records
   // and has its own complete range model, so staged UI never changes export semantics.
-  const gridModel = useMemo(() => { gridMark('lifegrid:grid-model-start'); gridMark('lifegrid:grid-index-start'); const model = buildGridViewModel(events, year, activeCalendar.displayTimeZone, categoryRank, priorGridModelRef.current); priorGridModelRef.current = model; gridMark('lifegrid:grid-index-complete'); gridMark('lifegrid:grid-model-complete'); return model; }, [events, year, activeCalendar.displayTimeZone, categoryRank]);
+  const gridModel = useMemo(() => { gridMark('lifegrid:grid-model-start'); gridMark('lifegrid:grid-index-start'); const model = buildGridViewModel(events, year, categoryRank, priorGridModelRef.current); priorGridModelRef.current = model; gridMark('lifegrid:grid-index-complete'); gridMark('lifegrid:grid-model-complete'); return model; }, [events, year, categoryRank]);
   const gridData = gridModel.byDate;
   useEffect(() => {
     setGridReady(false);
@@ -320,7 +316,7 @@ export const GridView = () => {
 
   const exportFileName = `lifegrid-${activeCalendar?.name ?? 'calendar'}-${exportRange.start || year}-${exportRange.end || year}.png`.replace(/\s+/g, '-');
   const exportLegend = useMemo(() => buildExportLegend(exportFilteredEvents, categories), [exportFilteredEvents, categories]);
-  const exportMetadata = useMemo(() => buildExportMetadata({ calendarName: activeCalendar?.name ?? 'LifeGrid', start: exportRange.start, end: exportRange.end, timeZone: activeCalendar?.displayTimeZone ?? 'UTC', customTitle: customExportTitle, customSubtitle: customExportSubtitle, generatedAt: includeGeneratedAt ? new Date() : null }), [activeCalendar, customExportTitle, customExportSubtitle, exportRange.end, exportRange.start, includeGeneratedAt]);
+  const exportMetadata = useMemo(() => buildExportMetadata({ calendarName: activeCalendar?.name ?? 'LifeGrid', start: exportRange.start, end: exportRange.end, customTitle: customExportTitle, customSubtitle: customExportSubtitle, generatedAt: includeGeneratedAt ? new Date() : null }), [activeCalendar, customExportTitle, customExportSubtitle, exportRange.end, exportRange.start, includeGeneratedAt]);
   const exportDimensions = getExportDimensions(exportDensity, exportLegend.entries.length, isTargetedDateExport);
 
   // ── Image export (html-to-image renders modern CSS correctly) ──

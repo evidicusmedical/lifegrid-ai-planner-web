@@ -28,17 +28,17 @@ export const buildExportLegend = (records: ExportRecord[], categories: ExportCat
 
 export const sanitizeExportText = (value: string, maxLength = 120) => value.replace(/[\r\n]+/g, ' ').trim().slice(0, maxLength);
 
-export const formatExportDateRange = (start: string, end: string, timeZone: string) => {
-  const formatter = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone });
+export const formatExportDateRange = (start: string, end: string) => {
+  const formatter = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const parse = (date: string) => new Date(`${date}T12:00:00Z`);
   return start === end ? formatter.format(parse(start)) : `${formatter.format(parse(start))}–${formatter.format(parse(end))}`;
 };
 
-export const buildExportMetadata = (options: { calendarName: string; start: string; end: string; timeZone: string; customTitle?: string; customSubtitle?: string; generatedAt?: Date | null }) => {
+export const buildExportMetadata = (options: { calendarName: string; start: string; end: string; customTitle?: string; customSubtitle?: string; generatedAt?: Date | null }) => {
   const title = sanitizeExportText(options.customTitle || options.calendarName, 120);
   const subtitle = sanitizeExportText(options.customSubtitle || '', 180);
-  const metadata = [formatExportDateRange(options.start, options.end, options.timeZone), `Display timezone: ${options.timeZone}`, `LifeGrid ${APP_VERSION}`];
-  if (options.generatedAt) metadata.push(`Generated ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeStyle: 'short', timeZone: options.timeZone }).format(options.generatedAt)} ${options.timeZone}`);
+  const metadata = [formatExportDateRange(options.start, options.end), `LifeGrid ${APP_VERSION}`];
+  if (options.generatedAt) metadata.push(`Generated ${new Intl.DateTimeFormat('en-US', { dateStyle: 'long', timeStyle: 'short' }).format(options.generatedAt)}`);
   return { title, subtitle, metadata };
 };
 

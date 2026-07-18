@@ -7,7 +7,7 @@ import { formatDate } from '../lib/format';
 import { getLocalTemporalOccurrence, temporalSummary } from '../lib/temporal';
 
 export const PeopleView = () => {
-  const { personEvents, people, activeCalendar } = useAppData();
+  const { personEvents, people } = useAppData();
   const orderedPeople = useMemo(() => [...people].sort((a, b) => a.order - b.order), [people]);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<PersonEvent | null>(null);
@@ -23,7 +23,7 @@ export const PeopleView = () => {
     });
     map.forEach(arr => arr.sort((a, b) => { const ao = getLocalTemporalOccurrence(a); const bo = getLocalTemporalOccurrence(b); return `${ao.displayedStartDate} ${ao.displayedStartTime ?? ''}`.localeCompare(`${bo.displayedStartDate} ${bo.displayedStartTime ?? ''}`); }));
     return map;
-  }, [personEvents, orderedPeople, activeCalendar.displayTimeZone]);
+  }, [personEvents, orderedPeople]);
 
   const openAdd = (personId: string) => {
     setSelectedEvent(null);

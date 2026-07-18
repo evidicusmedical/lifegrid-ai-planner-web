@@ -24,9 +24,9 @@ test('retirement startup runs before React mount and protects calendar stores an
 });
 
 test('release identity and Vercel worker routes are cache-safe', () => {
-  assert.match(read('src/lib/version.ts'), /APP_VERSION = 'v0\.5\.15\.1'/);
-  assert.equal(JSON.parse(read('public/version.json')).appVersion, 'v0.5.15.1');
-  assert.match(read('index.html'), /lifegrid-app-version" content="v0\.5\.15\.1/);
+  assert.match(read('src/lib/version.ts'), /APP_VERSION = 'v0\.5\.15\.2'/);
+  assert.equal(JSON.parse(read('public/version.json')).appVersion, 'v0.5.15.2');
+  assert.match(read('index.html'), /lifegrid-app-version" content="v0\.5\.15\.2/);
   const vercel = read('../../vercel.json');
   for (const path of ['/sw.js', '/service-worker.js', '/registerSW.js', '/version.json']) assert.match(vercel, new RegExp(path.replace('.', '\\.')));
   assert.match(vercel, /no-cache, no-store, must-revalidate/);

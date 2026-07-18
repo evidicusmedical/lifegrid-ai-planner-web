@@ -41,4 +41,3 @@ export type TemporalReviewIssue = { key: string; recordType: 'event' | 'person-s
 export const analyzeTemporalReview = (events: Array<TemporalRecord & { id: string; title: string }>, personEvents: Array<TemporalRecord & { id: string; title: string }>): TemporalReviewIssue[] => [...events.map(x => [x,'event'] as const), ...personEvents.map(x => [x,'person-schedule'] as const)].flatMap(([record, recordType]) => temporalErrors(record).map((explanation, index) => ({ key: `${recordType}:${record.id}:INVALID_TEMPORAL_${index}`, recordType, recordId: record.id, title: record.title, date: record.date, code: 'INVALID_TEMPORAL_COMBINATION', severity: 'blocking' as const, blocking: true as const, explanation })));
 
 /** Compatibility for calendar creation only; no Event calculation reads a browser zone. */
-export const browserTimeZone = () => 'local';

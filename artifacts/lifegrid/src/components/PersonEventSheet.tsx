@@ -85,7 +85,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
       setEndDate('');
       setTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day'));
       setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
-      setTimeZone(initialData?.timeZone ?? activeCalendar.displayTimeZone);
+      setTimeZone(initialData?.timeZone ?? '');
       setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? '');
       if (initialData) {
         form.reset({
@@ -263,7 +263,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
                   </div>
                 )}
 
-                {!multiDay && <TemporalFields prefix="person-schedule" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={activeCalendar.displayTimeZone} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />}
+                {!multiDay && <TemporalFields prefix="person-schedule" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={''} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />}
 
                 <FormField
                   control={form.control}

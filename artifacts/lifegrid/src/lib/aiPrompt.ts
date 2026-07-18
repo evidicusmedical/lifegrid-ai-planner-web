@@ -43,7 +43,7 @@ Before final output verify valid JSON; correct lifegridPatchVersion; exact suppo
 FINAL-OUTPUT RULES
 Before final patch mode you may ask concise questions. In final patch mode return JSON only.`;
 
-export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string; displayTimeZone: string }, range: { start: string | null; end: string | null }) => {
+export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
   const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);
   const events = data.events.filter(e => inside(e.date));
   const schedule = data.personEvents.filter(e => inside(e.date));
@@ -52,7 +52,7 @@ export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: s
   const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate));
   tasks.forEach(t => categoryIds.add(t.category));
   const context = {
-    metadata: { application: 'LifeGrid', applicationVersion: APP_VERSION, exportFormatVersion: AI_INTERCHANGE_VERSION, exportedAt: new Date().toISOString(), calendarId: calendar.id, calendarName: calendar.name, displayTimeZone: calendar.displayTimeZone, selectedDateRange: range },
+    metadata: { application: 'LifeGrid', applicationVersion: APP_VERSION, exportFormatVersion: AI_INTERCHANGE_VERSION, exportedAt: new Date().toISOString(), calendarId: calendar.id, calendarName: calendar.name, selectedDateRange: range },
     categories: data.categories.filter(c => categoryIds.has(c.id) || c.id === 'other').map((c, order) => ({ ...c, order, protected: c.id === 'other' })),
     people: data.people.filter(p => schedule.some(s => s.person === p.id)).concat(data.people.filter(p => !schedule.some(s => s.person === p.id))),
     projects: data.projects,

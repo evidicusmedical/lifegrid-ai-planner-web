@@ -8,7 +8,7 @@ import { CalendarSeedMode, createCalendarSeed, hasOperationalRecords, resetToTru
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
 import { analyzeDependencies } from '../lib/aiDependencies';
 import { applyPatchAtomically } from '../lib/aiPatchApply';
-import { browserTimeZone, migrateTemporal } from '../lib/temporal';
+import { migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
 import { moveEntity, normalizeEntityOrder } from '../lib/entityOrder';
 import { classifyStorageError } from '../lib/storageError';
@@ -59,7 +59,6 @@ export interface AppDataContextType extends AppData {
   deleteCalendar: (id: string) => void;
   switchCalendar: (id: string) => void;
   duplicateCalendar: (id: string, name?: string) => string;
-  updateCalendarDisplayTimeZone: (id: string, timeZone: string) => void;
 
   // Import / backup
   applyImportUpdate: (update: any, transformationArgs?: { proposals: TransformationProposalSet; approvedProposalIds: Set<string> }, target?: { newVersionName?: string }) => string[];
@@ -205,7 +204,7 @@ const normalizeAppData = (raw: any): AppData => {
   return data;
 };
 
-const freshCalendar = (name: string, data: AppData, displayTimeZone = browserTimeZone()): Calendar => ({ id: uid(), name, createdAt: new Date().toISOString(), data, displayTimeZone });
+const freshCalendar = (name: string, data: AppData): Calendar => ({ id: uid(), name, createdAt: new Date().toISOString(), data });
 
 // ─── Load store, migrating legacy single-calendar data if present ─────────────
 const loadStore = (): Store => {
@@ -219,7 +218,6 @@ const loadStore = (): Store => {
           name: c.name ?? 'Calendar',
           createdAt: c.createdAt ?? new Date().toISOString(),
           data: normalizeAppData(c.data),
-          displayTimeZone: typeof c.displayTimeZone === 'string' ? c.displayTimeZone : browserTimeZone(),
         }));
         const activeCalendarId = calendars.some(c => c.id === parsed.activeCalendarId)
           ? parsed.activeCalendarId
@@ -377,19 +375,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // ── Calendar versioning ──
   const createCalendar = (name: string, seed: CalendarSeedMode = 'empty'): string => {
-    const cal = freshCalendar(name || 'Untitled Calendar', createCalendarSeed(seed, activeCalendar.data), seed === 'copy-structure' ? activeCalendar.displayTimeZone : browserTimeZone());
+    const cal = freshCalendar(name || 'Untitled Calendar', createCalendarSeed(seed, activeCalendar.data));
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     return cal.id;
   };
 
   const duplicateCalendar = (id: string, name?: string): string => {
     const src = store.calendars.find(c => c.id === id) ?? activeCalendar;
-    const cal = freshCalendar(name || `${src.name} (copy)`, createCalendarSeed('duplicate', src.data), src.displayTimeZone);
+    const cal = freshCalendar(name || `${src.name} (copy)`, createCalendarSeed('duplicate', src.data));
     setStore(prev => ({ calendars: [...prev.calendars, cal], activeCalendarId: cal.id }));
     return cal.id;
   };
 
-  const updateCalendarDisplayTimeZone = (id: string, displayTimeZone: string) => setStore(prev => ({ ...prev, calendars: prev.calendars.map(c => c.id === id ? { ...c, displayTimeZone } : c) }));
 
   const renameCalendar = (id: string, name: string) =>
     setStore(prev => ({
@@ -601,7 +598,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategory, updateCategory, deleteCategory, reorderCategories,
         addPerson, updatePerson, deletePerson, reorderPeople,
         addProject, updateProject, deleteProject, reorderProjects,
-        createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar, updateCalendarDisplayTimeZone,
+        createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,
         deleteEventGroup, deleteTaskGroup, deletePersonEventGroup, storageError,

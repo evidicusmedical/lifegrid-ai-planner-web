@@ -1,0 +1,2 @@
+# LifeGrid v0.5.12 — AI patch approval repair
+AI Interchange remains **v4** and backups remain schema **6**. AI updates are now sparse field-presence patches: omitted values are preserved, `null` clears only nullable fields, and explicit arrays replace permitted arrays. Review separates blocking integrity errors from warnings and information; warnings never disable approval. This is the final planned feature/corrective release and LifeGrid is feature-frozen except for critical data-loss, corruption, security, or deployment defects.

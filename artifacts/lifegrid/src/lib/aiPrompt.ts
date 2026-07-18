@@ -1412,7 +1412,8 @@ function normalizeEventUpdate(
   u: any, validCats: Set<string>, colorMap: Record<string, string>
 ): { id: string } & Partial<Event> {
   const out: any = { id: String(u.id) };
-  if (u.date     !== undefined) { const d = fixDate(String(u.date)); if (d) out.date = d; }
+  if (u.date !== undefined) { const d = fixDate(String(u.date)); if (d) out.date = d; }
+  if ('endDate' in u) { if (u.endDate === null) out.endDate = null; else { const d = fixDate(String(u.endDate)); if (d) out.endDate = d; } }
   if (u.title    !== undefined) out.title = String(u.title);
   if (u.category !== undefined || u.tag !== undefined || u.tags !== undefined) {
     const rawCat = u.category ?? u.tag ?? (Array.isArray(u.tags) ? u.tags[0] : undefined);
@@ -1440,7 +1441,7 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
     const rawCat = u.category ?? u.tag ?? (Array.isArray(u.tags) ? u.tags[0] : undefined);
     out.category = validCats.has(rawCat) ? rawCat : 'other';
   }
-  if (u.dueDate  !== undefined) { const d = fixDate(String(u.dueDate)); if (d) out.dueDate = d; }
+  if (u.dueDate !== undefined) { if (u.dueDate === null) out.dueDate = null; else { const d = fixDate(String(u.dueDate)); if (d) out.dueDate = d; } }
   if (u.status   !== undefined && VALID_STA.has(u.status))  out.status   = u.status;
   if (u.priority !== undefined && VALID_PRI.has(u.priority)) out.priority = u.priority;
   if ('notes'          in u) out.notes          = u.notes ?? null;

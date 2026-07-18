@@ -220,15 +220,15 @@ export const TasksView = () => {
     <div className="flex flex-col h-full bg-background relative">
       {/* ── Header ── */}
       <div className="flex-none p-4 pb-2 border-b border-border bg-card">
-        <div className="flex items-center justify-between mb-3">
-          <div>
+        <div className="task-heading mb-3">
+          <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight">Tasks</h1>
             <p className="text-[10px] text-muted-foreground mt-0.5">Use tasks for small next actions; group larger efforts with projects and tags.</p>
           </div>
           {/* Sort dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-muted text-muted-foreground hover:bg-muted/70 transition-colors">
+              <button aria-label={`Sort: ${sort === 'smart' ? 'Smart' : SORT_LABELS[sort]}`} className="task-sort-control flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-muted text-muted-foreground hover:bg-muted/70 transition-colors">
                 <ArrowDownUp size={12} />
                 {sort === 'smart' ? 'Smart' : SORT_LABELS[sort].replace(/^[^ ]+ /, '')}
                 <ChevronDown size={11} />
@@ -251,7 +251,7 @@ export const TasksView = () => {
         </div>
 
         {/* Filter chips */}
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
+        <div className="task-chip-rail flex gap-2 overflow-x-auto overflow-y-hidden pb-2 scrollbar-hide -mx-4 px-4">
           {FILTER_CHIPS.map(f => (
             <button
               key={f.id}
@@ -269,7 +269,7 @@ export const TasksView = () => {
 
         {/* Project filter (only if projects exist) */}
         {projects.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
+          <div className="task-chip-rail flex gap-2 overflow-x-auto overflow-y-hidden pb-1 scrollbar-hide -mx-4 px-4">
             <button
               onClick={() => setProjectFilter('all')}
               className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
@@ -304,7 +304,7 @@ export const TasksView = () => {
         )}
 
         {/* Category focus chips */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4">
+        <div className="task-chip-rail flex gap-2 overflow-x-auto overflow-y-hidden pb-1 scrollbar-hide -mx-4 px-4">
           <button
             onClick={() => setCatFilter('all')}
             className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors ${
@@ -331,7 +331,7 @@ export const TasksView = () => {
       </div>
 
       {/* ── Task list ── */}
-      <div className="flex-1 overflow-y-auto p-4 pb-24 space-y-3">
+      <div className="task-list flex-1 overflow-y-auto p-4 space-y-3">
         {/* Project progress header when filtered */}
         {projectFilter !== 'all' && (() => {
           const proj = projectMap.get(projectFilter);
@@ -391,8 +391,8 @@ export const TasksView = () => {
                   </button>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className={`font-semibold text-sm leading-tight ${done ? 'line-through text-muted-foreground' : ''}`}>
+                    <div className="task-card-title-row flex items-start gap-2">
+                      <h3 className={`min-w-0 flex-1 break-words font-semibold text-sm leading-tight ${done ? 'line-through text-muted-foreground' : ''}`}>
                         {task.name}
                       </h3>
                       <div className="shrink-0 flex items-center gap-1">
@@ -416,7 +416,7 @@ export const TasksView = () => {
                       </div>
                     )}
 
-                    <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
+                    <div className="task-card-metadata flex items-center gap-3 mt-1.5 text-xs text-muted-foreground flex-wrap">
                       {task.dueDate && (
                         <div className={`flex items-center gap-1 font-medium ${overdue ? 'text-red-500' : ''}`}>
                           <Clock size={12} />
@@ -498,10 +498,11 @@ export const TasksView = () => {
       {/* FAB */}
       <button
         onClick={() => { setSelectedTask(null); setIsSheetOpen(true); }}
-        className="absolute bottom-6 right-6 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
+        aria-label="Add task"
+        className="task-fab absolute right-4 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
         data-testid="button-add-task"
       >
-        <Plus size={24} />
+        <Plus size={24} /><span className="sr-only">Add task</span>
       </button>
 
       {isSheetOpen && (

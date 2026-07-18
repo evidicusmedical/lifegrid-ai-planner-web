@@ -1,6 +1,7 @@
 import type { AppData, Calendar, Store } from '../types';
 import { browserTimeZone, migrateTemporal } from './temporal.js';
 import { normalizeMilestones } from './projectOperations.js';
+import { buildLifeGridExportFilename } from './exportFilenames.js';
 
 export const BACKUP_SCHEMA_VERSION = 6;
 const deepCopy = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -25,5 +26,5 @@ export const restoreBackupIntoStore = (current: Store, parsed: any): Store => no
 
 /** Browser-only download remains separate from serialization and restoration. */
 export const downloadCurrentBackup = (app: { exportBackup: () => string; activeCalendar: Calendar; recordBackup: () => void }) => {
-  const blob = new Blob([app.exportBackup()], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `lifegrid-backup-${app.activeCalendar.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'calendar'}.json`; a.click(); URL.revokeObjectURL(url); app.recordBackup();
+  const blob = new Blob([app.exportBackup()], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = buildLifeGridExportFilename({ kind: 'json_backup', calendarName: app.activeCalendar.name, generatedAt: new Date(), timeZone: app.activeCalendar.displayTimeZone }); a.click(); URL.revokeObjectURL(url); app.recordBackup();
 };

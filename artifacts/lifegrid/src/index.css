@@ -372,6 +372,10 @@ input, select, textarea, button { min-width: 0; }
 }
 
 :root { --bottom-nav-height: 4rem; }
+html, body, #root { min-height: 100vh; min-height: 100dvh; background: hsl(var(--background)); }
+body { margin: 0; }
+#lifegrid-startup-shell { min-height: 100vh; min-height: 100dvh; box-sizing: border-box; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: .5rem; background: #0f172a; color: #f8fafc; font-family: system-ui, sans-serif; padding: max(1.5rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left)); }
+.app-header { padding-top: env(safe-area-inset-top); }
 .task-chip-rail { scrollbar-width: thin; scroll-padding-inline: 1rem; -webkit-overflow-scrolling: touch; }
 .task-chip-rail > button { min-height: 2rem; flex: 0 0 auto; }
 .task-list { padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom) + 6rem); }

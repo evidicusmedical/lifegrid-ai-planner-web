@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover" />
     <title>LifeGrid AI Planner</title>
     <meta name="description" content="LifeGrid AI Planner — your personal life operating system." />
     <meta name="robots" content="index, follow" />
@@ -17,11 +17,12 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="LifeGrid" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="lifegrid-startup-shell" role="status" aria-live="polite"><strong>LifeGrid</strong><span>Starting LifeGrid…</span></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

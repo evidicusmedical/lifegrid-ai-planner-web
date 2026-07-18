@@ -1,0 +1,3 @@
+# Handoff — v0.5.15.5 mobile export scroll repair
+
+Starting checkout was merge PR #36 (`0bb5c4b`), containing expected implementation head `20947ab6cd2fcc7a28faf2107fdff8b9326641fc`. Baseline was v0.5.15.4/package 0.5.15-4; AI interchange is 4 and backup schema 7. The preceding sheet used z-40 while BottomNav uses z-50, and its sticky footer was nested in its scroll body. This release raises the global dialog layer to z-[100], makes the footer a panel sibling of the body, and fixes document scroll using a bounded iOS-safe body lock that restores page and Grid positions. VisualViewport resize and orientation update the modal viewport variable. No physical-device verification was performed here.

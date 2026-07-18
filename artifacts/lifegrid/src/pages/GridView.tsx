@@ -241,6 +241,7 @@ export const GridView = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const exportDialogRef = useRef<HTMLDivElement>(null);
+  const exportBodyRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
   const targetedExportRef = useRef<HTMLDivElement>(null);
   const publicationRef = useRef<HTMLDivElement>(null);
@@ -537,11 +538,33 @@ export const GridView = () => {
 
   useEffect(() => {
     if (!exportOptionsOpen || !compactExportLayout) return;
-    const priorOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    exportDialogRef.current?.focus();
+    const body = document.body;
+    const root = document.documentElement;
+    const scrollY = window.scrollY;
+    const grid = scrollRef.current;
+    const gridPosition = grid ? { top: grid.scrollTop, left: grid.scrollLeft } : null;
+    const previous = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow, touchAction: body.style.touchAction, rootOverflow: root.style.overflow };
+    body.classList.add("lifegrid-export-modal-open");
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    body.style.touchAction = "none";
+    root.style.overflow = "hidden";
+    const setViewportHeight = () => document.documentElement.style.setProperty("--lifegrid-visual-viewport-height", `${window.visualViewport?.height ?? window.innerHeight}px`);
+    setViewportHeight();
+    window.visualViewport?.addEventListener("resize", setViewportHeight);
+    window.addEventListener("orientationchange", setViewportHeight);
+    requestAnimationFrame(() => exportDialogRef.current?.querySelector<HTMLElement>("[aria-label='Close image export']")?.focus());
     return () => {
-      document.body.style.overflow = priorOverflow;
+      body.classList.remove("lifegrid-export-modal-open");
+      window.visualViewport?.removeEventListener("resize", setViewportHeight);
+      window.removeEventListener("orientationchange", setViewportHeight);
+      document.documentElement.style.removeProperty("--lifegrid-visual-viewport-height");
+      Object.assign(body.style, { position: previous.position, top: previous.top, width: previous.width, overflow: previous.overflow, touchAction: previous.touchAction });
+      root.style.overflow = previous.rootOverflow;
+      window.scrollTo(0, scrollY);
+      if (grid && gridPosition) { grid.scrollTop = gridPosition.top; grid.scrollLeft = gridPosition.left; }
       exportButtonRef.current?.focus();
     };
   }, [exportOptionsOpen, compactExportLayout]);
@@ -907,7 +930,7 @@ export const GridView = () => {
 
       {exportOptionsOpen && (
         <div
-          className={compactExportLayout ? "fixed inset-0 z-40 flex bg-black/45 p-0" : "flex-none"}
+          className={compactExportLayout ? "export-modal-layer fixed inset-0 z-[100] flex bg-black/45 p-0" : "flex-none"}
           onMouseDown={(event) => {
             if (compactExportLayout && event.target === event.currentTarget) closeExportOptions();
           }}
@@ -929,26 +952,22 @@ export const GridView = () => {
               }
             }}
             className={compactExportLayout
-              ? "flex h-[100vh] h-[100dvh] w-full min-w-0 flex-col overflow-hidden bg-card shadow-2xl"
+              ? "export-modal-panel flex h-[100vh] h-[100dvh] h-[var(--lifegrid-visual-viewport-height,100dvh)] w-full min-w-0 flex-col overflow-hidden bg-card shadow-2xl"
               : "flex-none max-h-[calc(100dvh-10rem)] min-w-0 overflow-y-auto border-b border-border bg-card/95 px-3 py-3 space-y-3 overscroll-contain"}
             data-testid={compactExportLayout ? "panel-export-mobile" : "panel-export-options"}
           >
             {compactExportLayout && (
-              <header className="flex flex-none items-center justify-between gap-3 border-b border-border bg-card px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+              <header className="export-modal-header flex flex-none items-center justify-between gap-3 border-b border-border bg-card px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
                 <div className="min-w-0"><h2 id="mobile-export-title" className="text-sm font-bold">Image export</h2><p className="truncate text-[11px] text-muted-foreground">{exportFilterSummary}</p></div>
                 <Button type="button" variant="outline" onClick={closeExportOptions} disabled={exporting} className="min-h-11 shrink-0" aria-label="Close image export">Close</Button>
               </header>
             )}
-            <div className={compactExportLayout ? "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-gutter:stable]" : undefined}>
+            <div ref={exportBodyRef} className={compactExportLayout ? "export-modal-body min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 pb-8 [scrollbar-gutter:stable] [-webkit-overflow-scrolling:touch] touch-pan-y" : undefined}>
             <div className={compactExportLayout ? "space-y-4" : undefined}>
-          <div>
-            <div className="text-xs font-bold text-foreground">
-              Image export filters
-            </div>
-            <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground">
-              {exportFilterSummary}
-            </div>
-          </div>
+          {!compactExportLayout && <div>
+            <div className="text-xs font-bold text-foreground">Image export filters</div>
+            <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+          </div>}
 
           {compactExportLayout && (
             <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/60 p-3 text-xs">
@@ -1141,16 +1160,15 @@ export const GridView = () => {
             Creates a readable grid image from the selected date range and
             filters. Notes are not included.
           </p>
-          <div className={compactExportLayout ? "sticky bottom-0 -mx-4 border-t border-border bg-card px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3" : "flex flex-wrap gap-2 border-t border-border pt-3"} data-testid={compactExportLayout ? "mobile-export-footer" : undefined}>
-            <div className="flex gap-2">
-              <Button type="button" onClick={handleExport} disabled={exporting || !!exportRangeError} className="min-h-11 flex-1 gap-2" data-testid="button-export-generate">
-                <Image size={16} /> {exporting ? "Generating image…" : "Generate image"}
-              </Button>
+          {!compactExportLayout && <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+            <div className="flex gap-2"><Button type="button" onClick={handleExport} disabled={exporting || !!exportRangeError} className="min-h-11 flex-1 gap-2" data-testid="button-export-generate"><Image size={16} /> {exporting ? "Generating image…" : "Generate image"}</Button><Button type="button" variant="outline" onClick={closeExportOptions} className="min-h-11" disabled={exporting}>Close</Button></div>
+          </div>}
+            </div>
+            </div>
+            {compactExportLayout && <footer className="export-modal-footer flex flex-none gap-2 border-t border-border bg-card px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3" data-testid="mobile-export-footer">
+              <Button type="button" onClick={handleExport} disabled={exporting || !!exportRangeError} className="min-h-11 flex-1 gap-2" data-testid="button-export-generate"><Image size={16} /> {exporting ? "Generating image…" : "Generate image"}</Button>
               <Button type="button" variant="outline" onClick={closeExportOptions} className="min-h-11" disabled={exporting}>Close</Button>
-            </div>
-          </div>
-            </div>
-            </div>
+            </footer>}
           </div>
         </div>
       )}

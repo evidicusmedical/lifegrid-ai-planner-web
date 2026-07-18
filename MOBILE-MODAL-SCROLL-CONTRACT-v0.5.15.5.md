@@ -1,0 +1,3 @@
+# Mobile modal scroll contract — v0.5.15.5
+
+Layering is explicit: normal content uses ordinary layers, BottomNav remains z-50, and global export dialogs use z-[100]. A compact export dialog contains exactly a flex-none header, a `flex-1 min-h-0` body that alone owns vertical scrolling, and a flex-none safe-area footer. The panel clips overflow. On open, the document body is fixed at its captured scroll position and the Grid internal scroll position is retained; both are restored on close. The body uses contained overscroll, pan-y touch, and iOS momentum scrolling. The modal uses 100vh/100dvh fallback plus a VisualViewport height variable updated only on resize/orientation events.

@@ -1,0 +1,4 @@
+import test from 'node:test'; import assert from 'node:assert/strict'; import { readFileSync } from 'node:fs'; import { classifyStorageError } from '../.test-build/lib/storageError.js';
+const vite=readFileSync(new URL('../vite.config.ts', import.meta.url),'utf8'), context=readFileSync(new URL('../src/context/AppDataContext.tsx', import.meta.url),'utf8');
+test('PWA manifest specifies install and offline shell metadata',()=>{for(const token of ['name: "LifeGrid AI Planner"','short_name: "LifeGrid"','display: "standalone"','start_url: basePath','scope: basePath','theme_color','background_color','VitePWA']) assert.match(vite,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));});
+test('storage failure is explicit and does not clear storage',()=>{assert.match(classifyStorageError(new DOMException('full','QuotaExceededError')),/not saved/i);assert.match(context,/classifyStorageError/);assert.doesNotMatch(context,/localStorage\.clear/);});

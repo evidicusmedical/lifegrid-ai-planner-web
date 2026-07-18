@@ -11,6 +11,7 @@ import { applyPatchAtomically } from '../lib/aiPatchApply';
 import { browserTimeZone, migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
 import { moveEntity, normalizeEntityOrder } from '../lib/entityOrder';
+import { classifyStorageError } from '../lib/storageError';
 
 export interface AppDataContextType extends AppData {
   // Active calendar identity
@@ -68,6 +69,7 @@ export interface AppDataContextType extends AppData {
   canResetActiveCalendarToTrulyEmpty: boolean;
   lastBackupAt: string | null;
   recordBackup: () => void;
+  storageError: string | null;
 
   // Recurring / multi-day group deletes
   deleteEventGroup: (groupId: string) => void;
@@ -245,6 +247,7 @@ const loadStore = (): Store => {
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [store, setStore] = useState<Store>(loadStore);
+  const [storageError, setStorageError] = useState<string | null>(null);
 
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(() => {
     try { return localStorage.getItem(BACKUP_TS_KEY); } catch { return null; }
@@ -257,7 +260,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   useEffect(() => {
-    localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+      setStorageError(null);
+    } catch (error) {
+      console.error('Failed to persist LifeGrid store', error);
+      setStorageError(classifyStorageError(error));
+    }
   }, [store]);
 
   const activeCalendar =
@@ -591,7 +600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createCalendar, renameCalendar, deleteCalendar, switchCalendar, duplicateCalendar, updateCalendarDisplayTimeZone,
         applyImportUpdate, exportBackup, importBackup, clearActiveCalendar, resetActiveCalendarToTrulyEmpty, canResetActiveCalendarToTrulyEmpty,
         lastBackupAt, recordBackup,
-        deleteEventGroup, deleteTaskGroup, deletePersonEventGroup,
+        deleteEventGroup, deleteTaskGroup, deletePersonEventGroup, storageError,
       }}
     >
       {children}

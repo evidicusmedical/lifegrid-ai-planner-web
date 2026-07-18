@@ -180,8 +180,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="bottom"
-          className="rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
-          style={{ height: '88dvh', paddingBottom: 'env(safe-area-inset-bottom, 16px)' }}
+          className="mobile-sheet rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
             <h2 className="font-bold text-base">{initialData ? 'Edit Task' : 'New Task'}</h2>

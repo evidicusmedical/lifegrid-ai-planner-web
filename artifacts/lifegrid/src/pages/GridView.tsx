@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/ThemeContext';
 import { Event, Project, Task } from '../types';
@@ -16,7 +16,8 @@ import { DayTypePreview } from '../components/DayTypePreview';
 import { buildExportLegend, buildExportMetadata, EXPORT_DENSITY, ExportDensity, getDenseDay, getExportDimensions } from '../lib/gridPublication';
 import { getDateTemporalState, validateExportRange } from '../lib/gridAwareness';
 import { getDisplayedTemporalOccurrence } from '../lib/temporal';
-import { buildGridViewModel, resolveEventById } from '../lib/gridModel';
+import { buildGridViewModel, resolveEventById, GridMonthModel } from '../lib/gridModel';
+import { getGridMountOrder, gridMonthKey, MountedMonthState, yieldToBrowser } from '../lib/gridMounting';
 import { gridMark } from '../lib/gridDiagnostics';
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
@@ -104,8 +105,14 @@ const ExportPublicationHeader = ({ metadata, legend }: { metadata: { title: stri
   </header>
 );
 
+const GridMonth = React.memo(({ model, year, theme, todayStr, detailDate, onOpenDay }: { model: GridMonthModel; year: number; theme: string; todayStr: string; detailDate: string | null; onOpenDay: (date: string) => void }) => {
+  const month = Number(model.monthKey.slice(5, 7)) - 1;
+  const days = month === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[month];
+  return <section className="grid-month p-3" data-lifegrid-grid-month data-testid={`grid-month-${month}`}><h2 className="text-sm font-bold mb-2">{MONTHS[month]} {year}</h2><div className="grid grid-cols-7 gap-px border border-border bg-border">{DOW_SHORT.map(day => <div key={day} className="bg-card p-1 text-[10px] font-bold text-muted-foreground">{day}</div>)}{Array.from({ length: new Date(year, month, 1).getDay() }, (_, i) => <div key={`blank-${i}`} className="bg-muted/30 min-h-16" />)}{Array.from({ length: days }, (_, index) => { const date = `${model.monthKey}-${String(index + 1).padStart(2,'0')}`; const events = model.eventsByDate.get(date) ?? []; return <button key={date} type="button" onClick={() => onOpenDay(date)} className={`min-h-16 bg-background p-1 text-left align-top focus:ring-2 focus:ring-primary ${detailDate === date ? 'ring-2 ring-foreground' : ''}`} data-lifegrid-grid-day aria-label={date}><span className="block text-[10px] font-bold">{index + 1}</span>{events.slice(0, MAX_VISIBLE_EVENTS).map(event => <span key={event.id} data-lifegrid-grid-event className="block truncate rounded px-1 text-[9px] text-white" style={{ backgroundColor: event.color ?? (theme === 'dark' ? '#475569' : '#64748b') }}>{event.title}</span>)}</button>; })}</div></section>;
+});
+
 export const GridView = () => {
-  gridMark('lifegrid:grid-view-mounted');
+  gridMark('grid-view-render-start');
   const { events, tasks, categories, projects, calendars, activeCalendarId, switchCalendar } = useAppData();
   const { theme, toggleTheme } = useTheme();
 
@@ -134,9 +141,10 @@ export const GridView = () => {
     projectId: 'all',
   });
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
-  // Yield once after the shell commits so route feedback paints before annual DOM work.
-  const [gridReady, setGridReady] = useState(false);
-  const [renderedMonths, setRenderedMonths] = useState<Set<number>>(new Set());
+  // Only admitted keys are mapped into GridMonth; unmounted months have no JSX or DOM.
+  const [mounted, setMounted] = useState<MountedMonthState>({ generation: 0, mountedMonthKeys: [], firstUsefulReady: false, fullGridComplete: false });
+  const [exportPreparing, setExportPreparing] = useState(false);
+  const generationRef = useRef(0);
 
   const scrollRef    = useRef<HTMLDivElement>(null);
   const tableRef     = useRef<HTMLTableElement>(null);
@@ -253,24 +261,33 @@ export const GridView = () => {
 
   // The interactive grid deliberately receives summaries only. Export retains full records
   // and has its own complete range model, so staged UI never changes export semantics.
-  const gridModel = useMemo(() => { gridMark('lifegrid:grid-model-start'); gridMark('lifegrid:grid-index-start'); const model = buildGridViewModel(events, year, activeCalendar.displayTimeZone, categoryRank, priorGridModelRef.current); priorGridModelRef.current = model; gridMark('lifegrid:grid-index-complete'); gridMark('lifegrid:grid-model-complete'); return model; }, [events, year, activeCalendar.displayTimeZone, categoryRank]);
+  const gridModel = useMemo(() => { gridMark('grid-model-start'); gridMark('grid-index-start'); const model = buildGridViewModel(events, year, activeCalendar.displayTimeZone, categoryRank, priorGridModelRef.current); priorGridModelRef.current = model; gridMark('grid-index-complete'); gridMark('grid-model-complete'); return model; }, [events, year, activeCalendar.displayTimeZone, categoryRank]);
   const gridData = gridModel.byDate;
   useEffect(() => {
-    setGridReady(false);
-    gridMark('lifegrid:grid-first-commit');
-    const frame = requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-start'); setGridReady(true); setRenderedMonths(new Set([year === today.getFullYear() ? todayMonth : 0])); });
-    return () => cancelAnimationFrame(frame);
-  }, [year, activeCalendarId, today, todayMonth]);
-  useEffect(() => {
-    if (!gridReady) return;
-    let cancelled = false;
-    const preferred = year === today.getFullYear() ? todayMonth : 0;
-    const order = [preferred, preferred - 1, preferred + 1, ...Array.from({ length: 12 }, (_, i) => i)].filter((value, index, values) => value >= 0 && value < 12 && values.indexOf(value) === index);
-    let cursor = 1;
-    const next = () => { if (cancelled) return; setRenderedMonths(previous => { const following = new Set(previous); order.slice(cursor, cursor + 2).forEach(month => following.add(month)); return following; }); cursor += 2; if (cursor < order.length) requestAnimationFrame(next); };
-    const frame = requestAnimationFrame(next); return () => { cancelled = true; cancelAnimationFrame(frame); };
-  }, [gridReady, year, activeCalendarId, todayMonth]);
-  useEffect(() => { if (!gridReady) return; gridMark('lifegrid:grid-first-visible-cell'); requestAnimationFrame(() => { gridMark('lifegrid:grid-dom-complete'); gridMark('lifegrid:grid-interaction-ready'); }); }, [gridReady]);
+    const generation = ++generationRef.current;
+    const controller = new AbortController();
+    const order = getGridMountOrder(year, today.getFullYear(), todayMonth);
+    setMounted({ generation, mountedMonthKeys: [], firstUsefulReady: false, fullGridComplete: false });
+    gridMark('grid-view-mounted', 0); gridMark('grid-shell-commit', 0);
+    const schedule = async () => {
+      await yieldToBrowser(controller.signal); if (controller.signal.aborted || generation !== generationRef.current) return;
+      gridMark('grid-shell-paint', 0); gridMark('grid-first-month-scheduled', 0); gridMark('grid-first-month-render-start', 0);
+      setMounted({ generation, mountedMonthKeys: [gridMonthKey(year, order[0])], firstUsefulReady: true, fullGridComplete: false });
+      await yieldToBrowser(controller.signal); if (controller.signal.aborted || generation !== generationRef.current) return;
+      let cursor = 1;
+      while (cursor < order.length && !controller.signal.aborted && generation === generationRef.current) {
+        const size = cursor < 3 ? 1 : 2;
+        const keys = order.slice(0, cursor + size).map(month => gridMonthKey(year, month));
+        startTransition(() => setMounted({ generation, mountedMonthKeys: keys, firstUsefulReady: true, fullGridComplete: keys.length === 12 }));
+        cursor += size;
+        await yieldToBrowser(controller.signal);
+      }
+    };
+    void schedule();
+    return () => controller.abort();
+  }, [year, activeCalendarId, gridModel, today, todayMonth]);
+  useEffect(() => { if (!mounted.firstUsefulReady) return; gridMark('grid-first-month-commit', mounted.mountedMonthKeys.length); void yieldToBrowser().then(() => { if (generationRef.current === mounted.generation) { gridMark('grid-first-month-paint', mounted.mountedMonthKeys.length); gridMark('grid-interaction-ready', mounted.mountedMonthKeys.length); } }); }, [mounted.firstUsefulReady, mounted.generation]);
+  useEffect(() => { if (!mounted.fullGridComplete) return; gridMark('grid-full-grid-commit', 12); void yieldToBrowser().then(() => { if (generationRef.current === mounted.generation) { gridMark('grid-full-grid-paint', 12); gridMark('grid-full-grid-complete', 12); } }); }, [mounted.fullGridComplete, mounted.generation]);
 
   const isFocusActive = focusedCats.size > 0;
   const toggleCat = (id: string) =>
@@ -344,6 +361,11 @@ export const GridView = () => {
       toast.error('No events match those image export filters.', { id: 'export' });
       return;
     }
+    setExportPreparing(true);
+    // Export is the sole explicit full-mount path; wait for its commit/paint before capture.
+    setMounted(previous => ({ ...previous, mountedMonthKeys: gridModel.months.map(month => month.monthKey), fullGridComplete: true }));
+    await yieldToBrowser();
+    setExportPreparing(false);
     setExporting(true);
     toast.loading(`Generating ${exportMode === 'expanded' ? 'expanded' : 'visible'} ${exportPixelRatio === 1 ? 'compact' : 'sharp'} grid image…`, { id: 'export' });
 
@@ -361,6 +383,7 @@ export const GridView = () => {
     const captureNode = useTargetedLayout ? targetedExportRef.current : publicationRef.current;
     if (!captureNode) {
       toast.error('Export failed — try again', { id: 'export' });
+      setExportPreparing(false);
       setExporting(false);
       return;
     }
@@ -416,9 +439,10 @@ export const GridView = () => {
       container.style.overflow = prevOverflow;
       container.style.width    = prevW;
       container.style.height   = prevH;
+      setExportPreparing(false);
       setExporting(false);
     }
-  }, [theme, exportFileName, exportPixelRatio, exportMode, exportDensity, exportFilters, exportFilteredEvents.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year]);
+  }, [theme, exportFileName, exportPixelRatio, exportMode, exportDensity, exportFilters, exportFilteredEvents.length, getExportDateRange, isDefaultExportFilter, isTargetedDateExport, year, gridModel]);
 
   const downloadExport = () => {
     if (!exportUrl) return;
@@ -433,7 +457,7 @@ export const GridView = () => {
 
 
   return (
-    <div className="flex flex-col h-full bg-background relative">
+    <div className="flex flex-col h-full bg-background relative" data-lifegrid-grid-root data-lifegrid-generation={mounted.generation} data-lifegrid-phase={mounted.fullGridComplete ? 'complete' : mounted.firstUsefulReady ? 'staging' : 'shell'}>
 
       {/* ── Header bar ── */}
       <div className="flex-none relative px-3 py-2 flex items-center gap-3 border-b border-border bg-card">
@@ -705,11 +729,15 @@ export const GridView = () => {
       </div>
 
       {/* ── Scrollable grid ── */}
-      <div ref={scrollRef} className="flex-1 overflow-auto" aria-busy={!gridReady} data-testid="grid-content">
-        {!gridReady && <div className="p-4 text-sm text-muted-foreground" role="status" data-testid="grid-loading">Preparing calendar grid…</div>}
-        {gridReady && <div ref={publicationRef} className={exporting ? "lifegrid-export-publication bg-background p-6" : undefined} style={exporting ? { minWidth: exportDimensions.width, padding: EXPORT_DENSITY[exportDensity].padding } : undefined}>
+      <div ref={scrollRef} className="flex-1 overflow-auto" aria-busy={!mounted.firstUsefulReady || exportPreparing} data-testid="grid-content">
+        {!mounted.firstUsefulReady && <div className="p-4 text-sm text-muted-foreground" role="status" data-testid="grid-loading">Preparing calendar grid…</div>}
+        {mounted.firstUsefulReady && <div ref={publicationRef} className={exporting ? "lifegrid-export-publication bg-background p-6" : undefined} style={exporting ? { minWidth: exportDimensions.width, padding: EXPORT_DENSITY[exportDensity].padding } : undefined}>
         {exporting && <ExportPublicationHeader metadata={exportMetadata} legend={exportLegend.entries} />}
-        <table
+        {!exporting && mounted.mountedMonthKeys.map(monthKey => {
+          const model = gridModel.months.find(month => month.monthKey === monthKey);
+          return model ? <GridMonth key={monthKey} model={model} year={year} theme={theme} todayStr={todayStr} detailDate={detailDate} onOpenDay={setDetailDate} /> : null;
+        })}
+        {exporting && <table
           ref={tableRef}
           className="border-collapse bg-background"
           style={{ minWidth: DAY_COL_W + MONTHS.length * MONTH_COL_W }}
@@ -785,7 +813,7 @@ export const GridView = () => {
                   const isWeekend = dateObj.getDay() === 0 || dateObj.getDay() === 6;
                   // Noncritical month cells stay structurally present for table/scroll safety,
                   // but defer event-pill DOM until their deterministic batch is admitted.
-                  const monthVisible = exporting || renderedMonths.has(mIdx);
+                  const monthVisible = true;
                   const dayEvents = monthVisible ? gridData.get(dateStr) ?? [] : [];
                   const denseDay = getDenseDay(dayEvents, exporting ? EXPORT_DENSITY[exportDensity].cellLimit : MAX_VISIBLE_EVENTS);
                   const visEvents = isExpandedExport ? dayEvents : denseDay.visible;
@@ -876,10 +904,10 @@ export const GridView = () => {
               </tr>
             );})}
           </tbody>
-        </table>
+        </table>}
         </div>}
       </div>
-      <p className="sr-only" aria-live="polite">{gridReady ? 'Grid ready' : 'Loading grid'}</p>
+      <p className="sr-only" aria-live="polite">{mounted.firstUsefulReady ? 'Grid ready' : 'Loading grid'}</p>
 
       {exporting && isTargetedDateExport && (
         <div

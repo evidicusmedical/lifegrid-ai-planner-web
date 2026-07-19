@@ -16,7 +16,7 @@ test('mobile scroll lock preserves background and release versions remain compat
   assert.match(grid, /body\.style\.position = "fixed"/);
   assert.match(grid, /window\.scrollTo\(0, scrollY\)/);
   assert.match(grid, /grid\.scrollTop = gridPosition\.top/);
-  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.18["']/);
-  assert.match(read('../package.json'), /"version": "0\.5\.18"/);
-  assert.equal(JSON.parse(read('../public/version.json')).appVersion, 'v0.5.18');
+  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.19["']/);
+  assert.match(read('../package.json'), /"version": "0\.5\.19"/);
+  assert.equal(JSON.parse(read('../public/version.json')).appVersion, 'v0.5.19');
 });

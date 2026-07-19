@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const read = file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
 test('release retains compatibility versions', () => {
-  assert.match(read('src/lib/version.ts'), /APP_VERSION = [\"']v0\.5\.20[\"']/);
+  assert.match(read('src/lib/version.ts'), /APP_VERSION = [\"']v0\.5\.21[\"']/);
   assert.match(read('src/lib/version.ts'), /AI_INTERCHANGE_VERSION = 4/);
   assert.match(read('src/lib/backup.ts'), /BACKUP_SCHEMA_VERSION = 7/);
 });

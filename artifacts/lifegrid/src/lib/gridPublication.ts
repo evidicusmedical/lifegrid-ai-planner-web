@@ -49,3 +49,13 @@ export const getExportDimensions = (density: ExportDensity, legendEntries: numbe
   const legendRows = Math.max(1, Math.ceil(legendEntries / (density === 'detailed' ? 5 : 7)));
   return { width: isTargeted ? config.width : Math.max(config.width, 1380), height: (isTargeted ? 260 : 105) + config.padding * 2 + legendRows * (density === 'detailed' ? 32 : 26), legendRows };
 };
+
+/** LifeGrid reliability guardrails, not browser/canvas maximums. */
+export const EXPORT_FEASIBILITY_LIMITS = { mobileArea: 24_000_000, desktopArea: 52_000_000, mobileEdge: 8192, desktopEdge: 12000 } as const;
+export const estimateExportFeasibility = (input: { width: number; height: number; pixelRatio: number; mobile: boolean; expanded: boolean; records: number; maxPerDate: number }) => {
+  const pixelWidth = Math.ceil(input.width * input.pixelRatio), pixelHeight = Math.ceil(input.height * input.pixelRatio);
+  const limit = input.mobile ? EXPORT_FEASIBILITY_LIMITS.mobileArea : EXPORT_FEASIBILITY_LIMITS.desktopArea;
+  const edge = input.mobile ? EXPORT_FEASIBILITY_LIMITS.mobileEdge : EXPORT_FEASIBILITY_LIMITS.desktopEdge;
+  const unsafe = pixelWidth > edge || pixelHeight > edge || pixelWidth * pixelHeight > limit;
+  return { pixelWidth, pixelHeight, pixelArea: pixelWidth * pixelHeight, unsafe, reason: unsafe ? `This ${input.expanded ? 'expanded ' : ''}image is estimated at approximately ${pixelWidth.toLocaleString()} × ${pixelHeight.toLocaleString()} pixels and is unlikely to render reliably on this device.` : null };
+};

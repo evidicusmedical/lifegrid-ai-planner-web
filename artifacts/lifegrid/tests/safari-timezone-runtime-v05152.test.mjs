@@ -22,8 +22,8 @@ test('compatibility calendar timezone metadata is discarded without changing ent
 });
 
 test('release version markers remain aligned', () => {
-  assert.match(read('src/lib/version.ts'), /APP_VERSION = [\"']v0\.5\.19[\"']/);
-  assert.equal(JSON.parse(read('public/version.json')).appVersion, 'v0.5.19');
-  assert.match(read('index.html'), /lifegrid-app-version" content="v0\.5\.19"/);
-  assert.equal(JSON.parse(read('package.json')).version, '0.5.19');
+  assert.match(read('src/lib/version.ts'), /APP_VERSION = [\"']v0\.5\.20[\"']/);
+  assert.equal(JSON.parse(read('public/version.json')).appVersion, 'v0.5.20');
+  assert.match(read('index.html'), /lifegrid-app-version" content="v0\.5\.20"/);
+  assert.equal(JSON.parse(read('package.json')).version, '0.5.20');
 });

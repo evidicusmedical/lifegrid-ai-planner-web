@@ -869,9 +869,9 @@ function findMatchingBrace(s: string, start: number): number {
     if (escape) { escape = false; continue; }
     if (ch === '\\' && inStr) { escape = true; continue; }
     if (!inStr && ch === '"') { inStr = true; typographicString = false; continue; }
-    if (!inStr && ch === '\u201C') { inStr = true; typographicString = true; continue; }
+    if (!inStr && isTypographicDelimiter(ch) && isTypographicOpeningDelimiter(s, i)) { inStr = true; typographicString = true; continue; }
     if (inStr && !typographicString && ch === '"') { inStr = false; continue; }
-    if (inStr && typographicString && ch === '\u201D' && isTypographicClosingDelimiter(s, i)) { inStr = false; continue; }
+    if (inStr && typographicString && isTypographicDelimiter(ch) && isTypographicClosingDelimiter(s, i)) { inStr = false; continue; }
     if (inStr) continue;
     if (ch === '{') depth++;
     else if (ch === '}') { depth--; if (depth === 0) return i; }
@@ -879,13 +879,21 @@ function findMatchingBrace(s: string, start: number): number {
   return -1;
 }
 
+const isTypographicDelimiter = (character: string): boolean => character === '\u201C' || character === '\u201D';
+
+const isTypographicOpeningDelimiter = (input: string, index: number): boolean => {
+  let previous = index - 1;
+  while (previous >= 0 && /\s/.test(input[previous])) previous--;
+  return previous < 0 || '{[,:'.includes(input[previous]);
+};
+
 const isTypographicClosingDelimiter = (input: string, index: number): boolean => {
   let next = index + 1;
   while (next < input.length && /\s/.test(input[next])) next++;
   return next === input.length || ':,}]'.includes(input[next]);
 };
 
-/** Repairs only U+201C/U+201D string delimiters after ordinary JSON parsing fails. */
+/** Repairs only structurally plausible U+201C/U+201D string delimiters after ordinary JSON parsing fails. */
 export const normalizeTypographicJsonDelimiters = (input: string): string => {
   let output = '';
   let inString = false;
@@ -895,14 +903,14 @@ export const normalizeTypographicJsonDelimiters = (input: string): string => {
     const character = input[index];
     if (!inString) {
       if (character === '"') { inString = true; typographicString = false; output += character; }
-      else if (character === '\u201C') { inString = true; typographicString = true; output += '"'; }
+      else if (isTypographicDelimiter(character) && isTypographicOpeningDelimiter(input, index)) { inString = true; typographicString = true; output += '"'; }
       else output += character;
       continue;
     }
     if (escaped) { output += character; escaped = false; continue; }
     if (character === '\\') { output += character; escaped = true; continue; }
     if (!typographicString) { output += character; if (character === '"') inString = false; continue; }
-    if (character === '\u201D' && isTypographicClosingDelimiter(input, index)) { output += '"'; inString = false; continue; }
+    if (isTypographicDelimiter(character) && isTypographicClosingDelimiter(input, index)) { output += '"'; inString = false; continue; }
     // An ASCII quote is content, not a delimiter, in a typographic-delimited string.
     output += character === '"' ? '\\"' : character;
   }
@@ -919,7 +927,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     .replace(/```\s*/g, '')
     .trim();
 
-  const dataKeyMatch = s.match(/\{\s*["\u201C](?:lifegridPatchVersion|projects|events|tasks|reviewItems|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)["\u201D]/);
+  const dataKeyMatch = s.match(/\{\s*["\u201C\u201D](?:lifegridPatchVersion|projects|events|tasks|reviewItems|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)["\u201C\u201D]/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
   if (start < 0) {
@@ -952,8 +960,9 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
       try {
         parsed = JSON.parse(normalized);
         normalizedTypographicDelimiters = true;
-      } catch {
-        throw new Error('The response contains typographic quotation marks and could not be safely normalized into valid JSON. Ask the AI to return one raw JSON object using straight ASCII double quotes.');
+      } catch (normalizedError: any) {
+        const position = typeof normalizedError?.message === 'string' ? normalizedError.message.match(/position\s+(\d+)/i)?.[1] : undefined;
+        throw new Error(`The response contains typographic quotation marks but normalization still produced invalid JSON${position ? ` near character ${position}` : ''}. No changes were applied.`);
       }
     } else {
       throw new Error(

@@ -42,13 +42,14 @@ import {
   ExportDensity,
   getDenseDay,
   getExportDimensions,
+  estimateExportFeasibility,
 } from "../lib/gridPublication";
 import {
   getDateTemporalState,
   validateExportRange,
 } from "../lib/gridAwareness";
 import { getLocalTemporalOccurrence } from "../lib/temporal";
-import { buildGridViewModel, resolveEventById } from "../lib/gridModel";
+import { buildGridViewModel, filterGridEventsByCategories, resolveEventById, toGridEventSummary, type GridEventSummary } from "../lib/gridModel";
 import { gridMark } from "../lib/gridDiagnostics";
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
@@ -297,13 +298,15 @@ export const GridView = () => {
         : exportFilters.datePreset === "next14"
           ? 14
           : 30;
-    return { start: todayStr, end: toISODate(addDays(today, days - 1)) };
+    const anchor = detailDate ? parseISODate(detailDate) : today;
+    return { start: toISODate(anchor), end: toISODate(addDays(anchor, days - 1)) };
   }, [
     exportFilters.customEnd,
     exportFilters.customStart,
     exportFilters.datePreset,
     today,
     todayStr,
+    detailDate,
     year,
   ]);
 
@@ -317,7 +320,7 @@ export const GridView = () => {
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) return [];
     return events.filter((event) => {
-      if (event.date < start || event.date > end) return false;
+      if (event.date > end || (event.endDate ?? event.date) < start) return false;
       if (
         exportFilters.categoryMode === "selected" &&
         !selectedCategorySet.has(event.category)
@@ -440,7 +443,7 @@ export const GridView = () => {
       gridMark("lifegrid:grid-dom-start");
       setGridReady(true);
       setRenderedMonths(
-        new Set([year === today.getFullYear() ? todayMonth : 0]),
+        new Set([year === today.getFullYear() ? todayMonth - 1 : 0, year === today.getFullYear() ? todayMonth : 0, year === today.getFullYear() ? todayMonth + 1 : 1].filter(month => month >= 0 && month < 12)),
       );
     });
     return () => cancelAnimationFrame(frame);
@@ -458,7 +461,7 @@ export const GridView = () => {
       (value, index, values) =>
         value >= 0 && value < 12 && values.indexOf(value) === index,
     );
-    let cursor = 1;
+    let cursor = 3;
     const next = () => {
       if (cancelled) return;
       setRenderedMonths((previous) => {
@@ -469,7 +472,10 @@ export const GridView = () => {
         return following;
       });
       cursor += 2;
-      if (cursor < order.length) requestAnimationFrame(next);
+      if (cursor < order.length) {
+        if (window.requestIdleCallback) window.requestIdleCallback(next, { timeout: 250 });
+        else window.setTimeout(() => requestAnimationFrame(next), 80);
+      }
     };
     const frame = requestAnimationFrame(next);
     return () => {
@@ -477,6 +483,26 @@ export const GridView = () => {
       cancelAnimationFrame(frame);
     };
   }, [gridReady, year, activeCalendarId, todayMonth]);
+  // Scroll admission is independent of exports: a month entering the horizontal
+  // viewport is made durable immediately, even if idle/rAF callbacks are throttled.
+  useEffect(() => {
+    const viewport = scrollRef.current;
+    if (!viewport || !gridReady) return;
+    const admitVisible = () => {
+      const first = Math.max(0, Math.floor(viewport.scrollLeft / MONTH_COL_W) - 1);
+      const last = Math.min(11, Math.ceil((viewport.scrollLeft + viewport.clientWidth) / MONTH_COL_W) + 1);
+      setRenderedMonths(previous => { const next = new Set(previous); for (let month = first; month <= last; month += 1) next.add(month); return next; });
+    };
+    admitVisible(); viewport.addEventListener("scroll", admitVisible, { passive: true });
+    return () => viewport.removeEventListener("scroll", admitVisible);
+  }, [gridReady, year, activeCalendarId]);
+  useEffect(() => {
+    const available = new Set(categories.map(category => category.id));
+    setExportFilters(previous => {
+      const selectedCategoryIds = previous.selectedCategoryIds.filter(id => available.has(id));
+      return selectedCategoryIds.length === previous.selectedCategoryIds.length ? previous : { ...previous, selectedCategoryIds, categoryMode: selectedCategoryIds.length ? "selected" : "all" };
+    });
+  }, [activeCalendarId, categories]);
   useEffect(() => {
     if (!gridReady) return;
     gridMark("lifegrid:grid-first-visible-cell");
@@ -512,11 +538,13 @@ export const GridView = () => {
       selected.has(id) ? selected.delete(id) : selected.add(id);
       return {
         ...prev,
-        categoryMode: "selected",
+        categoryMode: selected.size ? "selected" : "all",
         selectedCategoryIds: Array.from(selected),
       };
     });
   };
+
+  const selectAllExportCategories = () => setExportFilters(prev => ({ ...prev, categoryMode: "all", selectedCategoryIds: [] }));
 
   const exportRange = getExportDateRange();
   // Validation is derived on every render, so corrected inputs, presets, calendar/year changes,
@@ -625,6 +653,8 @@ export const GridView = () => {
     exportLegend.entries.length,
     isTargetedDateExport,
   );
+  const focusedGridData = useMemo(() => { const map = new Map<string, readonly GridEventSummary[]>(); gridData.forEach((records, date) => map.set(date, filterGridEventsByCategories(records, focusedCats))); return map; }, [gridData, focusedCats]);
+  const exportGridData = useMemo(() => { const map = new Map<string, GridEventSummary[]>(); exportFilteredEvents.forEach(event => { const records = map.get(event.date) ?? []; records.push(toGridEventSummary(event)); map.set(event.date, records); }); map.forEach(records => records.sort((a, b) => a.displayPriority - b.displayPriority || Number(!a.startTime) - Number(!b.startTime) || (a.startTime ?? "").localeCompare(b.startTime ?? "") || (categoryRank.get(a.category) ?? 999) - (categoryRank.get(b.category) ?? 999) || a.title.localeCompare(b.title))); return map; }, [exportFilteredEvents, categoryRank]);
 
   // ── Image export (html-to-image renders modern CSS correctly) ──
   // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
@@ -649,12 +679,17 @@ export const GridView = () => {
       );
       return;
     }
-    if (exportFilteredEvents.length === 0 && !isDefaultExportFilter) {
-      toast.error("No events match those image export filters.", {
+    if (exportFilteredEvents.length === 0) {
+      const selected = exportFilters.categoryMode === "selected" ? categories.filter(c => selectedCategorySet.has(c.id)).map(c => c.label).join(", ") : "selected";
+      toast.error(`No ${selected} events overlap ${start} through ${end}. Choose another range or use Custom.`, {
         id: "export",
       });
       return;
     }
+    const maxPerDate = Math.max(0, ...Array.from(exportGridData.values()).map(records => records.length));
+    const estimatedHeight = isTargetedDateExport ? Math.max(300, targetedExportWeeks.length * (exportMode === "expanded" ? 260 : 140)) : Math.max(900, 31 * (exportMode === "expanded" ? EXPORT_ROW_BASE_H + maxPerDate * 11 : ROW_H));
+    const feasibility = estimateExportFeasibility({ width: exportDimensions.width, height: estimatedHeight, pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio, mobile: window.matchMedia("(pointer: coarse)").matches, expanded: exportMode === "expanded", records: exportFilteredEvents.length, maxPerDate });
+    if (feasibility.unsafe) { toast.error(`${feasibility.reason} Use Visible, select fewer categories, choose a shorter range, or use Fast.`, { id: "export" }); return; }
     setExporting(true);
     toast.loading(
       `Generating ${exportMode === "expanded" ? "expanded" : "visible"} ${exportPixelRatio === 1 ? "compact" : "sharp"} grid image…`,
@@ -675,7 +710,7 @@ export const GridView = () => {
     const captureNode = useTargetedLayout
       ? targetedExportRef.current
       : publicationRef.current;
-    if (!captureNode) {
+    if (!captureNode || captureNode.scrollWidth <= 0 || captureNode.scrollHeight <= 0) {
       toast.error("Export failed — try again", { id: "export" });
       setExporting(false);
       return;
@@ -713,6 +748,7 @@ export const GridView = () => {
       // share sheet, while every browser retains a visible save/download fallback.
       try {
         const blob = await (await fetch(dataUrl)).blob();
+        if (!blob.size) throw new Error("empty image output");
         const file = new File([blob], exportFileName, { type: "image/png" });
         const nav = navigator as Navigator & {
           canShare?: (data: ShareData) => boolean;
@@ -755,7 +791,8 @@ export const GridView = () => {
     if (!exportUrl) return;
     try {
       const blob = await (await fetch(exportUrl)).blob();
-      const file = new File([blob], exportFileName, { type: "image/png" });
+      if (!blob.size) throw new Error("empty image output");
+        const file = new File([blob], exportFileName, { type: "image/png" });
       const nav = navigator as Navigator & {
         canShare?: (data: ShareData) => boolean;
       };
@@ -1099,13 +1136,7 @@ export const GridView = () => {
               <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
-                  onClick={() =>
-                    setExportFilters((prev) => ({
-                      ...prev,
-                      categoryMode: "all",
-                      selectedCategoryIds: [],
-                    }))
-                  }
+                  onClick={selectAllExportCategories}
                   className={`rounded-full px-2 py-1 text-[10px] font-bold ${exportFilters.categoryMode === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}
                 >
                   All
@@ -1303,7 +1334,7 @@ export const GridView = () => {
                     const maxDay = getDaysForMonth(mIdx);
                     if (day > maxDay) return max;
                     const dateStr = `${year}-${String(mIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                    return Math.max(max, gridData.get(dateStr)?.length ?? 0);
+                    return Math.max(max, (exporting ? exportGridData : focusedGridData).get(dateStr)?.length ?? 0);
                   }, 0);
                   const rowHeight = isExpandedExport
                     ? Math.max(
@@ -1360,7 +1391,7 @@ export const GridView = () => {
                         const monthVisible =
                           exporting || renderedMonths.has(mIdx);
                         const dayEvents = monthVisible
-                          ? (gridData.get(dateStr) ?? [])
+                          ? ((exporting ? exportGridData : focusedGridData).get(dateStr) ?? [])
                           : [];
                         const denseDay = getDenseDay(
                           dayEvents,

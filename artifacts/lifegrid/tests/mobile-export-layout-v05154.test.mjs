@@ -37,10 +37,10 @@ test('mobile sheet retains every export control and the shared generation handle
 });
 
 test('release identity and compatibility contracts are v0.5.18', () => {
-  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.20["']/);
-  assert.match(read('../package.json'), /"version": "0\.5\.20"/);
-  assert.match(read('../public/version.json'), /"appVersion": "v0\.5\.20"/);
-  assert.match(read('../index.html'), /lifegrid-app-version" content="v0\.5\.20"/);
+  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.21["']/);
+  assert.match(read('../package.json'), /"version": "0\.5\.21"/);
+  assert.match(read('../public/version.json'), /"appVersion": "v0\.5\.21"/);
+  assert.match(read('../index.html'), /lifegrid-app-version" content="v0\.5\.21"/);
   assert.match(read('../src/lib/version.ts'), /AI_INTERCHANGE_VERSION = 4/);
   assert.match(read('../src/lib/backup.ts'), /BACKUP_SCHEMA_VERSION = 7/);
 });

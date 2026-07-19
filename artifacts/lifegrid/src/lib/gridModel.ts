@@ -61,3 +61,8 @@ export const buildGridViewModel = (events: readonly Event[], year: number, legac
 };
 
 export const resolveEventById = (events: readonly Event[], id: string | null) => id ? events.find(event => event.id === id) ?? null : null;
+
+/** Applies the interactive category filter before the already-sorted cell is sliced.
+ * An empty selection means "all"; a non-empty selection is inclusive OR. */
+export const filterGridEventsByCategories = <T extends { category: string }>(records: readonly T[], categoryIds: ReadonlySet<string>): T[] =>
+  categoryIds.size === 0 ? [...records] : records.filter(record => categoryIds.has(record.category));

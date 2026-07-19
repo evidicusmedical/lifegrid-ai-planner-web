@@ -1,4 +1,6 @@
 {
+  "buildCommand": "pnpm --filter @workspace/lifegrid build",
+  "outputDirectory": "artifacts/lifegrid/dist/public",
   "headers": [
     { "source": "/(.*\\.html|/)$", "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }] },
     { "source": "/manifest.webmanifest", "headers": [{ "key": "Content-Type", "value": "application/manifest+json" }, { "key": "Cache-Control", "value": "no-cache" }] },

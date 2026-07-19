@@ -6,7 +6,7 @@ import {
 import { defaultData, DEFAULT_CATEGORIES, DEFAULT_PEOPLE } from '../lib/sampleData';
 import { CalendarSeedMode, createCalendarSeed, hasOperationalRecords, resetToTrulyEmpty } from '../lib/calendarSeeds';
 import { applyTransformationProposals, TransformationProposalSet } from '../lib/applyTransformations';
-import { analyzeDependencies } from '../lib/aiDependencies';
+import { analyzeDependencies, patchProposalKey } from '../lib/aiDependencies';
 import { applyPatchAtomically } from '../lib/aiPatchApply';
 import { migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
@@ -523,7 +523,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const allWarnings: string[] = [];
     // Revalidate selected references against current data before any mutation.
     const allSelected = new Set<string>();
-    ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'].forEach(group => ['add', 'update'].forEach(operation => ((update[group]?.[operation] ?? []) as any[]).forEach((record: any, index: number) => allSelected.add(`${group}:${operation}:${record.id}:${index}`))));
+    // The filtered patch is the authoritative selection at this boundary.  Its
+    // keys must use the same identity as review/preflight; do not add an index.
+    ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'].forEach(group => ['add', 'update'].forEach(operation => ((update[group]?.[operation] ?? []) as any[]).forEach((record: any) => allSelected.add(patchProposalKey(group as any, operation as any, String(record.id))))));
     const dependencyCheck = analyzeDependencies(update, activeCalendar.data, allSelected);
     if (dependencyCheck.blocked.size) throw new Error([...dependencyCheck.blocked.values()].join('; '));
     const shouldTransform = !!(

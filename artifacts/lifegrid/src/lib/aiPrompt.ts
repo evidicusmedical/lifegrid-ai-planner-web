@@ -4,11 +4,11 @@ import { temporalErrors } from './temporal.js';
 
 export const aiPromptContract = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
 
-OUTPUT ENVELOPE (return this exact shape, with raw JSON only):
+OUTPUT ENVELOPE (return this exact complete shape, with raw RFC 8259 JSON only):
 {"lifegridPatchVersion":4,"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}
 
 OPERATIONS AND IDENTITY
-Only add and update operations are supported. Use add only for a record that does not exist. Use update only with an exact stable ID from CURRENT LIFEGRID CONTEXT; never invent an update ID or use a name as an ID. Never place an existing ID under add. Updates contain only changed fields; omitted fields remain unchanged, null clears nullable fields, and empty relationship arrays clear relationships. Every update changes at least one field besides id. Unsupported deletion, removal, merge, archive, standalone rename, Project Operation, and milestone operation requests belong in warnings for human review.
+Only add and update operations are supported. Return no Markdown fences, prose before/after JSON, placeholders, ellipses, or omitted arrays. Use straight ASCII double quotation marks only. Use add only for a record that does not exist. Use update only with an exact stable ID from CURRENT LIFEGRID CONTEXT; never invent an update ID or use a name as an ID. Never place an existing ID under add. Updates contain only changed fields; omitted fields remain unchanged, null clears nullable fields, and empty relationship arrays clear relationships. Every update changes at least one field besides id. Unsupported deletion, removal, merge, archive, standalone rename, Project Operation, and milestone operation requests belong in warnings for human review.
 
 ENTITY GUIDE
 Tasks are actionable work with a completion state. Events are dated occurrences, commitments, shifts, trips, reminders, protected blocks, or Day Types. A Day Type is one all-day Event that summarizes capacity for a date, not a replacement for every Task. People Schedule is another person's availability, not the user's Task or Event. Projects are lightweight Project Tags for Tasks. Categories are shared Task/Event classifications. People are real referenced people. When classification is materially ambiguous, emit a warning instead of guessing.
@@ -26,9 +26,10 @@ EXAMPLES BEFORE CURRENT LIFEGRID CONTEXT
 Task add: {"id":"task-example-confirm-key-pickup","name":"Confirm apartment key-pickup window","category":"moving-logistics","dueDate":"2026-07-19","status":"todo","owner":"self","nextAction":"Call the leasing office and record the confirmed pickup window.","notes":null,"priority":"high","schedulingNotes":"Complete before departure.","projectId":null,"dueDateType":"real-deadline","triageStatus":"ready","parentTaskId":null,"linkedEventIds":[],"recurringGroupId":null}
 Timed Event add: {"id":"evt-example-unit-checkin","date":"2026-07-21","endDate":"2026-07-21","title":"Unit check-in","category":"work","startTime":"08:00","endTime":"08:30","timeStatus":"timed","color":"#dc2626","notes":"Bring identification and onboarding documents.","displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"fixed-appointment","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
 Unknown-time Event: {"id":"evt-example-key-pickup","date":"2026-07-20","endDate":"2026-07-20","title":"Apartment key pickup — time unconfirmed","category":"moving-logistics","startTime":null,"endTime":null,"timeStatus":"unknown","color":"#d97706","notes":null,"displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"placeholder","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
-Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Same-patch dependencies may reference a Category or Project added in this patch.
+All-day Event add: {"id":"evt-example-day","date":"2026-07-22","endDate":"2026-07-22","title":"Fictional planning day","category":"other","timeStatus":"all-day","startTime":null,"endTime":null,"color":"#6b7280","notes":null,"displayPriority":4,"showInGrid":true,"showInExport":true,"eventKind":"day-type","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
+Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Same-patch parents must be included under add before a child references them: every new Task projectId requires its new Project in projects.add, every new parentTaskId requires its parent Task in tasks.add, and linked Event/Task IDs must resolve in current context or this patch.
 
-Before final output, internally verify version 4, the exact supported keys and operations, meaningful additions, real update IDs, changed update fields, resolvable references, no duplicates, no Project Operations or milestone operations, no time-zone fields or invented dates/times, and unresolved facts as warnings. Do not output this checklist.`;
+Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every child dependency has an included parent; all proposal IDs are unique; all linked IDs resolve; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
 export const universalSchema = aiPromptContract;
 
 export const generateUniversalStarterPrompt = () => `
@@ -877,10 +878,10 @@ function findMatchingBrace(s: string, start: number): number {
 export const parseAIUpdate = (input: string, categories: Category[], existingData?: AppData): ParsedUpdate => {
   const raw = input.trim();
   if (!raw) throw new Error('Nothing pasted. Copy the full AI response and paste it here.');
+  if (/PASTE_ALL_OF_YOUR_EXISTING_TASK_OBJECTS_HERE/.test(raw)) throw new Error('The response contains a placeholder instead of complete JSON records.');
+  if (/[\u201C\u201D]/.test(raw)) throw new Error('The response contains typographic smart quotes instead of JSON quotation marks. Ask the AI to return raw JSON using straight ASCII double quotes.');
 
   let s = raw
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2018\u2019]/g, "'")
     .replace(/```(?:json|JSON)?\s*/g, '')
     .replace(/```\s*/g, '')
     .trim();
@@ -1148,6 +1149,15 @@ const VALID_DUE_DATE_TYPE = new Set<TaskDueDateType>(['real-deadline', 'target-d
 const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 'blocked', 'waiting', 'duplicate-candidate', 'needs-scheduling', 'scheduled', 'backlog']);
 const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
 const VALID_EVENT_KIND = EVENT_KIND_SET;
+const VALID_TIME_STATUS = new Set(['all-day', 'timed', 'unknown', 'approximate']);
+const normalizeTimeStatus = (raw: any, id: string, startTime: string | null, endTime: string | null) => {
+  if (raw !== undefined) {
+    if (!VALID_TIME_STATUS.has(raw)) throw new Error(`Invalid v4 event ${id} at events.timeStatus: expected one of all-day, timed, unknown, approximate. Correct timeStatus and return the complete record.`);
+    return raw as Event['timeStatus'];
+  }
+  // Legacy patches without this field infer timed only from a complete clock pair.
+  return startTime && endTime ? 'timed' : 'unknown';
+};
 
 function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
   if (!Array.isArray(arr)) return [];
@@ -1158,13 +1168,17 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
       const cat = validCats.has(rawCat) ? rawCat : 'other';
       const date = fixDate(e.date ?? '');
       if (!date) return null;
+      const id = String(e.id ?? `imp-evt-${Date.now()}-${i}`);
+      const startTime = fixTime(e.startTime), endTime = fixTime(e.endTime);
       return {
-        id:        String(e.id ?? `imp-evt-${Date.now()}-${i}`),
+        id,
         date,
+        endDate: fixDate(e.endDate ?? date) ?? date,
         title:     String(e.title ?? ''),
         category:  cat,
-        startTime: fixTime(e.startTime),
-        endTime:   fixTime(e.endTime),
+        timeStatus: normalizeTimeStatus(e.timeStatus, id, startTime, endTime),
+        startTime,
+        endTime,
         color:     e.color ?? colorMap[cat] ?? '#6b7280',
         notes:     e.notes ?? null,
         displayPriority: VALID_EVENT_PRIORITY.has(Number(e.displayPriority) as EventDisplayPriority)
@@ -1176,6 +1190,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         linkedTaskIds: normalizeIds(e.linkedTaskIds ?? []),
         aiNotes: e.aiNotes ?? null,
         sourceNotes: e.sourceNotes ?? null,
+        recurringGroupId: e.recurringGroupId ?? null,
       } as Event;
     })
     .filter(Boolean) as Event[];
@@ -1222,6 +1237,7 @@ function normalizeEventUpdate(
   if (u.color    !== undefined) out.color = String(u.color);
   if ('startTime' in u) out.startTime = fixTime(u.startTime);
   if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
+  if ('timeStatus' in u) out.timeStatus = normalizeTimeStatus(u.timeStatus, out.id, out.startTime ?? null, out.endTime ?? null);
   if ('notes'     in u) out.notes = u.notes ?? null;
   if ('displayPriority' in u && VALID_EVENT_PRIORITY.has(Number(u.displayPriority) as EventDisplayPriority)) out.displayPriority = Number(u.displayPriority);
   if ('showInGrid' in u) out.showInGrid = Boolean(u.showInGrid);
@@ -1230,6 +1246,7 @@ function normalizeEventUpdate(
   if ('linkedTaskIds' in u) out.linkedTaskIds = normalizeIds(u.linkedTaskIds ?? []);
   if ('aiNotes' in u) out.aiNotes = u.aiNotes ?? null;
   if ('sourceNotes' in u) out.sourceNotes = u.sourceNotes ?? null;
+  if ('recurringGroupId' in u) out.recurringGroupId = u.recurringGroupId ?? null;
   if (out.category && !out.color) out.color = colorMap[out.category];
   return out;
 }

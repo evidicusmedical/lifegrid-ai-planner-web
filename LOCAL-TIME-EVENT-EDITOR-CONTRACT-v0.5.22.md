@@ -1,0 +1,3 @@
+# Local-time event editor contract — v0.5.22
+
+New and edited timed Event and People Schedule forms expose only stored `date`, `endDate`, `startTime`, and `endTime`; Specific timezone and Floating local time controls and their conversion-oriented help are absent. No UTC normalization, timezone lookup, runtime conversion, or locale date shifting was added. New records store timezone compatibility fields as null. Editing a legacy record carries its existing `timeZone` and `timeZoneMode` through opaquely, while displaying and saving local date/time values unchanged. Opening Settings or an editor does not migrate historical records.

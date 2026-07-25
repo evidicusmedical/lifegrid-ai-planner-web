@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { CORE_COLOR_PALETTE, normalizedPaletteIsUnique, paletteWithCurrentColor } from '../.test-build/lib/palette.js';
+import { normalizeAllDayOccurrenceRange, isNotesOnlyRecurrenceEdit } from '../.test-build/lib/recurrenceEdit.js';
+import { TASK_SORT_DESCRIPTIONS, clearTaskDueDate, priorityRank, sortTasks, statusRank } from '../.test-build/lib/taskWorkflow.js';
+const task = (id, overrides={}) => ({ id, name:id, category:'work', dueDate:null, status:'todo', owner:'Me', nextAction:null, notes:null, priority:'medium', dueDateType:'target-date', triageStatus:'ready', parentTaskId:null, linkedEventIds:[], ...overrides });
+const event = (overrides={}) => ({id:'e',date:'2026-07-01',endDate:'2026-07-01',timeStatus:'all-day',timeZone:null,timeZoneMode:null,title:'Round',category:'work',startTime:null,endTime:null,color:'#123456',notes:null,displayPriority:4,showInGrid:true,showInExport:true,linkedTaskIds:[],aiNotes:null,sourceNotes:null,...overrides});
+test('task sort contract is deterministic and undated dates sort last', () => {
+ assert.equal(statusRank('todo'),0); assert.equal(statusRank('in-progress'),1); assert.equal(statusRank('blocked'),2); assert.equal(statusRank('done'),3);
+ assert.deepEqual(['urgent','high','medium','low',null].map(priorityRank),[0,1,2,3,4]);
+ const tasks=[task('none',{priority:'urgent'}),task('late',{dueDate:'2026-08-01'}),task('early',{dueDate:'2026-07-01'}),task('blocked',{status:'blocked',priority:'medium'})];
+ assert.deepEqual(sortTasks(tasks,'due-asc',[],'2026-06-01').map(x=>x.id),['early','late','blocked','none']);
+ assert.deepEqual(sortTasks(tasks,'due-desc',[],'2026-06-01').map(x=>x.id),['late','early','blocked','none']);
+ assert.ok(sortTasks(tasks,'smart',[],'2026-06-01').findIndex(x=>x.id==='none') < sortTasks(tasks,'smart',[],'2026-06-01').findIndex(x=>x.id==='blocked'));
+ assert.equal(Object.keys(TASK_SORT_DESCRIPTIONS).length,8);
+});
+test('due date clear is canonical and preserves unrelated fields',()=>{const before=task('x',{dueDate:'2026-08-01',status:'blocked',parentTaskId:'p'});const after=clearTaskDueDate(before);assert.equal(after.dueDate,null);assert.equal(after.status,'blocked');assert.equal(after.parentTaskId,'p');assert.equal(JSON.parse(JSON.stringify(after)).dueDate,null)});
+test('all-day occurrence ranges use inclusive local date duration safely',()=>{assert.deepEqual(normalizeAllDayOccurrenceRange('2026-08-10','2026-07-01','2026-07-01'),{date:'2026-08-10',endDate:'2026-08-10'});assert.deepEqual(normalizeAllDayOccurrenceRange('2026-08-10','2026-07-01','2026-07-03'),{date:'2026-08-10',endDate:'2026-08-12'});assert.equal(normalizeAllDayOccurrenceRange('2026-08-10','2026-07-02',null).endDate,'2026-08-10');assert.equal(normalizeAllDayOccurrenceRange('2026-08-10','2026-07-02','2026-07-01').endDate,'2026-08-10')});
+test('notes-only recurrence edits are detected by field diff',()=>{const before=event();assert.equal(isNotesOnlyRecurrenceEdit(before,{notes:'updated'}),true);assert.equal(isNotesOnlyRecurrenceEdit(before,{notes:'updated',date:'2026-07-02'}),false)});
+test('shared palette has 16 unique values and retains arbitrary current colors',()=>{assert.equal(CORE_COLOR_PALETTE.length,16);assert.equal(normalizedPaletteIsUnique(),true);assert.equal(paletteWithCurrentColor('#123456')[0],'#123456')});
+test('removed UI contracts and release markers',()=>{const settings=readFileSync(new URL('../src/pages/SettingsView.tsx',import.meta.url),'utf8');const temporal=readFileSync(new URL('../src/components/TemporalFields.tsx',import.meta.url),'utf8');assert.doesNotMatch(settings,/>Archive</);assert.doesNotMatch(temporal,/Specific timezone|Floating local time/);assert.match(readFileSync(new URL('../src/lib/version.ts',import.meta.url),'utf8'),/v0\.5\.22/)});

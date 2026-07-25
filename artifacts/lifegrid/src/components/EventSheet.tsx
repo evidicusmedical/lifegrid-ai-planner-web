@@ -20,6 +20,8 @@ import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
 import { TemporalFields } from './TemporalFields';
 import { eventProjectTags } from '../lib/projectOperations';
+import { normalizeAllDayOccurrenceRange } from '../lib/recurrenceEdit';
+import { paletteWithCurrentColor } from '../lib/palette';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -168,14 +170,17 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
 
   const onSubmit = (data: FormData) => {
     const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
+    const allDayRange = timeStatus === 'all-day' && initialData
+      ? normalizeAllDayOccurrenceRange(data.date, initialData.date, initialData.endDate)
+      : { date: data.date, endDate: temporalEndDate || data.date };
     const base = {
       ...data,
-      endDate: temporalEndDate || data.date,
+      ...allDayRange,
       timeStatus,
       startTime: clocked ? (data.startTime || null) : null,
       endTime: clocked ? (data.endTime || null) : null,
-      timeZone: clocked && timeZoneMode === 'zoned' ? timeZone : null,
-      timeZoneMode: clocked ? timeZoneMode : null,
+      timeZone: initialData?.timeZone ?? null,
+      timeZoneMode: initialData?.timeZoneMode ?? null,
       notes: data.notes || null,
       displayPriority: data.displayPriority,
       showInGrid: data.showInGrid,
@@ -211,7 +216,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     onClose();
   };
 
-  const presetColors = categories.map(c => c.color);
+  const presetColors = paletteWithCurrentColor(form.watch('color'));
 
   const multiDayCount = multiDay && endDate && endDate >= startDateVal ? daySpan(startDateVal, endDate) : 0;
   const saveLabel = initialData

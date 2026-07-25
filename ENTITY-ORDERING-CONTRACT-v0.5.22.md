@@ -1,0 +1,3 @@
+# Entity ordering contract — v0.5.22
+
+Categories retain array order. People and Project Tags use their existing `order` fields, normalized deterministically with stored array order as the legacy fallback. Up/Down is immutable, immediately persisted through the active-calendar store, disables boundaries, has accessible labels, and stops accidental parent interaction. Project Tag search no longer passes filtered indexes into the full collection (the ordering root cause). People now expose the same controls. Selectors consume normalized context arrays or `sortProjectTags`; no schema change is required. Categories, People, Project Tags, and their order remain in existing backup payloads.

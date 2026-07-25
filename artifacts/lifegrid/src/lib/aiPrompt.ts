@@ -110,6 +110,10 @@ AI REVIEW INSTRUCTIONS
 - Flag ambiguity in notes or warnings instead of guessing.
 - Only output changed, new, or deleted items; do not return the full unchanged dataset.
 - Do not delete items without stable IDs.
+- Main Task status is authoritative: explicit blocked/in-progress/complete/to-do requests update status (blocked/in-progress/done/todo), never triageStatus alone. Explicit review/waiting/scheduling requests may update only the existing canonical triageStatus. If both are requested, disclose and emit both fields.
+- To clear a Task due date, emit dueDate: null and do not infer a triage state or change unrelated fields.
+- AI Task deletion is unavailable. For a deletion request, propose status: "blocked" and disclose exactly: "AI deletion is unavailable. This change will mark the task Blocked for manual review instead."
+- Create flat, discrete actionable Tasks by default. Prefer "<Workstream> - <Sub-area> - <Concrete action>" (for example, "In-processing - Credentialing - Submit privileges packet"). Keep Project as projectId rather than repeating it in the title. Use parentTaskId only when explicitly requested and avoid more than one parent-child level.
 - Respect dueDateType: real-deadline tasks are fixed unless I explicitly approve a move; target-date tasks are movable if overloaded; someday-backlog tasks are parkable; needs-clarification tasks require user review; project-subtask tasks belong under their larger workstream.
 - Treat tags/categories as one shared classification system.
 - Use project IDs when known. If project matching by name or alias is uncertain, add a warning instead of guessing.`;
@@ -1143,10 +1147,12 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
       }
     });
 
+    if (deleteArr.length) warnings.push('AI deletion is unavailable. This change will mark the task Blocked for manual review instead.');
+    const deletionWorkarounds = deleteArr.filter(id => existingTaskIds.has(id)).map(id => ({ id, status: 'blocked' as const }));
     result.tasks = {
       add:    taskAdds,
-      update: taskUpdates,
-      delete: deleteArr,
+      update: [...taskUpdates, ...deletionWorkarounds.filter(workaround => !taskUpdates.some((update: { id: string }) => update.id === workaround.id))],
+      delete: [],
     };
   }
 

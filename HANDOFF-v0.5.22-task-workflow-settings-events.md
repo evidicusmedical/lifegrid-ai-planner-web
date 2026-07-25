@@ -2,9 +2,9 @@
 
 ## Release identity
 - Starting main commit: `5a94dc50b6dd808362231ecb73f83d996b4dc107`
-- Implementation branch / existing PR head: `codex/lifegrid-v0.5.22-task-workflow-settings-events`
-- Prior technical-review correction commit: `484783cb438ae33a441bced654c7fae7c6cadf87`.
-- Final stale/timed-range correction commit: `8b6f12b01a4784d86f2907158e16afaa06a37078` (followed only by this handoff/contract metadata commit).
+- Implementation branch / existing PR head: `codex/implement-lifegrid-v0.5.22-in-lifegrid-ai-planner-web`
+- Final implementation correction commit: `8b6f12b01a4784d86f2907158e16afaa06a37078`.
+- Final documentation/head commit: PR #46 HEAD on `codex/implement-lifegrid-v0.5.22-in-lifegrid-ai-planner-web` (this documentation-only closeout; immutable hash recorded in the final PR description after commit creation).
 - Pull request: **#46**, https://github.com/evidicusmedical/lifegrid-ai-planner-web/pull/46
 - Merge status: open for review; not merged by this handoff.
 
@@ -40,7 +40,7 @@
 - Existing assigned colors were not reassigned. Existing local clock/date values were not converted.
 
 ## Files changed
-The authoritative correction list is `git diff --name-only 27541a6...HEAD`. It includes EventSheet/TemporalFields, AppDataContext/entityOrder, TaskSheet, aiPrompt, taskWorkflow, recurrenceEdit, palette, focused Node tests, and v0.5.22 contracts/handoff.
+The final implementation includes EventSheet/TemporalFields, AppDataContext/entityOrder, TaskSheet, aiPrompt, taskWorkflow, recurrenceEdit, palette, focused Node tests, and the v0.5.22 contracts/handoff. This closeout changes documentation only.
 
 ## Verification
 - `pnpm install --frozen-lockfile`: passed; lockfile was current.
@@ -50,8 +50,8 @@ The authoritative correction list is `git diff --name-only 27541a6...HEAD`. It i
 - `git diff --check`: passed.
 
 ## Tests not run and browser/device follow-up
-- Physical iPhone Safari is not available in this environment and must be verified manually.
-- Confirm notes scope default/override, repeated one-/multiday ranges, Project/People refresh persistence, arbitrary legacy colors, and light/dark palette legibility in a real browser.
+- Physical iPhone Safari and real-browser interaction/contrast checks were not run in this environment and remain manual post-merge acceptance checks.
+- Post-merge acceptance should confirm notes scope default/override, repeated one-/multiday ranges, Project/People refresh persistence, arbitrary legacy colors, and light/dark palette legibility.
 - No claim is made for unsupported “This and following” recurrence editing.
 
 ## Known limitations

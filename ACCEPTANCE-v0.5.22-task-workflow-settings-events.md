@@ -19,4 +19,4 @@
 5. No “This and following” claim or control is present.
 
 ## Browser/device follow-up
-Run the remaining manual checklist in the handoff on desktop Chromium and physical iPhone Safari. Do not mark a browser/device complete without execution.
+Physical iPhone Safari and real-browser interaction/contrast checks were not run in this environment and remain manual post-merge acceptance checks. Do not mark a browser/device complete without execution.

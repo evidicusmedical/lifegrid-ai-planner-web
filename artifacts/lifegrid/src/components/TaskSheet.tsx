@@ -261,7 +261,12 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{repeat ? 'First Due Date' : 'Due Date'}</FormLabel>
-                        <FormControl><Input type="date" {...field} value={field.value || ''} /></FormControl>
+                        <FormControl>
+                          <div className="space-y-1">
+                            <Input type="date" {...field} value={field.value || ''} data-testid="task-due-date" />
+                            <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={!field.value} onClick={() => field.onChange(null)} data-testid="task-clear-due-date">No due date</Button>
+                          </div>
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -271,7 +276,7 @@ export const TaskSheet: React.FC<TaskSheetProps> = ({ isOpen, onClose, initialDa
                     name="category"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Category</FormLabel>
+                        <FormLabel>Tag / Category</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                           <SelectContent>

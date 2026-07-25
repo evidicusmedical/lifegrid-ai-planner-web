@@ -118,7 +118,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
 
   const onSubmit = (data: FormData) => {
     const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
-    const base = { endDate: temporalEndDate || data.date, timeStatus, timeZone: clocked && timeZoneMode === 'zoned' ? timeZone : null, timeZoneMode: clocked ? timeZoneMode : null,
+    const base = { endDate: temporalEndDate || data.date, timeStatus, timeZone: initialData?.timeZone ?? null, timeZoneMode: initialData?.timeZoneMode ?? null,
       ...data,
       startTime: clocked ? data.startTime || null : null,
       endTime: clocked ? data.endTime || null : null,

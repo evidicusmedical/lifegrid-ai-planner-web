@@ -14,115 +14,33 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { formatDate, relativeDate, isOverdue } from '../lib/format';
 
-// ─── Sort types ───────────────────────────────────────────────────────────────
-type SortMode = 'smart' | 'due-asc' | 'due-desc' | 'priority' | 'status' | 'category';
+// ─── Sort and filter contracts ───────────────────────────────────────────────
+import { TASK_SORT_DESCRIPTIONS, TASK_SORT_LABELS, type TaskSortMode, sortTasks } from '../lib/taskWorkflow';
 
-const SORT_LABELS: Record<SortMode, string> = {
-  smart: '⚡ Smart Priority',
-  'due-asc': '📅 Due Date ↑',
-  'due-desc': '📅 Due Date ↓',
-  priority: '🔥 Priority',
-  status: '📋 Status',
-  category: '🏷 Category',
-};
-
-// ─── Filter types ─────────────────────────────────────────────────────────────
 type FilterMode =
   | 'all' | 'incomplete' | 'overdue' | 'today' | 'this-week'
-  | 'high-priority' | 'completed';
+  | 'high-priority' | 'no-due-date' | 'completed';
 
 const FILTER_CHIPS: { id: FilterMode; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'incomplete', label: 'Incomplete' },
-  { id: 'overdue', label: 'Overdue' },
-  { id: 'today', label: 'Due today' },
-  { id: 'this-week', label: 'This week' },
-  { id: 'high-priority', label: 'High priority' },
-  { id: 'completed', label: 'Completed' },
+  { id: 'all', label: 'All' }, { id: 'incomplete', label: 'Incomplete' },
+  { id: 'overdue', label: 'Overdue' }, { id: 'today', label: 'Due today' },
+  { id: 'this-week', label: 'This week' }, { id: 'high-priority', label: 'High priority' },
+  { id: 'no-due-date', label: 'No due date' }, { id: 'completed', label: 'Completed' },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 const todayStr = () => new Date().toISOString().split('T')[0];
-const addDaysStr = (n: number) => {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return d.toISOString().split('T')[0];
-};
-
-const priorityWeight: Record<TaskPriority, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
-
-// Smart Priority score — lower = shown first
-function smartScore(t: Task): number {
-  if (t.status === 'done') return 9000;
-  const today = todayStr();
-  const inWeek = addDaysStr(7);
-  const pw = priorityWeight[t.priority] ?? 1;
-
-  if (!t.dueDate) {
-    // No due date: after all dated tasks, but urgent/high float up
-    return pw >= 3 ? 400 - pw : 600 - pw;
-  }
-
-  if (t.dueDate < today) {
-    // Overdue — most overdue first, break ties by priority
-    const msOverdue = new Date(today).getTime() - new Date(t.dueDate).getTime();
-    const daysOverdue = Math.floor(msOverdue / 86400000);
-    return -daysOverdue * 10 - pw;
-  }
-
-  if (t.dueDate === today) return 10 - pw * 0.1;
-
-  if (t.dueDate <= inWeek) {
-    const msAhead = new Date(t.dueDate).getTime() - new Date(today).getTime();
-    const daysAhead = Math.ceil(msAhead / 86400000);
-    return 50 + daysAhead - pw * 0.1;
-  }
-
-  const msAhead = new Date(t.dueDate).getTime() - new Date(today).getTime();
-  const daysAhead = Math.ceil(msAhead / 86400000);
-  return 200 + daysAhead - pw * 0.1;
-}
-
+const addDaysStr = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().split('T')[0]; };
 function applyFilter(tasks: Task[], filter: FilterMode): Task[] {
-  const today = todayStr();
-  const inWeek = addDaysStr(7);
+  const today = todayStr(), inWeek = addDaysStr(7);
   switch (filter) {
     case 'incomplete': return tasks.filter(t => t.status !== 'done');
     case 'overdue': return tasks.filter(t => t.status !== 'done' && !!t.dueDate && t.dueDate < today);
     case 'today': return tasks.filter(t => t.dueDate === today);
-    case 'this-week': return tasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= inWeek);
+    case 'this-week': return tasks.filter(t => !!t.dueDate && t.dueDate >= today && t.dueDate <= inWeek);
     case 'high-priority': return tasks.filter(t => t.priority === 'high' || t.priority === 'urgent');
+    case 'no-due-date': return tasks.filter(t => !t.dueDate);
     case 'completed': return tasks.filter(t => t.status === 'done');
     default: return tasks;
-  }
-}
-
-function applySort(tasks: Task[], sort: SortMode): Task[] {
-  const copy = [...tasks];
-  switch (sort) {
-    case 'smart': return copy.sort((a, b) => smartScore(a) - smartScore(b));
-    case 'due-asc': return copy.sort((a, b) => {
-      if (!a.dueDate && !b.dueDate) return 0;
-      if (!a.dueDate) return 1;
-      if (!b.dueDate) return -1;
-      return a.dueDate.localeCompare(b.dueDate);
-    });
-    case 'due-desc': return copy.sort((a, b) => {
-      if (!a.dueDate && !b.dueDate) return 0;
-      if (!a.dueDate) return 1;
-      if (!b.dueDate) return -1;
-      return b.dueDate.localeCompare(a.dueDate);
-    });
-    case 'priority': return copy.sort((a, b) => {
-      if (a.status === 'done' && b.status !== 'done') return 1;
-      if (b.status === 'done' && a.status !== 'done') return -1;
-      return priorityWeight[b.priority] - priorityWeight[a.priority];
-    });
-    case 'status': {
-      const sw: Record<string, number> = { 'in-progress': 0, todo: 1, blocked: 2, done: 3 };
-      return copy.sort((a, b) => (sw[a.status] ?? 9) - (sw[b.status] ?? 9));
-    }
-    case 'category': return copy.sort((a, b) => a.category.localeCompare(b.category));
-    default: return copy;
   }
 }
 
@@ -174,7 +92,7 @@ export const TasksView = () => {
   const { tasks, categories, projects, updateTask } = useAppData();
 
   const [filter, setFilter] = useState<FilterMode>('all');
-  const [sort, setSort] = useState<SortMode>('smart');
+  const [sort, setSort] = useState<TaskSortMode>(() => { try { const saved = localStorage.getItem('lifegrid_task_sort'); return saved && saved in TASK_SORT_LABELS ? saved as TaskSortMode : 'smart'; } catch { return 'smart'; } });
   const [catFilter, setCatFilter] = useState<string>('all');
   const [projectFilter, setProjectFilter] = useState<string>('all');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -202,8 +120,8 @@ export const TasksView = () => {
     result = applyFilter(result, filter);
     if (catFilter !== 'all') result = result.filter(t => t.category === catFilter);
     if (projectFilter !== 'all') result = result.filter(t => t.projectId === projectFilter);
-    return applySort(result, sort);
-  }, [tasks, filter, sort, catFilter, projectFilter]);
+    return sortTasks(result, sort, categories, todayStr());
+  }, [tasks, filter, sort, catFilter, projectFilter, categories]);
 
   const toggleDone = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -228,19 +146,19 @@ export const TasksView = () => {
           {/* Sort dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button aria-label={`Sort: ${sort === 'smart' ? 'Smart' : SORT_LABELS[sort]}`} className="task-sort-control flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-muted text-muted-foreground hover:bg-muted/70 transition-colors">
+              <button aria-label={`Sort: ${TASK_SORT_LABELS[sort]}`} className="task-sort-control flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-muted text-muted-foreground hover:bg-muted/70 transition-colors">
                 <ArrowDownUp size={12} />
-                {sort === 'smart' ? 'Smart' : SORT_LABELS[sort].replace(/^[^ ]+ /, '')}
+                {TASK_SORT_LABELS[sort]}
                 <ChevronDown size={11} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel className="text-[10px]">Sort by</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {(Object.entries(SORT_LABELS) as [SortMode, string][]).map(([id, label]) => (
+              {(Object.entries(TASK_SORT_LABELS) as [TaskSortMode, string][]).map(([id, label]) => (
                 <DropdownMenuItem
                   key={id}
-                  onClick={() => setSort(id)}
+                  onClick={() => { setSort(id); try { localStorage.setItem('lifegrid_task_sort', id); } catch { /* optional preference */ } }}
                   className={`text-xs ${sort === id ? 'font-semibold text-primary' : ''}`}
                 >
                   {label}
@@ -249,6 +167,7 @@ export const TasksView = () => {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        <p className="mb-2 text-[11px] text-muted-foreground" data-testid="task-sort-description">{TASK_SORT_DESCRIPTIONS[sort]}</p>
 
         {/* Filter chips */}
         <div className="task-chip-rail flex gap-2 overflow-x-auto overflow-y-hidden pb-2 scrollbar-hide -mx-4 px-4">

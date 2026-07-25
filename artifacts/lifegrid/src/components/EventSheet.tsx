@@ -20,6 +20,8 @@ import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
 import { TemporalFields } from './TemporalFields';
 import { eventProjectTags } from '../lib/projectOperations';
+import { isNotesOnlyRecurrenceEdit, repeatedOccurrenceRange, resolveAllDayEditRange, type RecurringNotesScope } from '../lib/recurrenceEdit';
+import { paletteWithCurrentColor } from '../lib/palette';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -91,6 +93,9 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   const [timeZoneMode, setTimeZoneMode] = useState<TimeZoneMode>('zoned');
   const [timeZone, setTimeZone] = useState('');
   const [temporalEndDate, setTemporalEndDate] = useState('');
+  const [endDateWasEdited, setEndDateWasEdited] = useState(false);
+  const [notesScope, setNotesScope] = useState<RecurringNotesScope>('this-event');
+  const [notesScopeWasChosen, setNotesScopeWasChosen] = useState(false);
 
   const groupId = initialData?.recurringGroupId;
   const groupSize = groupId ? events.filter(e => e.recurringGroupId === groupId).length : 0;
@@ -127,6 +132,9 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
       setTimeZone(initialData?.timeZone ?? '');
       setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? defaultDate ?? '');
+      setEndDateWasEdited(false);
+      setNotesScope('this-event');
+      setNotesScopeWasChosen(false);
       if (initialData) {
         form.reset({
           title: initialData.title,
@@ -165,17 +173,45 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   }, [isOpen, initialData, defaultDate]);
 
   const startDateVal = form.watch('date');
+  const watched = form.watch();
+  const notesOnlyEdit = Boolean(initialData && groupSize > 1 && isNotesOnlyRecurrenceEdit({
+    ...initialData,
+    endDate: initialData.endDate ?? initialData.date,
+  }, {
+    title: watched.title,
+    date: watched.date,
+    endDate: temporalEndDate || watched.date,
+    category: watched.category,
+    startTime: watched.startTime || null,
+    endTime: watched.endTime || null,
+    color: watched.color,
+    notes: watched.notes || null,
+    displayPriority: watched.displayPriority,
+    showInGrid: watched.showInGrid,
+    showInExport: watched.showInExport,
+    linkedTaskIds: watched.linkedTaskIds,
+    aiNotes: watched.aiNotes || null,
+    sourceNotes: watched.sourceNotes || null,
+    timeStatus,
+  }));
+
+  useEffect(() => {
+    if (!notesScopeWasChosen) setNotesScope(notesOnlyEdit ? 'entire-series' : 'this-event');
+  }, [notesOnlyEdit, notesScopeWasChosen]);
 
   const onSubmit = (data: FormData) => {
     const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
+    const allDayRange = timeStatus === 'all-day' && initialData
+      ? resolveAllDayEditRange(data.date, temporalEndDate, initialData, endDateWasEdited)
+      : { date: data.date, endDate: temporalEndDate || data.date };
     const base = {
       ...data,
-      endDate: temporalEndDate || data.date,
+      ...allDayRange,
       timeStatus,
       startTime: clocked ? (data.startTime || null) : null,
       endTime: clocked ? (data.endTime || null) : null,
-      timeZone: clocked && timeZoneMode === 'zoned' ? timeZone : null,
-      timeZoneMode: clocked ? timeZoneMode : null,
+      timeZone: initialData?.timeZone ?? null,
+      timeZoneMode: initialData?.timeZoneMode ?? null,
       notes: data.notes || null,
       displayPriority: data.displayPriority,
       showInGrid: data.showInGrid,
@@ -188,6 +224,22 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     const issues = temporalErrors(base);
     if (issues.length) { form.setError('date', { message: issues[0] }); return; }
     if (initialData) {
+      if (notesOnlyEdit && notesScope === 'entire-series' && groupId) {
+        events.filter(event => event.recurringGroupId === groupId).forEach(event => {
+          const repairedRange = event.timeStatus === 'all-day'
+            ? resolveAllDayEditRange(event.date, event.endDate, event, false)
+            : {};
+          updateEvent(event.id, {
+            ...repairedRange,
+            notes: base.notes,
+            aiNotes: base.aiNotes,
+            sourceNotes: base.sourceNotes,
+          });
+        });
+        onSaved?.();
+        onClose();
+        return;
+      }
       updateEvent(initialData.id, base);
       onSaved?.();
       onClose();
@@ -198,12 +250,15 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       const gid = crypto.randomUUID();
       const days = daySpan(data.date, endDate);
       for (let i = 0; i < days; i++) {
-        addEvent({ id: crypto.randomUUID(), ...base, date: shiftDate(data.date, i), startTime: null, endTime: null, recurringGroupId: gid });
+        const occurrenceDate = shiftDate(data.date, i);
+        addEvent({ id: crypto.randomUUID(), ...base, date: occurrenceDate, endDate: occurrenceDate, startTime: null, endTime: null, recurringGroupId: gid });
       }
     } else if (repeat && repeatCount > 1) {
       const gid = crypto.randomUUID();
       for (let i = 0; i < repeatCount; i++) {
-        addEvent({ id: crypto.randomUUID(), ...base, date: shiftByFreq(data.date, repeatFreq, i), recurringGroupId: gid });
+        const occurrenceDate = shiftByFreq(data.date, repeatFreq, i);
+        const occurrenceRange = repeatedOccurrenceRange(occurrenceDate, data.date, base.endDate);
+        addEvent({ id: crypto.randomUUID(), ...base, ...occurrenceRange, recurringGroupId: gid });
       }
     } else {
       addEvent({ id: crypto.randomUUID(), ...base });
@@ -211,7 +266,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     onClose();
   };
 
-  const presetColors = categories.map(c => c.color);
+  const presetColors = paletteWithCurrentColor(form.watch('color'));
 
   const multiDayCount = multiDay && endDate && endDate >= startDateVal ? daySpan(startDateVal, endDate) : 0;
   const saveLabel = initialData
@@ -341,7 +396,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                   </div>
                 )}
 
-                <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={''} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) setTemporalEndDate(next.endDate); if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
+                <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={''} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) { setTemporalEndDate(next.endDate); setEndDateWasEdited(true); } if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
 
                 {/* ── Repeat (new events only, disabled when multi-day) ── */}
                 {!initialData && !multiDay && (
@@ -424,6 +479,22 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                     </FormItem>
                   )}
                 />
+
+                {notesOnlyEdit && (
+                  <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2" data-testid="recurring-notes-scope">
+                    <Label htmlFor="recurring-notes-scope-select">Apply notes change to</Label>
+                    <select
+                      id="recurring-notes-scope-select"
+                      className="h-9 w-full rounded border bg-background px-2 text-sm"
+                      value={notesScope}
+                      onChange={event => { setNotesScope(event.target.value as RecurringNotesScope); setNotesScopeWasChosen(true); }}
+                    >
+                      <option value="entire-series">Entire series</option>
+                      <option value="this-event">This event</option>
+                    </select>
+                    <p className="text-[11px] text-muted-foreground">Entire series updates notes on all {groupSize} materialized events. Structural changes always apply only to this event.</p>
+                  </div>
+                )}
 
                 {/* Advanced display & AI */}
                 <details className="rounded-xl border border-border bg-muted/20 p-3 group">

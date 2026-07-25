@@ -10,7 +10,7 @@ import { analyzeDependencies, patchProposalKey } from '../lib/aiDependencies';
 import { applyPatchAtomically } from '../lib/aiPatchApply';
 import { migrateTemporal } from '../lib/temporal';
 import { serializeBackup, normalizeBackup } from '../lib/backup';
-import { moveEntity, normalizeEntityOrder } from '../lib/entityOrder';
+import { moveOrderedEntity, normalizeEntityOrder } from '../lib/entityOrder';
 import { classifyStorageError } from '../lib/storageError';
 import { normalizeMilestones, planProjectTagDeletion } from '../lib/projectOperations';
 
@@ -356,7 +356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return next;
     });
-  const reorderPeople = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, people: normalizeEntityOrder(moveEntity(d.people, fromIndex, toIndex)) }));
+  const reorderPeople = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, people: moveOrderedEntity(d.people, fromIndex, toIndex) }));
   const deletePerson = (id: string) =>
     mutate(d => ({
       ...d,
@@ -369,7 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     mutate(d => ({ ...d, projects: normalizeEntityOrder([...d.projects, { ...project, order: d.projects.length }]) }));
   const updateProject = (id: string, update: Partial<Project>) =>
     mutate(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...update } : p)) }));
-  const reorderProjects = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, projects: normalizeEntityOrder(moveEntity(d.projects, fromIndex, toIndex)) }));
+  const reorderProjects = (fromIndex: number, toIndex: number) => mutate(d => ({ ...d, projects: moveOrderedEntity(d.projects, fromIndex, toIndex) }));
   const deleteProject = (id: string, policy?: 'clear' | 'reassign', destinationId?: string) =>
     mutate(d => { const plan = planProjectTagDeletion(d, id, policy, destinationId); if (!plan.ok) throw new Error(plan.error); return { ...d, ...plan.value }; });
 

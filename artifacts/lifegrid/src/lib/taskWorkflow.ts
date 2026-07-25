@@ -28,8 +28,13 @@ const localDayNumber = (date: string) => {
 export function smartPriorityScore(task: Task, today: string): number {
   if (task.status === 'done') return 10000;
   const priority = priorityRank(task.priority);
-  const blockedSignal = task.status === 'blocked' ? 25 : 0;
-  if (!task.dueDate) return (priority === 0 ? 90 : priority === 1 ? 180 : 420 + priority * 20) + blockedSignal;
+  const blockedSignal = task.status === 'blocked' ? -30 : 0;
+  if (!task.dueDate) {
+    if (priority === 0) return 70 + blockedSignal;
+    if (task.status === 'blocked') return 105 + priority * 5;
+    if (priority === 1) return 180;
+    return 420 + priority * 20;
+  }
   const distance = localDayNumber(task.dueDate) - localDayNumber(today);
   if (distance < 0) return distance * 10 + priority;
   if (distance <= 7) return 20 + distance * 4 + priority + blockedSignal;

@@ -24,6 +24,7 @@ export function TemporalFields({ prefix, date, startTime, endTime, endDate, time
       <div className="grid grid-cols-2 gap-2"><div><Label>Start time</Label><Input type="time" value={startTime} onChange={e => onChange({ startTime: e.target.value })} data-testid={test('start-time')} /></div><div><Label>End time</Label><Input type="time" value={endTime} onChange={e => onChange({ endTime: e.target.value })} data-testid={test('end-time')} /></div></div>
       <div><Label>End date</Label><Input type="date" value={endDate || date} min={date} onChange={e => onChange({ endDate: e.target.value })} data-testid={test('end-date')} /></div>
     </>}
+    {timeStatus === 'all-day' && <div><Label>End date</Label><Input type="date" value={endDate || date} min={date} onChange={e => onChange({ endDate: e.target.value })} data-testid={test('end-date')} /></div>}
     <p className="text-[11px] text-muted-foreground">{errors[0] || temporalSummary({ date, startTime: clocked ? startTime || null : null, endTime: clocked ? endTime || null : null, endDate: endDate || date, timeStatus, timeZone: clocked && timeZoneMode === 'zoned' ? timeZone : null, timeZoneMode: clocked ? timeZoneMode : null })}</p>
   </div>;
 }

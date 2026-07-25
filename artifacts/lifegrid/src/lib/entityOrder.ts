@@ -9,3 +9,6 @@ export function moveEntity<T>(items: readonly T[], from: number, to: number): T[
   if (from < 0 || to < 0 || from >= items.length || to >= items.length || from === to) return [...items];
   const next = [...items]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved); return next;
 }
+export function moveOrderedEntity<T extends OrderedEntity>(items: readonly T[], from: number, to: number): (T & { order: number })[] {
+  return moveEntity(items, from, to).map((item, order) => ({ ...item, order }));
+}

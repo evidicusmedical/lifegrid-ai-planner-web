@@ -2,45 +2,57 @@
 
 ## Release identity
 - Starting main commit: `5a94dc50b6dd808362231ecb73f83d996b4dc107`
-- Implementation branch: `codex/lifegrid-v0.5.22-task-workflow-settings-events`
-- Final implementation commit: recorded as the pull request head (a commit cannot contain its own hash); see PR URL below.
-- PR number and URL: populated after PR creation.
+- Implementation branch / existing PR head: `codex/lifegrid-v0.5.22-task-workflow-settings-events`
+- Final implementation correction commit: `484783cb438ae33a441bced654c7fae7c6cadf87` (followed only by this handoff metadata commit).
+- Pull request: **#46**, https://github.com/evidicusmedical/lifegrid-ai-planner-web/pull/46
+- Merge status: open for review; not merged by this handoff.
 
-## Phase 0 audit and root causes
-1. **Task model:** status enum is `todo | in-progress | done | blocked`; triage is `ready | needs-review | blocked | waiting | duplicate-candidate | needs-scheduling | scheduled | backlog`; priority is `low | medium | high | urgent`; `dueDate` is nullable YYYY-MM-DD; `parentTaskId` is nullable; Project Tag is optional `projectId`; shared Task/Event Category is `category`. Existing parent data is normalized and atomically applied.
-2. **Sorting:** TasksView locally implemented Smart/date/priority/status/category sorting; status incorrectly ranked In progress before To do, Category sorted raw IDs, names were absent, tie-breaks were incomplete, and selection was not persisted. Smart used runtime Date construction and put all undated work behind dated work. v0.5.22 moves contracts to a pure helper, adds exact explanations/name modes/visible labels/stable ties, date-only scoring, and optional local preference persistence.
-3. **AI:** `aiPrompt` produces instructions and exports context; parser normalizes sparse patches, validates enums/IDs, warns on real-deadline changes, and atomic apply occurs only after preview approval. Status and triage were both accepted but intent precedence was undocumented. `dueDate: null` already was canonical. Task deletes were accepted, contrary to the desired no-delete workflow. Guidance now makes status authoritative, preserves triage-only intent, supports null clears, discrete naming and parent compatibility, and visibly converts proposed Task deletion to Blocked manual review. Atomicity is unchanged.
-4. **Ordering:** Categories persist array order. People already had `order` plus a context reorder method but no UI. Project Tags use `order`; Settings derived a sorted/filtered list then sent its filtered index to a full-array mutation, causing wrong/no movement under search and relying on order alignment. People/Projects normalize missing/duplicate legacy order deterministically. Controls now share accessible Up/Down behavior and Project controls resolve full ordered indexes.
-5. **Archive:** Project `status` includes legacy `archived`; selectors and derived tags safely read it. The Settings button did change stored status, but no complete archive lifecycle/page existed. Removing only the toggle needs no migration; legacy archived records remain readable and are not rewritten. Explicit Delete remains.
-6. **Event time mode:** the shared TemporalFields used by Event and Person Schedule exposed Specific timezone/Floating local time and help/selectors. Event models retain nullable legacy fields. Editors previously reconstructed these fields, risking changes on save. Display/grid paths already use stored local date/time. Controls are removed; legacy values are copied opaquely on edit and new values are null.
-7. **Recurring all-day:** recurrence is materialized sibling records sharing `recurringGroupId`, with no master-series recurrence pattern or This/Following/Entire mutation engine. The editor initialized `temporalEndDate` from the selected sibling, then changing its date could leave an earlier end and trigger temporal validation. v0.5.22 normalizes the range from the edited local date and original inclusive duration; missing/stale end becomes same-day. A notes-only pure field-diff helper is included, while unsupported scope UI is not fabricated.
-8. **Colors:** Settings had a 12-color private palette, Event used current Category colors, and People Schedule inherited Person color. Existing values are stored literally; no centralized contrast helper governs all views and several badges use existing CSS/foreground treatments. v0.5.22 provides a shared 16-color palette and retains arbitrary current colors without reassignment.
+## Phase 0 audit and corrected root causes
+1. **Task model:** status is `todo | in-progress | done | blocked`; triage is `ready | needs-review | blocked | waiting | duplicate-candidate | needs-scheduling | scheduled | backlog`; priority is `low | medium | high | urgent`; `dueDate` and `parentTaskId` are nullable; Project Tag is `projectId`; shared Task/Event classification is `category`.
+2. **Task sorting:** sorting originally lived in TasksView, incorrectly ranked In progress before To do, sorted raw Category IDs, omitted name modes/stable ties, and did not persist selection. The first v0.5.22 Smart score also treated blocked as a positive numeric penalty and could leave blocked-undated work behind far-future ordinary work. The corrected pure comparator uses a blocked actionability bonus; urgent-undated and blocked-undated work beat far-future medium/low work while near-due and overdue work remain prominent.
+3. **AI status/triage:** parser accepted sparse canonical fields independently, so prompt text alone could not prevent `triageStatus: "blocked"` from representing an overall blocked request. Normalization now adds `status: "blocked"` when blocked triage arrives without status and preserves explicit combined status/triage values. Adds receive the same canonical default. Parser-level tests cover triage-only and combined inputs.
+4. **AI deletion:** the first workaround skipped adding Blocked whenever the same ID already had any update, losing the substitution. The corrected parser merges `status: "blocked"` into that existing sparse update, retains its other fields, clears `tasks.delete`, emits the exact manual-review warning, and leaves atomic preview/apply unchanged.
+5. **Due dates and terminology:** canonical clearing remains `dueDate: null` without unrelated mutations. The Task editor now says **Tag / Category** while the schema field remains `category`.
+6. **Ordering:** Categories persist array order. People and Project Tags have stored `order`. The original Project Settings view mixed filtered indexes with the full array. A deeper review also found that reordering followed by `normalizeEntityOrder` sorted moved records back by their old order values. The correction uses one `moveOrderedEntity` helper that moves immutably and immediately reindexes; People and Project controls persist contiguous order through the active-calendar store and backup JSON.
+7. **Archive:** legacy Project `status` can still be `archived` and is read safely. The incomplete Archive/Unarchive action is absent; opening Settings does not rewrite legacy flags; explicit Delete remains.
+8. **Event local time:** Event and Person Schedule editors previously exposed zoned/floating controls. They now expose stored local date/time fields only. New records use null compatibility metadata; edits copy legacy `timeZone`/`timeZoneMode` opaquely and never convert clock values.
+9. **Repeated all-day creation:** materialized repeat siblings previously changed only `date`, leaving later `endDate` at the first occurrence. Each repeated sibling now receives a date-relative range: one-day uses its own date for both fields and multiday preserves inclusive duration. Materialized multi-day daily records also use their own date for `endDate`.
+10. **All-day editing:** the first repair always rebuilt endDate from `initialData`, overriding a user edit and affecting ordinary Events. All-day editors now expose End date and track explicit modification. Explicit end wins; duration is preserved only when date changes and end was untouched; unchanged ordinary edits retain the entered range.
+11. **Recurring notes:** recurrence is materialized siblings connected by `recurringGroupId`, not a rule/master engine. Notes-only group edits show Entire series by default and allow This event. Entire series updates `notes`, `aiNotes`, and `sourceNotes` on all siblings. Structural edits remain single-event. No unsupported “This and following” behavior is fabricated or claimed.
+12. **Colors:** the initial 16 values were exact-hex unique but clustered in gray/purple/orange/blue/teal. The corrected palette documents 16 named perceptual families across a hue progression. Existing arbitrary assigned values remain selectable and round-trip literally; no migration or automatic recoloring occurs.
 
-## Files changed
-See `git diff --name-only 5a94dc50...HEAD` for the authoritative list: Task/Event/Temporal/Settings UI, AI prompt/parser, pure workflow/palette/recurrence helpers, Node contract test, version markers/assertions, and the nine v0.5.22 documents.
+## Exact behavior implemented
+- Eight compact Task sorts with exact descriptions, deterministic status/priority/name/visible-category tie contracts, Smart default, and optional selected-sort persistence.
+- Clear due-date control and No due date filter; main Task status remains prominent and triage remains Advanced planning.
+- Parser-enforced blocked workflow status, combined triage preservation, disclosed update-plus-delete Blocked merge, discrete flat AI Task guidance, and parentTaskId compatibility.
+- Shared immutable Up/Down ordering for Categories (array order), People, and Project Tags, with disabled boundaries and accessible labels.
+- Project Archive UI removed without data migration.
+- Local-time-only Event/People Schedule editing with opaque legacy metadata preservation.
+- Valid per-occurrence all-day ranges, explicit end-date authority, and supported notes scopes Entire series / This event only.
+- Shared 16-family palette for new/manual choices with arbitrary-current-color preservation.
 
-## Compatibility and version decisions
-- APP_VERSION: `v0.5.22`; package: `0.5.22`.
+## Schema and release decisions
+- APP_VERSION is **v0.5.22**.
 - AI_INTERCHANGE_VERSION remains **4**.
 - BACKUP_SCHEMA_VERSION remains **7**.
-- No Projects page, Project Operations, Milestones UI, drag/drop, deep hierarchy, archive lifecycle, runtime timezone conversion, service worker, migration, bulk recoloring, or unrelated export/filter behavior was added.
-- Existing assigned colors were **not reassigned**.
-- No timezone conversion was reintroduced; local stored semantics remain authoritative.
+- No Projects page, Project Operations, Milestones UI, drag/drop, deep hierarchy, archive lifecycle, service worker, runtime timezone conversion, historical-time migration, bulk recoloring, or unrelated Grid/Export filtering change was introduced.
+- Existing assigned colors were not reassigned. Existing local clock/date values were not converted.
 
-## Testing/results
-- `pnpm install --frozen-lockfile`: pass (lockfile current).
-- `pnpm --filter @workspace/lifegrid typecheck`: pass.
-- `pnpm --filter @workspace/lifegrid test`: pass, 81/81.
-- `pnpm --filter @workspace/lifegrid build`: pass; existing sourcemap/chunk-size warnings remain advisory.
-- `git diff --check`: pass.
-- `pnpm --filter @workspace/lifegrid test:e2e:smoke`: not completed; harness web server did not reach execution and was stopped.
-- Screenshot/browser spot-check: not run because the installed Playwright package has no Chromium executable (`chromium_headless_shell-1187`).
-- Tests not run: Firefox, WebKit, mobile projects, physical iPhone Safari.
+## Files changed
+The authoritative correction list is `git diff --name-only 27541a6...HEAD`. It includes EventSheet/TemporalFields, AppDataContext/entityOrder, TaskSheet, aiPrompt, taskWorkflow, recurrenceEdit, palette, focused Node tests, and v0.5.22 contracts/handoff.
 
-## Known limitations and browser/device follow-up
-- Current materialized recurrence architecture does not support This and following / Entire series edit scopes; only individual edit and group delete are present. Do not claim unsupported scope acceptance.
-- Verify all interactive layout/color contrast and persistence on desktop Chromium and a physical iPhone Safari.
-- Verify legacy zoned/floating fixtures visually retain stored clock text without editor controls.
+## Verification
+- `pnpm install --frozen-lockfile`: passed; lockfile was current.
+- `pnpm --filter @workspace/lifegrid typecheck`: passed.
+- `pnpm --filter @workspace/lifegrid test`: passed, **86/86**.
+- `pnpm --filter @workspace/lifegrid build`: passed; existing Vite sourcemap and chunk-size advisories remain non-blocking.
+- `git diff --check`: passed.
 
-## Manual acceptance checklist (pending physical/browser execution)
-1–8: Smart default; exact descriptions; status/priority/name/tag order; related-title grouping; untagged last. 9–14: AI blocked/triage/combined previews; main status emphasis; triage Advanced. 15–19: No due date clear/persistence/isolation and Smart urgent/blocked behavior. 20–26: Project/People Up/Down persistence, Category behavior, boundaries, selectors. 27–28: Archive absent; records unchanged. 29–32: timezone controls absent and local round trip. 33–38: all-day range repair and only supported recurrence behavior (scope-engine checks remain follow-up/known limitation). 39–42: 16 colors, preservation, manual selection, light/dark legibility.
+## Tests not run and browser/device follow-up
+- Physical iPhone Safari is not available in this environment and must be verified manually.
+- Confirm notes scope default/override, repeated one-/multiday ranges, Project/People refresh persistence, arbitrary legacy colors, and light/dark palette legibility in a real browser.
+- No claim is made for unsupported “This and following” recurrence editing.
+
+## Known limitations
+- Materialized recurrence supports notes-only **Entire series** and **This event**. Structural edits are **This event** only; there is no recurrence-rule engine or “This and following” scope.
+- Legacy archived flags and legacy timezone compatibility fields remain intentionally opaque and are not migrated.

@@ -1148,10 +1148,12 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     });
 
     if (deleteArr.length) warnings.push('AI deletion is unavailable. This change will mark the task Blocked for manual review instead.');
-    const deletionWorkarounds = deleteArr.filter(id => existingTaskIds.has(id)).map(id => ({ id, status: 'blocked' as const }));
+    const deletionIds = new Set(deleteArr.filter(id => existingTaskIds.has(id)));
+    const mergedTaskUpdates = taskUpdates.map((update: { id: string } & Partial<Task>) => deletionIds.has(update.id) ? { ...update, status: 'blocked' as const } : update);
+    const deletionWorkarounds = [...deletionIds].filter(id => !mergedTaskUpdates.some((update: { id: string }) => update.id === id)).map(id => ({ id, status: 'blocked' as const }));
     result.tasks = {
       add:    taskAdds,
-      update: [...taskUpdates, ...deletionWorkarounds.filter(workaround => !taskUpdates.some((update: { id: string }) => update.id === workaround.id))],
+      update: [...mergedTaskUpdates, ...deletionWorkarounds],
       delete: [],
     };
   }
@@ -1257,7 +1259,7 @@ function normalizeTasks(arr: any[], validCats: Set<string>): Task[] {
       name:            String(t.name ?? ''),
       category:        validCats.has(t.category ?? t.tag ?? (Array.isArray(t.tags) ? t.tags[0] : undefined)) ? (t.category ?? t.tag ?? t.tags?.[0]) : 'other',
       dueDate:         t.dueDate ? fixDate(t.dueDate) : null,
-      status:          VALID_STA.has(t.status) ? t.status : 'todo',
+      status:          VALID_STA.has(t.status) ? t.status : t.triageStatus === 'blocked' ? 'blocked' : 'todo',
       owner:           String(t.owner ?? 'Me'),
       nextAction:      t.nextAction ?? null,
       notes:           t.notes ?? null,
@@ -1320,6 +1322,8 @@ function normalizeTaskUpdate(u: any, validCats: Set<string>): { id: string } & P
   if ('projectId'      in u) out.projectId      = u.projectId ? String(u.projectId) : null;
   if ('dueDateType'    in u && VALID_DUE_DATE_TYPE.has(u.dueDateType)) out.dueDateType = u.dueDateType;
   if ('triageStatus'   in u && VALID_TRIAGE_STATUS.has(u.triageStatus)) out.triageStatus = u.triageStatus;
+  // A blocked workflow state must never be represented as advanced triage alone.
+  if (out.triageStatus === 'blocked' && out.status === undefined) out.status = 'blocked';
   if ('parentTaskId'   in u) out.parentTaskId = u.parentTaskId ? String(u.parentTaskId) : null;
   if ('linkedEventIds' in u) out.linkedEventIds = normalizeIds(u.linkedEventIds ?? []);
   return out;

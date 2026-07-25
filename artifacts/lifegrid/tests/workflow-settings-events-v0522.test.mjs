@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CORE_COLOR_FAMILIES, CORE_COLOR_PALETTE, normalizedPaletteIsUnique, paletteFamiliesAreDistinct, paletteWithCurrentColor } from '../.test-build/lib/palette.js';
-import { applyRecurringNotesEdit, normalizeAllDayOccurrenceRange, isNotesOnlyRecurrenceEdit, repeatedAllDayOccurrenceRange, resolveAllDayEditRange } from '../.test-build/lib/recurrenceEdit.js';
+import { applyRecurringNotesEdit, normalizeAllDayOccurrenceRange, isNotesOnlyRecurrenceEdit, repeatedAllDayOccurrenceRange, repeatedOccurrenceRange, resolveAllDayEditRange } from '../.test-build/lib/recurrenceEdit.js';
+import { temporalErrors } from '../.test-build/lib/temporal.js';
 import { TASK_SORT_DESCRIPTIONS, clearTaskDueDate, priorityRank, sortTasks, statusRank } from '../.test-build/lib/taskWorkflow.js';
 import { normalizeEntityOrder, moveOrderedEntity } from '../.test-build/lib/entityOrder.js';
 import { parseAIUpdate } from '../.test-build/lib/aiPrompt.js';
@@ -32,9 +33,28 @@ test('later repeated all-day occurrences receive their own valid one-day and mul
 });
 test('all-day edits honor explicit end dates and preserve duration only for untouched date moves',()=>{
  const initial={date:'2026-07-01',endDate:'2026-07-03'};
+ assert.deepEqual(resolveAllDayEditRange('2026-07-01','2026-07-01',{date:'2026-07-01',endDate:'2026-07-01'},false),{date:'2026-07-01',endDate:'2026-07-01'});
+ assert.deepEqual(resolveAllDayEditRange('2026-07-01','2026-07-03',initial,false),{date:'2026-07-01',endDate:'2026-07-03'});
+ assert.deepEqual(resolveAllDayEditRange('2026-07-10','2026-07-01',{date:'2026-07-10',endDate:'2026-07-01'},false),{date:'2026-07-10',endDate:'2026-07-10'});
+ assert.deepEqual(resolveAllDayEditRange('2026-07-10',null,{date:'2026-07-10',endDate:null},false),{date:'2026-07-10',endDate:'2026-07-10'});
  assert.deepEqual(resolveAllDayEditRange('2026-07-01','2026-07-05',initial,true),{date:'2026-07-01',endDate:'2026-07-05'});
  assert.deepEqual(resolveAllDayEditRange('2026-08-01','2026-08-04',initial,true),{date:'2026-08-01',endDate:'2026-08-04'});
  assert.deepEqual(resolveAllDayEditRange('2026-08-01','2026-07-03',initial,false),{date:'2026-08-01',endDate:'2026-08-03'});
+ const explicitInvalid=resolveAllDayEditRange('2026-08-01','2026-07-31',initial,true);
+ assert.deepEqual(explicitInvalid,{date:'2026-08-01',endDate:'2026-07-31'});
+ assert.deepEqual(temporalErrors({...explicitInvalid,timeStatus:'all-day',startTime:null,endTime:null}),['End date cannot precede start date.']);
+});
+test('shared repeat range preserves timed and approximate calendar spans for weekly and monthly occurrences',()=>{
+ const cases=[
+  { timeStatus:'timed', occurrenceDate:'2026-07-08', firstEndDate:'2026-07-01', startTime:'09:00', endTime:'10:00', expectedEnd:'2026-07-08' },
+  { timeStatus:'timed', occurrenceDate:'2026-07-08', firstEndDate:'2026-07-02', startTime:'22:00', endTime:'06:00', expectedEnd:'2026-07-09' },
+  { timeStatus:'approximate', occurrenceDate:'2026-08-01', firstEndDate:'2026-07-02', startTime:'14:00', endTime:'15:00', expectedEnd:'2026-08-02' },
+ ];
+ for (const value of cases) {
+  const range=repeatedOccurrenceRange(value.occurrenceDate,'2026-07-01',value.firstEndDate);
+  assert.equal(range.endDate,value.expectedEnd);
+  assert.deepEqual(temporalErrors({...range,timeStatus:value.timeStatus,startTime:value.startTime,endTime:value.endTime}),[]);
+ }
 });
 test('notes-only recurrence edits are detected by field diff',()=>{const before=event();assert.equal(isNotesOnlyRecurrenceEdit(before,{notes:'updated'}),true);assert.equal(isNotesOnlyRecurrenceEdit(before,{notes:'updated',date:'2026-07-02'}),false)});
 test('notes-only recurrence scope updates every sibling or only the selected event',()=>{
@@ -43,6 +63,9 @@ test('notes-only recurrence scope updates every sibling or only the selected eve
  assert.deepEqual(all.map(x=>x.notes),['all','all',null]);
  const one=applyRecurringNotesEdit(siblings,siblings[0],{notes:'one',aiNotes:null,sourceNotes:null},'this-event');
  assert.deepEqual(one.map(x=>x.notes),['one',null,null]);
+ const stale=[event({id:'stale',date:'2026-07-08',endDate:'2026-07-01',recurringGroupId:'stale-group'}),event({id:'valid',date:'2026-07-15',endDate:'2026-07-15',recurringGroupId:'stale-group'})];
+ const repaired=applyRecurringNotesEdit(stale,stale[0],{notes:'repair',aiNotes:null,sourceNotes:null},'entire-series');
+ assert.equal(repaired[0].endDate,'2026-07-08'); assert.deepEqual(repaired.map(x=>x.notes),['repair','repair']);
 });
 test('AI parser enforces blocked status, preserves combined triage, and merges update plus delete',()=>{
  const existing={categories:[{id:'other',label:'Other',color:'#475569'}],people:[],projects:[],events:[],personEvents:[],milestones:[],tasks:[task('t',{category:'other'})]};

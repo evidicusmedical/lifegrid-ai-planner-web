@@ -4,7 +4,7 @@
 - Eight Task sorts, exact descriptions, deterministic ranks/ties, undated-last date modes, and realistic Smart ordering with urgent/blocked undated Tasks above far-future ordinary work.
 - Canonical null due-date clear with unrelated-field preservation.
 - Parser-level blocked-status enforcement, combined status/triage preservation, and update-plus-delete Blocked merge with disclosure.
-- Repeated all-day siblings receive valid per-occurrence one-day or duration-preserving ranges; explicit end edits win; untouched date moves preserve duration.
+- Repeated all-day, timed, and approximate siblings receive valid per-occurrence same-day or duration-preserving ranges for later weekly/monthly dates. Explicit all-day end edits remain subject to temporal validation; untouched valid ranges persist and missing/stale ends repair to the start date, including notes-only edits.
 - Notes-only materialized recurrence edits default to Entire series, can be scoped to This event, and update the correct siblings.
 - Project/People ordering normalization and JSON persistence remain deterministic.
 - 16 unique, documented perceptual color families and arbitrary-current-color retention.

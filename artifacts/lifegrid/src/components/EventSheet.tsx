@@ -20,7 +20,7 @@ import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
 import { TemporalFields } from './TemporalFields';
 import { eventProjectTags } from '../lib/projectOperations';
-import { isNotesOnlyRecurrenceEdit, repeatedAllDayOccurrenceRange, resolveAllDayEditRange, type RecurringNotesScope } from '../lib/recurrenceEdit';
+import { isNotesOnlyRecurrenceEdit, repeatedOccurrenceRange, resolveAllDayEditRange, type RecurringNotesScope } from '../lib/recurrenceEdit';
 import { paletteWithCurrentColor } from '../lib/palette';
 
 const schema = z.object({
@@ -225,11 +225,17 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     if (issues.length) { form.setError('date', { message: issues[0] }); return; }
     if (initialData) {
       if (notesOnlyEdit && notesScope === 'entire-series' && groupId) {
-        events.filter(event => event.recurringGroupId === groupId).forEach(event => updateEvent(event.id, {
-          notes: base.notes,
-          aiNotes: base.aiNotes,
-          sourceNotes: base.sourceNotes,
-        }));
+        events.filter(event => event.recurringGroupId === groupId).forEach(event => {
+          const repairedRange = event.timeStatus === 'all-day'
+            ? resolveAllDayEditRange(event.date, event.endDate, event, false)
+            : {};
+          updateEvent(event.id, {
+            ...repairedRange,
+            notes: base.notes,
+            aiNotes: base.aiNotes,
+            sourceNotes: base.sourceNotes,
+          });
+        });
         onSaved?.();
         onClose();
         return;
@@ -251,9 +257,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       const gid = crypto.randomUUID();
       for (let i = 0; i < repeatCount; i++) {
         const occurrenceDate = shiftByFreq(data.date, repeatFreq, i);
-        const occurrenceRange = timeStatus === 'all-day'
-          ? repeatedAllDayOccurrenceRange(occurrenceDate, data.date, base.endDate)
-          : { date: occurrenceDate };
+        const occurrenceRange = repeatedOccurrenceRange(occurrenceDate, data.date, base.endDate);
         addEvent({ id: crypto.randomUUID(), ...base, ...occurrenceRange, recurringGroupId: gid });
       }
     } else {

@@ -3,7 +3,8 @@
 ## Release identity
 - Starting main commit: `5a94dc50b6dd808362231ecb73f83d996b4dc107`
 - Implementation branch / existing PR head: `codex/lifegrid-v0.5.22-task-workflow-settings-events`
-- Final implementation correction commit: `484783cb438ae33a441bced654c7fae7c6cadf87` (followed only by this handoff metadata commit).
+- Prior technical-review correction commit: `484783cb438ae33a441bced654c7fae7c6cadf87`.
+- Final stale/timed-range correction commit: `8b6f12b01a4784d86f2907158e16afaa06a37078` (followed only by this handoff/contract metadata commit).
 - Pull request: **#46**, https://github.com/evidicusmedical/lifegrid-ai-planner-web/pull/46
 - Merge status: open for review; not merged by this handoff.
 
@@ -16,8 +17,8 @@
 6. **Ordering:** Categories persist array order. People and Project Tags have stored `order`. The original Project Settings view mixed filtered indexes with the full array. A deeper review also found that reordering followed by `normalizeEntityOrder` sorted moved records back by their old order values. The correction uses one `moveOrderedEntity` helper that moves immutably and immediately reindexes; People and Project controls persist contiguous order through the active-calendar store and backup JSON.
 7. **Archive:** legacy Project `status` can still be `archived` and is read safely. The incomplete Archive/Unarchive action is absent; opening Settings does not rewrite legacy flags; explicit Delete remains.
 8. **Event local time:** Event and Person Schedule editors previously exposed zoned/floating controls. They now expose stored local date/time fields only. New records use null compatibility metadata; edits copy legacy `timeZone`/`timeZoneMode` opaquely and never convert clock values.
-9. **Repeated all-day creation:** materialized repeat siblings previously changed only `date`, leaving later `endDate` at the first occurrence. Each repeated sibling now receives a date-relative range: one-day uses its own date for both fields and multiday preserves inclusive duration. Materialized multi-day daily records also use their own date for `endDate`.
-10. **All-day editing:** the first repair always rebuilt endDate from `initialData`, overriding a user edit and affecting ordinary Events. All-day editors now expose End date and track explicit modification. Explicit end wins; duration is preserved only when date changes and end was untouched; unchanged ordinary edits retain the entered range.
+9. **Repeated Event creation:** materialized repeat siblings previously changed only `date`, leaving later all-day, timed, and approximate `endDate` at the first occurrence. All time types now share one pure range helper: same-day occurrences end on their occurrence date, while overnight/multiday occurrences preserve the first record's calendar-day span for weekly, monthly, and other frequencies. Materialized multi-day daily records also use their own date for `endDate`.
+10. **All-day editing:** the first repair always rebuilt endDate from `initialData`, overriding a user edit; the follow-up still retained a stale `endDate < date` when the start stayed unchanged. All-day editors expose End date and track explicit modification. Explicit end wins and validation rejects an explicit invalid range. Untouched valid ranges/durations are retained, while missing or stale ends normalize to `endDate = date`, including notes-only grouped edits.
 11. **Recurring notes:** recurrence is materialized siblings connected by `recurringGroupId`, not a rule/master engine. Notes-only group edits show Entire series by default and allow This event. Entire series updates `notes`, `aiNotes`, and `sourceNotes` on all siblings. Structural edits remain single-event. No unsupported “This and following” behavior is fabricated or claimed.
 12. **Colors:** the initial 16 values were exact-hex unique but clustered in gray/purple/orange/blue/teal. The corrected palette documents 16 named perceptual families across a hue progression. Existing arbitrary assigned values remain selectable and round-trip literally; no migration or automatic recoloring occurs.
 
@@ -28,7 +29,7 @@
 - Shared immutable Up/Down ordering for Categories (array order), People, and Project Tags, with disabled boundaries and accessible labels.
 - Project Archive UI removed without data migration.
 - Local-time-only Event/People Schedule editing with opaque legacy metadata preservation.
-- Valid per-occurrence all-day ranges, explicit end-date authority, and supported notes scopes Entire series / This event only.
+- Valid per-occurrence ranges for all-day, timed, and approximate repeats; stale all-day repair; explicit end-date authority; and supported notes scopes Entire series / This event only.
 - Shared 16-family palette for new/manual choices with arbitrary-current-color preservation.
 
 ## Schema and release decisions
@@ -44,7 +45,7 @@ The authoritative correction list is `git diff --name-only 27541a6...HEAD`. It i
 ## Verification
 - `pnpm install --frozen-lockfile`: passed; lockfile was current.
 - `pnpm --filter @workspace/lifegrid typecheck`: passed.
-- `pnpm --filter @workspace/lifegrid test`: passed, **86/86**.
+- `pnpm --filter @workspace/lifegrid test`: passed, **87/87**.
 - `pnpm --filter @workspace/lifegrid build`: passed; existing Vite sourcemap and chunk-size advisories remain non-blocking.
 - `git diff --check`: passed.
 

@@ -14,16 +14,18 @@ export function resolveAllDayEditRange(
 ) {
   if (endDateWasEdited) return { date, endDate: endDate || date };
   if (date !== initial.date) return normalizeAllDayOccurrenceRange(date, initial.date, initial.endDate);
-  return { date, endDate: endDate || date };
+  return { date, endDate: endDate && endDate >= date ? endDate : date };
 }
 
-export function repeatedAllDayOccurrenceRange(
+/** Preserves the first record's inclusive calendar-day span for any repeated time type. */
+export function repeatedOccurrenceRange(
   occurrenceDate: string,
   firstDate: string,
   firstEndDate: string | null | undefined,
 ) {
   return normalizeAllDayOccurrenceRange(occurrenceDate, firstDate, firstEndDate);
 }
+export const repeatedAllDayOccurrenceRange = repeatedOccurrenceRange;
 const STRUCTURAL: (keyof Event)[] = ['date','endDate','startTime','endTime','title','timeStatus'];
 export function isNotesOnlyRecurrenceEdit(before: Event, after: Partial<Event>) {
   const equal = (left: unknown, right: unknown) => Array.isArray(left) && Array.isArray(right)
@@ -43,5 +45,11 @@ export function applyRecurringNotesEdit(
   const sibling = (event: Event) => scope === 'entire-series' && editedEvent.recurringGroupId
     ? event.recurringGroupId === editedEvent.recurringGroupId
     : event.id === editedEvent.id;
-  return events.map(event => sibling(event) ? { ...event, ...notes } : event);
+  return events.map(event => {
+    if (!sibling(event)) return event;
+    const repairedRange = event.timeStatus === 'all-day'
+      ? resolveAllDayEditRange(event.date, event.endDate, event, false)
+      : {};
+    return { ...event, ...repairedRange, ...notes };
+  });
 }

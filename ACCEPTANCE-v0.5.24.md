@@ -17,3 +17,6 @@ The initial GitHub-hosted Firefox and WebKit runs each delivered the clipboard/d
 - Firefox/Safari: primary or fallback copy succeeds; download has the expected content; no object-URL race occurs.
 - Mobile Safari/Chrome: supported copy works, failure exposes Preview, download/share remains usable, and a large package does not freeze the page.
 - Content: all scope and exact counts; seven collections present; completed/undated Tasks present; no application functions or unrelated clipboard text.
+
+## Deterministic fixture correction
+The final qualification gap was a fixture defect: the parser correction exposed that the seeded Milestone lacked `projectId`, causing store normalization to reject the calendar and load fresh-install sample data. The canonical seed now uses the required `other` Category, complete entity fields, and a Milestone linked to `hotfix-project`. Every browser test first proves that `hotfix-calendar` loaded with exact `1/1/1/2/1/3/1` collection counts. Local unit qualification is now **115 passed, 0 failed, 0 skipped**. On parser head `78d02da16e1195eab1fe055c8a8f6fdba69d41ef`, Chromium smoke was 8/8, v0.5.23 was 10/10, and Vercel succeeded; correction-head browser and deployment results remain pending and are release gates.

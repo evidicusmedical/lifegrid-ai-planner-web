@@ -7,3 +7,5 @@ Copy first uses `navigator.clipboard.writeText`, then a readonly off-screen text
 Package consumers must locate the final `CURRENT LIFEGRID CONTEXT\n` marker with `lastIndexOf`, trim the remaining text, require a non-empty remainder, and parse only that final JSON object. The phrase intentionally also appears in the interchange instructions. Cross-browser qualification clicks the production Copy and Download controls, validates the exact clipboard-boundary/downloaded-file contents, exercises both fallback outcomes, and excludes only the native-clipboard case from non-Chromium projects without `test.skip`.
 
 Interchange remains 4 and backup schema remains 7. Legacy hard relationships remain read-only exported context.
+
+Deterministic delivery fixtures are themselves subject to production normalization contracts. They must include Category `other`, canonical entity fields, and Milestones whose `projectId` references a present Project. Qualification must assert the intended active calendar and exact stored collection counts before opening AI, then assert its calendar identity and recognizable records in copied and downloaded context.

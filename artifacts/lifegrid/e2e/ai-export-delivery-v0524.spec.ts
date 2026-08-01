@@ -21,29 +21,56 @@ const parseLifeGridContext = (text: string) => {
 
 const seed = async (page: Page) => page.addInitScript(() => {
   const data = {
-    categories: [{ id: 'hotfix-category', label: 'Hotfix Category', color: '#123456' }],
+    categories: [{ id: 'other', label: 'Other', color: '#123456' }],
     projects: [{ id: 'hotfix-project', name: 'Hotfix Project', color: '#123456', order: 0, aliases: [], status: 'active', notes: null }],
     people: [{ id: 'hotfix-person', label: 'Hotfix Person', color: '#654321', order: 0 }],
     events: [
-      { id: 'normal-event', date: '2026-08-01', endDate: null, title: 'Normal Event', category: 'hotfix-category' },
-      { id: 'multi-event', date: '2026-07-30', endDate: '2026-08-02', title: 'Multi Event', category: 'hotfix-category' },
+      { id: 'normal-event', date: '2026-08-01', endDate: '2026-08-01', title: 'Normal Event', category: 'other', projectId: 'hotfix-project', timeStatus: 'all-day', timeZone: null, timeZoneMode: null, startTime: null, endTime: null, color: '#123456', notes: null, displayPriority: 4, showInGrid: true, showInExport: true, linkedTaskIds: [], aiNotes: null, sourceNotes: null },
+      { id: 'multi-event', date: '2026-07-30', endDate: '2026-08-02', title: 'Multi Event', category: 'other', projectId: 'hotfix-project', timeStatus: 'all-day', timeZone: null, timeZoneMode: null, startTime: null, endTime: null, color: '#123456', notes: null, displayPriority: 4, showInGrid: true, showInExport: true, linkedTaskIds: [], aiNotes: null, sourceNotes: null },
     ],
-    personEvents: [{ id: 'schedule', person: 'hotfix-person', date: '2026-08-01', endDate: null, title: 'Schedule' }],
+    personEvents: [{ id: 'schedule', person: 'hotfix-person', date: '2026-08-01', endDate: '2026-08-01', title: 'Schedule', timeStatus: 'all-day', timeZone: null, timeZoneMode: null, startTime: null, endTime: null, notes: null, color: '#654321' }],
     tasks: [
-      { id: 'dated-task', name: 'Dated', dueDate: '2026-08-01', status: 'todo' },
-      { id: 'undated-task', name: 'Undated', dueDate: null, status: 'todo' },
-      { id: 'completed-task', name: 'Complete', dueDate: null, status: 'done' },
+      { id: 'dated-task', name: 'Dated', category: 'other', dueDate: '2026-08-01', status: 'todo', owner: '', nextAction: null, notes: null, priority: 'medium', projectId: 'hotfix-project', dueDateType: 'real-deadline', triageStatus: 'ready', parentTaskId: null, linkedEventIds: [] },
+      { id: 'undated-task', name: 'Undated', category: 'other', dueDate: null, status: 'todo', owner: '', nextAction: null, notes: null, priority: 'medium', projectId: null, dueDateType: 'someday-backlog', triageStatus: 'backlog', parentTaskId: null, linkedEventIds: [] },
+      { id: 'completed-task', name: 'Complete', category: 'other', dueDate: null, status: 'done', owner: '', nextAction: null, notes: null, priority: 'medium', projectId: null, dueDateType: 'someday-backlog', triageStatus: 'backlog', parentTaskId: null, linkedEventIds: [] },
     ],
-    milestones: [{ id: 'milestone', title: 'Milestone', targetDate: '2026-08-01' }],
+    milestones: [{ id: 'milestone', projectId: 'hotfix-project', title: 'Milestone', targetDate: '2026-08-01', status: 'planned', completedDate: null, notes: null, order: 0 }],
   };
   localStorage.setItem('lifegrid_store_v5', JSON.stringify({
     activeCalendarId: 'hotfix-calendar',
     calendars: [{ id: 'hotfix-calendar', name: 'Hotfix Calendar', createdAt: new Date().toISOString(), data }],
   }));
 });
+const expectSeedLoaded = async (page: Page) => {
+  await expect.poll(async () => page.evaluate(() => {
+    const raw = localStorage.getItem('lifegrid_store_v5');
+    if (!raw) return null;
+    const store = JSON.parse(raw);
+    const calendar = store.calendars?.find((candidate: any) => candidate.id === 'hotfix-calendar');
+    if (!calendar) return null;
+    return {
+      activeCalendarId: store.activeCalendarId,
+      calendarName: calendar.name,
+      counts: Object.fromEntries(['categories', 'projects', 'people', 'events', 'personEvents', 'tasks', 'milestones'].map(key => [key, calendar.data[key].length])),
+    };
+  }), 'deterministic hotfix calendar must load without sample-data fallback').toEqual({ activeCalendarId: 'hotfix-calendar', calendarName: 'Hotfix Calendar', counts: EXPECTED_COUNTS });
+};
 const openAI = async (page: Page) => {
   await page.goto('/');
+  await expectSeedLoaded(page);
   await page.getByTestId('nav-ai').click();
+};
+
+const expectCompleteFixture = (parsed: any) => {
+  expect(parsed.metadata.calendarId).toBe('hotfix-calendar');
+  expect(parsed.metadata.calendarName).toBe('Hotfix Calendar');
+  expect(parsed.manifest.counts).toEqual(EXPECTED_COUNTS);
+  expect(parsed.events.map((event: { id: string }) => event.id).sort()).toEqual(['multi-event', 'normal-event']);
+  expect(parsed.projects.some((project: { id: string }) => project.id === 'hotfix-project')).toBe(true);
+  expect(parsed.people.some((person: { id: string }) => person.id === 'hotfix-person')).toBe(true);
+  expect(parsed.milestones).toContainEqual(expect.objectContaining({ id: 'milestone', projectId: 'hotfix-project' }));
+  expect(parsed.tasks.some((task: { id: string }) => task.id === 'completed-task')).toBe(true);
+  expect(parsed.tasks.some((task: { id: string }) => task.id === 'undated-task')).toBe(true);
 };
 
 test.beforeEach(async ({ page }) => seed(page));
@@ -63,7 +90,7 @@ test('complete package reaches clipboard boundary', async ({ page }) => {
   expect(copied).not.toContain('DataCloneError');
   expect(copied).not.toContain('unrelated Codex prompt text');
   expect(copied).not.toMatch(/addEvent\s*\([^)]*\)\s*\{|function\s+addEvent/);
-  expect(parseLifeGridContext(copied).manifest.counts).toEqual(EXPECTED_COUNTS);
+  expectCompleteFixture(parseLifeGridContext(copied));
   await expect(page.getByTestId('ai-package-delivery-status')).toContainText('copied');
 });
 
@@ -76,7 +103,7 @@ test('native Chromium clipboard contains the complete current package @chromium-
   expect(copied.startsWith('Export Current LifeGrid to AI')).toBe(true);
   const parsed = parseLifeGridContext(copied);
   expect(parsed.manifest.scope).toBe('all');
-  expect(parsed.manifest.counts).toEqual(EXPECTED_COUNTS);
+  expectCompleteFixture(parsed);
 });
 
 test('fallback success reports delivery and retains preview', async ({ page }) => {
@@ -120,7 +147,7 @@ test('download emits complete deterministic UTF-8 package', async ({ page }) => 
   const parsed = parseLifeGridContext(text);
   expect(parsed.metadata.selectedDateRange).toBeNull();
   expect(parsed.manifest.scope).toBe('all');
-  expect(parsed.manifest.counts).toEqual(EXPECTED_COUNTS);
+  expectCompleteFixture(parsed);
   expect(parsed.tasks.map((task: { id: string }) => task.id)).toEqual(['dated-task', 'undated-task', 'completed-task']);
   expect(parsed.tasks.some((task: { id: string }) => task.id === 'completed-task')).toBe(true);
   expect(parsed.tasks.some((task: { id: string }) => task.id === 'undated-task')).toBe(true);

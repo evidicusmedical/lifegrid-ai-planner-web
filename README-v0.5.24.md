@@ -6,3 +6,5 @@ v0.5.24 passes only active-calendar `AppData`, defensively selects/clones the se
 
 ## Qualification correction
 The initial Firefox/WebKit delivery tests failed after real text delivery because their parser used the first instructional `CURRENT LIFEGRID CONTEXT` occurrence. Qualification now parses JSON after the final marker, keeps the real clipboard-boundary and browser-download assertions, covers positive and total-failure fallback behavior, adds native Chromium clipboard confidence, and explicitly runs the v0.5.24 suite in Chromium CI.
+
+A second test-only issue appeared after the parser repair: an orphan seeded Milestone made LifeGrid correctly reject the deterministic calendar and fall back to sample data. The fixture now uses normalization-stable canonical entities, including Category `other` and a Milestone referencing the active `hotfix-project`; a precondition detects any sample-data fallback before delivery assertions.

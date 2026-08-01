@@ -20,6 +20,7 @@ import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
 import { TemporalFields } from './TemporalFields';
 import { eventProjectTags } from '../lib/projectOperations';
+import { normalizeEditableTimeStatus } from '../lib/gridModel';
 import { isNotesOnlyRecurrenceEdit, repeatedOccurrenceRange, resolveAllDayEditRange, type RecurringNotesScope } from '../lib/recurrenceEdit';
 import { paletteWithCurrentColor } from '../lib/palette';
 
@@ -27,6 +28,7 @@ const schema = z.object({
   title: z.string().min(1, 'Title is required'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
   category: z.string().min(1),
+  projectId: z.string().nullable().optional(),
   startTime: z.string().nullable(),
   endTime: z.string().nullable(),
   color: z.string().min(1),
@@ -108,6 +110,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       title: '',
       date: defaultDate || new Date().toISOString().split('T')[0],
       category: firstCat?.id ?? 'work',
+      projectId: null,
       startTime: '',
       endTime: '',
       color: firstCat?.color ?? '#2563eb',
@@ -128,7 +131,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       setRepeat(false);
       setRepeatFreq('weekly');
       setRepeatCount(4);
-      setTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day'));
+      setTimeStatus(normalizeEditableTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day')));
       setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
       setTimeZone(initialData?.timeZone ?? '');
       setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? defaultDate ?? '');
@@ -140,6 +143,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
           title: initialData.title,
           date: initialData.date,
           category: initialData.category,
+          projectId: initialData.projectId ?? null,
           startTime: initialData.startTime || '',
           endTime: initialData.endTime || '',
           color: initialData.color,
@@ -156,6 +160,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
           title: '',
           date: defaultDate || new Date().toISOString().split('T')[0],
           category: firstCat?.id ?? 'work',
+          projectId: null,
           startTime: '',
           endTime: '',
           color: firstCat?.color ?? '#2563eb',
@@ -200,14 +205,16 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   }, [notesOnlyEdit, notesScopeWasChosen]);
 
   const onSubmit = (data: FormData) => {
-    const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
+    const normalizedTimeStatus = normalizeEditableTimeStatus(timeStatus);
+    const clocked = normalizedTimeStatus === 'timed';
     const allDayRange = timeStatus === 'all-day' && initialData
       ? resolveAllDayEditRange(data.date, temporalEndDate, initialData, endDateWasEdited)
       : { date: data.date, endDate: temporalEndDate || data.date };
     const base = {
       ...data,
       ...allDayRange,
-      timeStatus,
+      timeStatus: normalizedTimeStatus,
+      projectId: data.projectId ?? null,
       startTime: clocked ? (data.startTime || null) : null,
       endTime: clocked ? (data.endTime || null) : null,
       timeZone: initialData?.timeZone ?? null,
@@ -247,12 +254,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     }
 
     if (multiDay && endDate && endDate >= data.date) {
-      const gid = crypto.randomUUID();
-      const days = daySpan(data.date, endDate);
-      for (let i = 0; i < days; i++) {
-        const occurrenceDate = shiftDate(data.date, i);
-        addEvent({ id: crypto.randomUUID(), ...base, date: occurrenceDate, endDate: occurrenceDate, startTime: null, endTime: null, recurringGroupId: gid });
-      }
+      addEvent({ id: crypto.randomUUID(), ...base, date: data.date, endDate, startTime: null, endTime: null, timeStatus: 'all-day' });
     } else if (repeat && repeatCount > 1) {
       const gid = crypto.randomUUID();
       for (let i = 0; i < repeatCount; i++) {
@@ -272,7 +274,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   const saveLabel = initialData
     ? 'Save Event'
     : multiDayCount > 1
-    ? `Create ${multiDayCount} Events`
+    ? 'Create Multi-day Event'
     : repeat && repeatCount > 1
     ? `Create ${repeatCount} Events`
     : 'Save Event';
@@ -363,13 +365,15 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                   />
                 </div>
 
+                <FormField control={form.control} name="projectId" render={({ field }) => <FormItem><FormLabel>Project (optional)</FormLabel><Select value={field.value ?? 'none'} onValueChange={value => field.onChange(value === 'none' ? null : value)}><FormControl><SelectTrigger data-testid="event-project"><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">No project</SelectItem>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></FormItem>} />
+
                 {/* ── Multi-day (new events only) ── */}
                 {!initialData && (
                   <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
                     <div className="flex items-center justify-between">
                       <div>
                         <Label className="text-sm font-semibold">Multi-day event</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Conference, trip, vacation…</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">One Event spanning consecutive dates. Repeat is cleared when selected.</p>
                       </div>
                       <Switch checked={multiDay} onCheckedChange={(v) => { setMultiDay(v); if (v) setRepeat(false); }} data-testid="switch-multiday" />
                     </div>
@@ -406,7 +410,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                         <Label className="text-sm font-semibold">Repeat</Label>
                         <p className="text-[11px] text-muted-foreground mt-0.5">Create normal event records for each occurrence</p>
                       </div>
-                      <Switch checked={repeat} onCheckedChange={setRepeat} data-testid="switch-repeat" />
+                      <Switch checked={repeat} disabled={multiDay} onCheckedChange={(v) => { setRepeat(v); if (v) { setMultiDay(false); setEndDate(''); } }} data-testid="switch-repeat" />
                     </div>
                     {repeat && (
                       <div className="space-y-3 animate-in fade-in">

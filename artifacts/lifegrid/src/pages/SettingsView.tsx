@@ -43,7 +43,6 @@ export const SettingsView = () => {
 
       <div className="p-4 pb-24 space-y-6">
         <CalendarVersions />
-        <TimeDataReview />
         <CategoryManager />
         <ProjectManager />
         <PeopleManager />
@@ -181,6 +180,7 @@ function CalendarVersions() {
 function CategoryManager() {
   const { categories, addCategory, updateCategory, deleteCategory, reorderCategories } = useAppData();
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
   const [label, setLabel] = useState('');
   const [color, setColor] = useState<string>(PRESET_COLORS[0]);
 
@@ -196,7 +196,8 @@ function CategoryManager() {
 
   return (
     <Section icon={<Tag size={16} />} title="Categories / tags" subtitle="Used to color and filter events and tasks. Use Up and Down to reorder.">
-      {categories.map((cat, idx) => (
+      <Input aria-label="Search Categories / Tags" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search Categories / Tags" />
+      {categories.filter(cat => cat.label.toLowerCase().includes(search.trim().toLowerCase())).map((cat) => { const idx = categories.findIndex(item => item.id === cat.id); return (
         <CategoryRow
           key={cat.id}
           cat={cat}
@@ -207,7 +208,7 @@ function CategoryManager() {
           onMoveUp={() => reorderCategories(idx, idx - 1)}
           onMoveDown={() => reorderCategories(idx, idx + 1)}
         />
-      ))}
+      );})}
 
       {adding ? (
         <div className="p-2 rounded-lg border border-border space-y-2">
@@ -329,6 +330,7 @@ function ProjectManager() {
 function PeopleManager() {
   const { people, addPerson, updatePerson, deletePerson, reorderPeople } = useAppData();
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
   const [label, setLabel] = useState('');
   const [color, setColor] = useState<string>(PRESET_COLORS[4]);
 
@@ -344,9 +346,10 @@ function PeopleManager() {
 
   return (
     <Section icon={<Users size={16} />} title="People" subtitle="Sections on the People tab for tracking others.">
-      {people.map((person, idx) => (
+      <Input aria-label="Search People" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search People" />
+      {people.filter(person => person.label.toLowerCase().includes(search.trim().toLowerCase())).map((person) => { const idx = people.findIndex(item => item.id === person.id); return (
         <PersonRow key={person.id} person={person} idx={idx} total={people.length} onUpdate={updatePerson} onDelete={deletePerson} onMoveUp={() => reorderPeople(idx, idx - 1)} onMoveDown={() => reorderPeople(idx, idx + 1)} />
-      ))}
+      );})}
 
       {adding ? (
         <div className="p-2 rounded-lg border border-border space-y-2">

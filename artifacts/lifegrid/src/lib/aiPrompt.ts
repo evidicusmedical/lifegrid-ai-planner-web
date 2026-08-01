@@ -113,7 +113,7 @@ AI REVIEW INSTRUCTIONS
 - Main Task status is authoritative: explicit blocked/in-progress/complete/to-do requests update status (blocked/in-progress/done/todo), never triageStatus alone. Explicit review/waiting/scheduling requests may update only the existing canonical triageStatus. If both are requested, disclose and emit both fields.
 - To clear a Task due date, emit dueDate: null and do not infer a triage state or change unrelated fields.
 - AI Task deletion is unavailable. For a deletion request, propose status: "blocked" and disclose exactly: "AI deletion is unavailable. This change will mark the task Blocked for manual review instead."
-- Create flat, discrete actionable Tasks by default. Prefer "<Workstream> - <Sub-area> - <Concrete action>" (for example, "In-processing - Credentialing - Submit privileges packet"). Keep Project as projectId rather than repeating it in the title. Use parentTaskId only when explicitly requested and avoid more than one parent-child level.
+- Create flat, discrete actionable Tasks by default. Prefer "<Workstream> - <Sub-area> - <Concrete action>" (for example, "In-processing - Credentialing - Submit privileges packet"). Keep Project as projectId rather than repeating it in the title. Do not create parentTaskId, linkedEventIds, or linkedTaskIds. Use category for classification, projectId for workstreams, and notes for dependency context.
 - Respect dueDateType: real-deadline tasks are fixed unless I explicitly approve a move; target-date tasks are movable if overloaded; someday-backlog tasks are parkable; needs-clarification tasks require user review; project-subtask tasks belong under their larger workstream.
 - Treat tags/categories as one shared classification system.
 - Use project IDs when known. If project matching by name or alias is uncertain, add a warning instead of guessing.`;
@@ -126,6 +126,7 @@ const eventExportObject = (e: Event) => ({
   title: e.title,
   category: e.category,
   tag: e.category,
+  projectId: e.projectId ?? null,
   startTime: e.startTime ?? null,
   endTime: e.endTime ?? null,
   color: e.color,
@@ -1230,6 +1231,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         endDate: fixDate(e.endDate ?? date) ?? date,
         title:     String(e.title ?? ''),
         category:  cat,
+        projectId: typeof e.projectId === 'string' ? e.projectId : null,
         timeStatus: normalizeTimeStatus(e.timeStatus, id, startTime, endTime),
         startTime,
         endTime,
@@ -1245,7 +1247,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         aiNotes: e.aiNotes ?? null,
         sourceNotes: e.sourceNotes ?? null,
         recurringGroupId: e.recurringGroupId ?? null,
-      } as Event;
+      } as unknown as Event;
     })
     .filter(Boolean) as Event[];
 }
@@ -1298,6 +1300,7 @@ function normalizeEventUpdate(
   if ('showInExport' in u) out.showInExport = Boolean(u.showInExport);
   if ('eventKind' in u && VALID_EVENT_KIND.has(u.eventKind)) out.eventKind = u.eventKind;
   if ('linkedTaskIds' in u) out.linkedTaskIds = normalizeIds(u.linkedTaskIds ?? []);
+  if ('projectId' in u) out.projectId = u.projectId ? String(u.projectId) : null;
   if ('aiNotes' in u) out.aiNotes = u.aiNotes ?? null;
   if ('sourceNotes' in u) out.sourceNotes = u.sourceNotes ?? null;
   if ('recurringGroupId' in u) out.recurringGroupId = u.recurringGroupId ?? null;

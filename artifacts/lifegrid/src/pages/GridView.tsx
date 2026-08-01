@@ -938,7 +938,7 @@ export const GridView = () => {
             </button>
           </div>
           <button
-            onClick={() => setExportOptionsOpen(true)}
+            onClick={() => setExportOptionsOpen(open => !open)}
             ref={exportButtonRef}
             disabled={exporting}
             aria-describedby={
@@ -1492,7 +1492,6 @@ export const GridView = () => {
                                     );
                                     if (
                                       fullEvent &&
-                                      evt.eventKind === "day-type" &&
                                       window.matchMedia("(hover: hover)")
                                         .matches
                                     ) {
@@ -1505,16 +1504,11 @@ export const GridView = () => {
                                               anchor:
                                                 e.currentTarget.getBoundingClientRect(),
                                             }),
-                                          250,
+                                          125,
                                         );
                                     }
                                   }}
-                                  onPointerLeave={() => {
-                                    if (previewTimerRef.current)
-                                      window.clearTimeout(
-                                        previewTimerRef.current,
-                                      );
-                                  }}
+                                  onPointerLeave={() => { if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current); previewTimerRef.current = window.setTimeout(() => setPreviewEvent(null), 180); }}
                                   onFocus={(e) => {
                                     const fullEvent = resolveEventById(
                                       events,
@@ -1522,7 +1516,7 @@ export const GridView = () => {
                                     );
                                     if (
                                       fullEvent &&
-                                      evt.eventKind === "day-type"
+                                      true
                                     )
                                       setPreviewEvent({
                                         event: fullEvent,
@@ -1739,16 +1733,9 @@ export const GridView = () => {
             (category) => category.id === previewEvent?.event.category,
           )?.label ?? "Other"
         }
+        project={projects.find(project => project.id === previewEvent?.event.projectId)?.name ?? null}
         anchor={previewEvent?.anchor ?? null}
         onClose={() => setPreviewEvent(null)}
-        onDetails={() => {
-          setDetailDate(previewEvent?.date ?? null);
-          setPreviewEvent(null);
-        }}
-        onEdit={() => {
-          if (previewEvent) openEdit(previewEvent.event);
-          setPreviewEvent(null);
-        }}
       />
 
       <DayDetailSheet

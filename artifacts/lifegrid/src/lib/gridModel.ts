@@ -15,6 +15,40 @@ const shiftDate = (value: string, days: number) => {
   return date.toISOString().slice(0, 10);
 };
 
+/** v0.5.23 compatibility boundary: editors normalize legacy states, readers do not mutate them. */
+export const normalizeEditableTimeStatus = (status: TimeStatus): 'all-day' | 'timed' =>
+  status === 'timed' || status === 'approximate' ? 'timed' : 'all-day';
+export const isGridTimed = (status: TimeStatus) => status === 'timed' || status === 'approximate';
+
+/** One deterministic ordering contract shared by every representation of a grid day. */
+export const compareGridEvents = (categoryRank: ReadonlyMap<string, number>) =>
+  <T extends Pick<GridEventSummary, 'id'|'title'|'category'|'displayPriority'|'timeStatus'|'startTime'>>(a: T, b: T): number => {
+    const timed = Number(!isGridTimed(a.timeStatus)) - Number(!isGridTimed(b.timeStatus));
+    if (timed) return timed;
+    const priority = a.displayPriority - b.displayPriority;
+    if (priority) return priority;
+    if (isGridTimed(a.timeStatus) && isGridTimed(b.timeStatus)) {
+      const start = (a.startTime ?? '').localeCompare(b.startTime ?? '');
+      if (start) return start;
+    }
+    return (categoryRank.get(a.category) ?? Number.MAX_SAFE_INTEGER) - (categoryRank.get(b.category) ?? Number.MAX_SAFE_INTEGER)
+      || a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true })
+      || a.id.localeCompare(b.id);
+  };
+
+/** Expands inclusive ranges for display only; the source Event remains a single record. */
+export const expandGridEventRange = (summary: GridEventSummary, year: number): GridEventSummary[] => {
+  const yearStart = `${year}-01-01`, yearEnd = `${year}-12-31`;
+  if (!DATE.test(summary.date) || !DATE.test(summary.endDate)) return summary.date.startsWith(String(year)) ? [summary] : [];
+  const start = summary.date < yearStart ? yearStart : summary.date;
+  const rawEnd = summary.endDate >= summary.date ? summary.endDate : summary.date;
+  const end = rawEnd > yearEnd ? yearEnd : rawEnd;
+  if (start > end) return [];
+  const result: GridEventSummary[] = [];
+  for (let date = start; date <= end; date = shiftDate(date, 1)) result.push(Object.freeze({ ...summary, date }));
+  return result;
+};
+
 /** Selects source records before temporal conversion. Zoned records get a one-day safety
  * margin because a valid displayed occurrence can cross a date boundary. Invalid dates
  * remain included, matching the former index's non-dropping policy. */
@@ -38,17 +72,14 @@ export const gridSummarySignature = (event: Event) => {
   return [s.id,s.date,s.endDate,s.title,s.category,s.color,s.displayPriority,s.timeStatus,s.startTime,s.endTime,s.eventKind,s.showInGrid].join('|');
 };
 
-const compare = (rank: ReadonlyMap<string, number>) => (a: GridEventSummary, b: GridEventSummary) =>
-  a.displayPriority - b.displayPriority || Number(!a.startTime) - Number(!b.startTime) || (a.startTime ?? '').localeCompare(b.startTime ?? '') || (rank.get(a.category) ?? 999) - (rank.get(b.category) ?? 999) || a.title.localeCompare(b.title);
-
 export const buildGridViewModel = (events: readonly Event[], year: number, legacyOrRank: string | ReadonlyMap<string, number> = new Map<string, number>(), rankOrPrevious?: ReadonlyMap<string, number> | GridViewModel, previous?: GridViewModel): GridViewModel => {
   const legacyCall = typeof legacyOrRank === 'string';
   const categoryRank = (legacyCall ? rankOrPrevious : legacyOrRank) as ReadonlyMap<string, number>;
   const prior = (legacyCall ? previous : rankOrPrevious) as GridViewModel | undefined;
-  const summaries = selectEventsIntersectingYear(events, year).map(event => toGridEventSummary(event)).filter(summary => summary.date.slice(0, 4) === String(year));
+  const summaries = selectEventsIntersectingYear(events, year).flatMap(event => expandGridEventRange(toGridEventSummary(event), year));
   const byDate = new Map<string, GridEventSummary[]>();
   for (const summary of summaries) { const bucket = byDate.get(summary.date) ?? []; bucket.push(summary); byDate.set(summary.date, bucket); }
-  byDate.forEach(bucket => bucket.sort(compare(categoryRank)));
+  byDate.forEach(bucket => bucket.sort(compareGridEvents(categoryRank)));
   const months = Array.from({ length: 12 }, (_, index) => {
     const month = `${year}-${String(index + 1).padStart(2, '0')}`;
     const entries = [...byDate.entries()].filter(([date]) => date.startsWith(month));

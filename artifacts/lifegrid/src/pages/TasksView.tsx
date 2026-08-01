@@ -15,17 +15,17 @@ import {
 import { formatDate, relativeDate, isOverdue } from '../lib/format';
 
 // ─── Sort and filter contracts ───────────────────────────────────────────────
-import { TASK_SORT_DESCRIPTIONS, TASK_SORT_LABELS, type TaskSortMode, sortTasks } from '../lib/taskWorkflow';
+import { TASK_SORT_DESCRIPTIONS, TASK_SORT_LABELS, type TaskSortMode, type TaskStatusFilter, filterTasksByStatus, sortTasks } from '../lib/taskWorkflow';
 
 type FilterMode =
   | 'all' | 'incomplete' | 'overdue' | 'today' | 'this-week'
-  | 'high-priority' | 'no-due-date' | 'completed';
+  | 'high-priority' | 'no-due-date';
 
 const FILTER_CHIPS: { id: FilterMode; label: string }[] = [
   { id: 'all', label: 'All' }, { id: 'incomplete', label: 'Incomplete' },
   { id: 'overdue', label: 'Overdue' }, { id: 'today', label: 'Due today' },
   { id: 'this-week', label: 'This week' }, { id: 'high-priority', label: 'High priority' },
-  { id: 'no-due-date', label: 'No due date' }, { id: 'completed', label: 'Completed' },
+  { id: 'no-due-date', label: 'No due date' },
 ];
 
 const todayStr = () => new Date().toISOString().split('T')[0];
@@ -39,7 +39,6 @@ function applyFilter(tasks: Task[], filter: FilterMode): Task[] {
     case 'this-week': return tasks.filter(t => !!t.dueDate && t.dueDate >= today && t.dueDate <= inWeek);
     case 'high-priority': return tasks.filter(t => t.priority === 'high' || t.priority === 'urgent');
     case 'no-due-date': return tasks.filter(t => !t.dueDate);
-    case 'completed': return tasks.filter(t => t.status === 'done');
     default: return tasks;
   }
 }
@@ -91,6 +90,7 @@ const PriorityIcon = ({ priority }: { priority: TaskPriority }) => {
 export const TasksView = () => {
   const { tasks, categories, projects, updateTask } = useAppData();
 
+  const [statusFilter, setStatusFilter] = useState<TaskStatusFilter>('all');
   const [filter, setFilter] = useState<FilterMode>('all');
   const [sort, setSort] = useState<TaskSortMode>(() => { try { const saved = localStorage.getItem('lifegrid_task_sort'); return saved && saved in TASK_SORT_LABELS ? saved as TaskSortMode : 'smart'; } catch { return 'smart'; } });
   const [catFilter, setCatFilter] = useState<string>('all');
@@ -118,10 +118,11 @@ export const TasksView = () => {
   const filteredTasks = useMemo(() => {
     let result = tasks;
     result = applyFilter(result, filter);
+    result = filterTasksByStatus(result, statusFilter);
     if (catFilter !== 'all') result = result.filter(t => t.category === catFilter);
     if (projectFilter !== 'all') result = result.filter(t => t.projectId === projectFilter);
     return sortTasks(result, sort, categories, todayStr());
-  }, [tasks, filter, sort, catFilter, projectFilter, categories]);
+  }, [tasks, filter, statusFilter, sort, catFilter, projectFilter, categories]);
 
   const toggleDone = (task: Task, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -185,6 +186,8 @@ export const TasksView = () => {
             </button>
           ))}
         </div>
+
+        <div className="mb-2" role="radiogroup" aria-label="Task status"><p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">Status</p><div className="task-chip-rail flex gap-2 overflow-x-auto">{([['all','All statuses'],['todo','To do'],['in-progress','In progress'],['blocked','Blocked'],['done','Done']] as [TaskStatusFilter,string][]).map(([id,label]) => <button key={id} type="button" role="radio" aria-checked={statusFilter === id} data-testid={`task-status-${id}`} onClick={() => setStatusFilter(id)} className={`rounded-full px-3 py-1 text-xs font-semibold ${statusFilter === id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{label}</button>)}</div></div>
 
         {/* Project filter (only if projects exist) */}
         {projects.length > 0 && (

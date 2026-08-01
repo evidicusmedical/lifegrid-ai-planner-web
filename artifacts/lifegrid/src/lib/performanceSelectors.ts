@@ -30,6 +30,11 @@ export const indexProjectUsage = (projects: readonly Project[], tasks: readonly 
   const usage: Record<string, ProjectUsage> = Object.fromEntries(projects.map(project => [project.id, { openTasks: 0, completedTasks: 0, totalTasks: 0, relatedEvents: 0 }]));
   const taskProject = new Map<string, string | null>(tasks.map(task => [task.id, task.projectId ?? null]));
   for (const task of tasks) { const value = task.projectId ? usage[task.projectId] : undefined; if (value) { value.totalTasks++; task.status === 'done' ? value.completedTasks++ : value.openTasks++; } }
-  for (const event of events) for (const id of new Set((event.linkedTaskIds ?? []).map(taskId => taskProject.get(taskId)).filter((id): id is string => !!id && !!usage[id]))) usage[id].relatedEvents++;
+  for (const event of events) {
+    const ids = new Set<string>();
+    if (event.projectId && usage[event.projectId]) ids.add(event.projectId);
+    for (const id of (event.linkedTaskIds ?? []).map(taskId => taskProject.get(taskId)).filter((id): id is string => !!id && !!usage[id])) ids.add(id);
+    for (const id of ids) usage[id].relatedEvents++;
+  }
   return usage;
 };

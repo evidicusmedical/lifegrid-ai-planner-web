@@ -82,7 +82,7 @@ test('Project and People ordering helpers persist deterministically through JSON
  const ordered=normalizeEntityOrder(legacy); const moved=moveOrderedEntity(ordered,2,0);
  assert.deepEqual(JSON.parse(JSON.stringify(moved)).map(x=>[x.id,x.order]),[['c',0],['b',1],['a',2]]);
 });
-test('shared palette has 16 reviewed color families and retains arbitrary current colors',()=>{assert.equal(CORE_COLOR_PALETTE.length,16);assert.equal(CORE_COLOR_FAMILIES.length,16);assert.equal(normalizedPaletteIsUnique(),true);assert.equal(paletteFamiliesAreDistinct(),true);assert.equal(paletteWithCurrentColor('#123456')[0],'#123456')});
+test('shared palette has 16 reviewed color families and retains arbitrary current colors',()=>{assert.equal(CORE_COLOR_PALETTE.length,32);assert.equal(CORE_COLOR_FAMILIES.length,32);assert.equal(normalizedPaletteIsUnique(),true);assert.equal(paletteFamiliesAreDistinct(),true);assert.equal(paletteWithCurrentColor('#123456')[0],'#123456')});
 test('corrected UI contracts and release markers are exposed',()=>{
  const settings=readFileSync(new URL('../src/pages/SettingsView.tsx',import.meta.url),'utf8');
  const temporal=readFileSync(new URL('../src/components/TemporalFields.tsx',import.meta.url),'utf8');
@@ -90,9 +90,13 @@ test('corrected UI contracts and release markers are exposed',()=>{
  const taskSheet=readFileSync(new URL('../src/components/TaskSheet.tsx',import.meta.url),'utf8');
  const context=readFileSync(new URL('../src/context/AppDataContext.tsx',import.meta.url),'utf8');
  assert.doesNotMatch(settings,/>Archive</); assert.doesNotMatch(temporal,/Specific timezone|Floating local time/);
- assert.match(temporal,/timeStatus === 'all-day'.*End date/); assert.match(taskSheet,/>Tag \/ Category</);
+ assert.match(temporal,/normalized === 'all-day'.*End date/); assert.match(taskSheet,/>Tag \/ Category</);
  assert.ok(eventSheet.indexOf('value="entire-series"') < eventSheet.indexOf('value="this-event"'));
  assert.match(eventSheet,/events\.filter\(event => event\.recurringGroupId === groupId\)/);
  assert.match(context,/people: moveOrderedEntity/); assert.match(context,/projects: moveOrderedEntity/);
- assert.match(readFileSync(new URL('../src/lib/version.ts',import.meta.url),'utf8'),/v0\.5\.22/);
+ assert.match(readFileSync(new URL('../src/lib/version.ts',import.meta.url),'utf8'),/v0\.5\.23/);
 });
+
+test('v0.5.23 settings shares one UpDownControl and Event-only deletion UI',()=>{const source=readFileSync(new URL('../src/pages/SettingsView.tsx',import.meta.url),'utf8');assert.equal((source.match(/<UpDownControl /g)||[]).length,3);assert.doesNotMatch(source,/>↑<|>↓</);assert.match(source,/totalTasks>0\|\|usage\[deleting.id\]\.relatedEvents>0/);assert.match(source,/Remove Project from Tasks and Events/);assert.match(source,/Reassign Tasks and Events/);});
+
+test('v0.5.23 EventSheet keeps Multi-day and Repeat adjacent with single-record copy',()=>{const source=readFileSync(new URL('../src/components/EventSheet.tsx',import.meta.url),'utf8');assert.match(source,/aria-label="Event span and repeat"/);assert.match(source,/One Event spanning consecutive dates/);assert.match(source,/Separate editable Event occurrences on a frequency/);assert.match(source,/Spans \{multiDayCount\} consecutive day/);assert.doesNotMatch(source,/!initialData && !multiDay|one per day, all-day/);assert.match(source,/disabled=\{repeat\}/);assert.match(source,/disabled=\{multiDay\}/);});

@@ -36,6 +36,7 @@ export const projectTagQuickCreateValidation = (query: string, projects: readonl
 export interface ProjectTagUsage { openTasks: number; completedTasks: number; totalTasks: number; relatedEvents: number; }
 export const projectTagUsage = indexProjectUsage;
 export const eventProjectTags = (event: Event, tasks: readonly Task[], projects: readonly Project[]) => {
+  if (event.projectId) return sortProjectTags(projects).filter(p => p.id === event.projectId);
   const taskProjects = new Map(tasks.map(t => [t.id, t.projectId])); const ids = new Set((event.linkedTaskIds ?? []).map(id => taskProjects.get(id)).filter((id): id is string => !!id));
   return sortProjectTags(projects).filter(p => ids.has(p.id));
 };
@@ -43,9 +44,11 @@ export type ProjectDeletionPolicy = 'clear' | 'reassign';
 export const planProjectTagDeletion = (data: { projects: readonly Project[]; tasks: readonly Task[]; events: readonly Event[]; milestones: readonly Milestone[] }, sourceId: string, policy?: ProjectDeletionPolicy, destinationId?: string) => {
   const source = data.projects.find(p => p.id === sourceId); if (!source) return { ok:false as const, error:'Project Tag was not found.' };
   if (data.milestones.some(m => m.projectId === sourceId)) return { ok:false as const, error:'This Project Tag has preserved legacy milestones. Archive it instead; deletion is blocked to preserve legacy data.' };
-  const used = data.tasks.some(t => t.projectId === sourceId); if (used && !policy) return { ok:false as const, error:'Choose clear or reassign before deleting a used Project Tag.' };
+  const used = data.tasks.some(t => t.projectId === sourceId) || data.events.some(e => e.projectId === sourceId); if (used && !policy) return { ok:false as const, error:'Choose clear or reassign before deleting a Project used by Tasks or Events.' };
   if (policy === 'reassign') { const destination = data.projects.find(p => p.id === destinationId); if (!destination || destination.id === sourceId || destination.status === 'archived') return { ok:false as const, error:'Choose a different active Project Tag for reassignment.' }; }
   const tasks = data.tasks.map(t => t.projectId !== sourceId ? t : {...t, projectId: policy === 'reassign' ? destinationId! : null});
+  const events = data.events.map(e => e.projectId !== sourceId ? e : {...e, projectId: policy === 'reassign' ? destinationId! : null});
   if (tasks.some(t => t.projectId && !data.projects.some(p => p.id !== sourceId && p.id === t.projectId))) return { ok:false as const, error:'Final Task Project Tag references are invalid.' };
-  return { ok:true as const, value:{ projects:data.projects.filter(p => p.id !== sourceId), tasks, events:[...data.events], milestones:[...data.milestones] } };
+  if (events.some(e => e.projectId && !data.projects.some(p => p.id !== sourceId && p.id === e.projectId))) return { ok:false as const, error:'Final Event Project references are invalid.' };
+  return { ok:true as const, value:{ projects:data.projects.filter(p => p.id !== sourceId), tasks, events, milestones:[...data.milestones] } };
 };

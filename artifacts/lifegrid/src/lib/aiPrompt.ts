@@ -1,6 +1,7 @@
 import { AppData, Event, Task, Category, Person, PersonEvent, Project, ProjectStatus, EventDisplayPriority, EventKind, TaskDueDateType, TaskTriageStatus } from '../types';
 import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version.js';
 import { temporalErrors } from './temporal.js';
+import { aiExportManifest, sanitizeAIRelationships, selectAIExportData, type AIExportScope } from './releaseContracts.js';
 
 export const aiPromptContract = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
 
@@ -20,16 +21,15 @@ UNCERTAINTY
 When facts are insufficient, do not fabricate titles, names, dates, times, categories, Project Tags, people, assignments, completion, clinical facts, links, or stable IDs. Omit the uncertain record and put the minimum required clarification in warnings. For example, never emit {"id":"evt-generated-1","title":"Untitled event"}; instead emit {"warnings":["A possible appointment was mentioned for 2026-08-12, but its purpose was not identified. Clarify what the appointment is before adding an Event."]}.
 
 LOCAL TIME
-Dates are YYYY-MM-DD. Times are local 24-hour HH:MM or null. Never emit timeZone, timeZoneMode, displayTimeZone, UTC Event timestamps, offsets, or conversions. Never convert a supplied Event time. Use endDate for overnight Events. All-day Events use null times and timeStatus all-day; unknown-time Events use null times and timeStatus unknown; timed Events require both times. Never invent a clock time; a Task due date is not an Event time.
+Dates are YYYY-MM-DD. Times are local 24-hour HH:MM or null. Never emit timeZone, timeZoneMode, displayTimeZone, UTC Event timestamps, offsets, or conversions. Never convert a supplied Event time. Use endDate for overnight Events. New and modified Events use only all-day (null times) or timed (both times). Never invent a clock time; a Task due date is not an Event time.
 
 EXAMPLES BEFORE CURRENT LIFEGRID CONTEXT
 Task add: {"id":"task-example-confirm-key-pickup","name":"Confirm apartment key-pickup window","category":"moving-logistics","dueDate":"2026-07-19","status":"todo","owner":"self","nextAction":"Call the leasing office and record the confirmed pickup window.","notes":null,"priority":"high","schedulingNotes":"Complete before departure.","projectId":null,"dueDateType":"real-deadline","triageStatus":"ready","parentTaskId":null,"linkedEventIds":[],"recurringGroupId":null}
 Timed Event add: {"id":"evt-example-unit-checkin","date":"2026-07-21","endDate":"2026-07-21","title":"Unit check-in","category":"work","startTime":"08:00","endTime":"08:30","timeStatus":"timed","color":"#dc2626","notes":"Bring identification and onboarding documents.","displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"fixed-appointment","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
-Unknown-time Event: {"id":"evt-example-key-pickup","date":"2026-07-20","endDate":"2026-07-20","title":"Apartment key pickup — time unconfirmed","category":"moving-logistics","startTime":null,"endTime":null,"timeStatus":"unknown","color":"#d97706","notes":null,"displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"placeholder","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
 All-day Event add: {"id":"evt-example-day","date":"2026-07-22","endDate":"2026-07-22","title":"Fictional planning day","category":"other","timeStatus":"all-day","startTime":null,"endTime":null,"color":"#6b7280","notes":null,"displayPriority":4,"showInGrid":true,"showInExport":true,"eventKind":"day-type","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
-Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Same-patch parents must be included under add before a child references them: every new Task projectId requires its new Project in projects.add, every new parentTaskId requires its parent Task in tasks.add, and linked Event/Task IDs must resolve in current context or this patch.
+Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Every new projectId requires its Project in current context or projects.add. Legacy parentTaskId, linkedEventIds, and linkedTaskIds in exported context are read-only: never add or modify them. Use category for classification, projectId for workstream grouping, and notes, schedulingNotes, aiNotes, or sourceNotes for dependency context.
 
-Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every child dependency has an included parent; all proposal IDs are unique; all linked IDs resolve; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
+Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every Project dependency is present; all proposal IDs are unique; legacy hard links are treated as read-only and ignored when proposed; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
 export const universalSchema = aiPromptContract;
 
 export const generateUniversalStarterPrompt = () => `
@@ -39,11 +39,9 @@ Prepare a human-reviewed LifeGrid patch from supplied information. Do not reveal
 ${aiPromptContract()}`;
 
 export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
-  const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);
-  const events = data.events.filter(e => inside(e.date)); const schedule = data.personEvents.filter(e => inside(e.date));
-  const categoryIds = new Set(events.map(e => e.category)); const taskIds = new Set(events.flatMap(e => e.linkedTaskIds ?? []));
-  const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate)); tasks.forEach(t => categoryIds.add(t.category));
-  const context = { metadata: { application:'LifeGrid', applicationVersion:APP_VERSION, exportFormatVersion:AI_INTERCHANGE_VERSION, exportedAt:new Date().toISOString(), calendarId:calendar.id, calendarName:calendar.name, selectedDateRange:range }, categories:data.categories.filter(c=>categoryIds.has(c.id)||c.id==='other'), people:data.people, projects:data.projects, tasks, events, peopleSchedule:schedule };
+  const scope: AIExportScope = range.start && range.end ? { mode: 'range', start: range.start, end: range.end } : { mode: 'all' };
+  const selected = selectAIExportData(data, scope);
+  const context = { metadata: { application:'LifeGrid', applicationVersion:APP_VERSION, exportFormatVersion:AI_INTERCHANGE_VERSION, backupSchemaVersion:7, exportedAt:new Date().toISOString(), calendarId:calendar.id, calendarName:calendar.name, selectedDateRange:scope.mode === 'range' ? range : null }, manifest:aiExportManifest(selected, scope), categories:selected.categories, people:selected.people, projects:selected.projects, tasks:selected.tasks, events:selected.events, peopleSchedule:selected.personEvents, milestones:selected.milestones };
   return `Export Current LifeGrid to AI\n${aiPromptContract()}\n\nCURRENT LIFEGRID CONTEXT\n${JSON.stringify(context, null, 2)}`;
 };
 
@@ -113,7 +111,7 @@ AI REVIEW INSTRUCTIONS
 - Main Task status is authoritative: explicit blocked/in-progress/complete/to-do requests update status (blocked/in-progress/done/todo), never triageStatus alone. Explicit review/waiting/scheduling requests may update only the existing canonical triageStatus. If both are requested, disclose and emit both fields.
 - To clear a Task due date, emit dueDate: null and do not infer a triage state or change unrelated fields.
 - AI Task deletion is unavailable. For a deletion request, propose status: "blocked" and disclose exactly: "AI deletion is unavailable. This change will mark the task Blocked for manual review instead."
-- Create flat, discrete actionable Tasks by default. Prefer "<Workstream> - <Sub-area> - <Concrete action>" (for example, "In-processing - Credentialing - Submit privileges packet"). Keep Project as projectId rather than repeating it in the title. Use parentTaskId only when explicitly requested and avoid more than one parent-child level.
+- Create flat, discrete actionable Tasks by default. Prefer "<Workstream> - <Sub-area> - <Concrete action>" (for example, "In-processing - Credentialing - Submit privileges packet"). Keep Project as projectId rather than repeating it in the title. Do not create parentTaskId, linkedEventIds, or linkedTaskIds. Use category for classification, projectId for workstreams, and notes for dependency context.
 - Respect dueDateType: real-deadline tasks are fixed unless I explicitly approve a move; target-date tasks are movable if overloaded; someday-backlog tasks are parkable; needs-clarification tasks require user review; project-subtask tasks belong under their larger workstream.
 - Treat tags/categories as one shared classification system.
 - Use project IDs when known. If project matching by name or alias is uncertain, add a warning instead of guessing.`;
@@ -126,6 +124,7 @@ const eventExportObject = (e: Event) => ({
   title: e.title,
   category: e.category,
   tag: e.category,
+  projectId: e.projectId ?? null,
   startTime: e.startTime ?? null,
   endTime: e.endTime ?? null,
   color: e.color,
@@ -1101,10 +1100,10 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
       });
     }
     result.events = {
-      add:    normalizeEvents(parsed.events.add ?? [], validCats, colorMap),
+      add:    normalizeEvents(parsed.events.add ?? [], validCats, colorMap, warnings),
       update: updateArr
         .filter((u: any) => u && typeof u.id === 'string')
-        .map((u: any) => normalizeEventUpdate(u, validCats, colorMap)),
+        .map((u: any) => normalizeEventUpdate(u, validCats, colorMap, warnings)),
       delete: deleteArr,
     };
     if (patchVersion === 4) {
@@ -1174,6 +1173,10 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   const reviewItemAdds = normalizeReviewItems(parsed.reviewItems?.add ?? []);
   if (reviewItemAdds.length) result.reviewItems = { add: reviewItemAdds };
 
+  const sanitized = sanitizeAIRelationships(result);
+  Object.assign(result, sanitized.value);
+  warnings.push(...sanitized.warnings);
+
   const totalChanges =
     (result.projects?.add.length ?? 0) + (result.projects?.update.length ?? 0) + (result.projects?.delete.length ?? 0) +
     (result.events?.add.length ?? 0) + (result.events?.update.length ?? 0) + (result.events?.delete.length ?? 0) +
@@ -1192,7 +1195,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     );
   }
 
-  if (warnings.length > 0) result.warnings = warnings;
+  if (warnings.length > 0) result.warnings = [...new Set(warnings)];
   return result;
 };
 
@@ -1204,16 +1207,16 @@ const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 
 const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
 const VALID_EVENT_KIND = EVENT_KIND_SET;
 const VALID_TIME_STATUS = new Set(['all-day', 'timed', 'unknown', 'approximate']);
-const normalizeTimeStatus = (raw: any, id: string, startTime: string | null, endTime: string | null) => {
-  if (raw !== undefined) {
-    if (!VALID_TIME_STATUS.has(raw)) throw new Error(`Invalid v4 event ${id} at events.timeStatus: expected one of all-day, timed, unknown, approximate. Correct timeStatus and return the complete record.`);
-    return raw as Event['timeStatus'];
-  }
-  // Legacy patches without this field infer timed only from a complete clock pair.
-  return startTime && endTime ? 'timed' : 'unknown';
+const AI_TIME_WARNING = 'AI Event time types were normalized to All day or Timed.';
+const normalizeTimeStatus = (raw: any, id: string, startTime: string | null, endTime: string | null, warnings: string[]) => {
+  if (raw !== undefined && !VALID_TIME_STATUS.has(raw)) throw new Error(`Invalid v4 event ${id} at events.timeStatus: expected all-day or timed. Correct timeStatus and return the complete record.`);
+  if (raw === 'approximate' || raw === 'unknown') warnings.push(AI_TIME_WARNING);
+  if (raw === 'timed' || raw === 'approximate') return 'timed' as const;
+  if (raw === 'all-day' || raw === 'unknown') return 'all-day' as const;
+  return startTime && endTime ? 'timed' as const : 'all-day' as const;
 };
 
-function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
+function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>, warnings: string[]): Event[] {
   if (!Array.isArray(arr)) return [];
   return arr
     .filter(e => e && typeof e === 'object')
@@ -1224,15 +1227,17 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
       if (!date) return null;
       const id = String(e.id ?? `imp-evt-${Date.now()}-${i}`);
       const startTime = fixTime(e.startTime), endTime = fixTime(e.endTime);
+      const timeStatus = normalizeTimeStatus(e.timeStatus, id, startTime, endTime, warnings);
       return {
         id,
         date,
         endDate: fixDate(e.endDate ?? date) ?? date,
         title:     String(e.title ?? ''),
         category:  cat,
-        timeStatus: normalizeTimeStatus(e.timeStatus, id, startTime, endTime),
-        startTime,
-        endTime,
+        projectId: typeof e.projectId === 'string' ? e.projectId : null,
+        timeStatus,
+        startTime: timeStatus === 'all-day' ? null : startTime,
+        endTime: timeStatus === 'all-day' ? null : endTime,
         color:     e.color ?? colorMap[cat] ?? '#6b7280',
         notes:     e.notes ?? null,
         displayPriority: VALID_EVENT_PRIORITY.has(Number(e.displayPriority) as EventDisplayPriority)
@@ -1245,7 +1250,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         aiNotes: e.aiNotes ?? null,
         sourceNotes: e.sourceNotes ?? null,
         recurringGroupId: e.recurringGroupId ?? null,
-      } as Event;
+      } as unknown as Event;
     })
     .filter(Boolean) as Event[];
 }
@@ -1278,7 +1283,7 @@ function normalizeIds(arr: any[]): string[] {
 }
 
 function normalizeEventUpdate(
-  u: any, validCats: Set<string>, colorMap: Record<string, string>
+  u: any, validCats: Set<string>, colorMap: Record<string, string>, warnings: string[]
 ): { id: string } & Partial<Event> {
   const out: any = { id: String(u.id) };
   if (u.date !== undefined) { const d = fixDate(String(u.date)); if (d) out.date = d; }
@@ -1291,13 +1296,14 @@ function normalizeEventUpdate(
   if (u.color    !== undefined) out.color = String(u.color);
   if ('startTime' in u) out.startTime = fixTime(u.startTime);
   if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
-  if ('timeStatus' in u) out.timeStatus = normalizeTimeStatus(u.timeStatus, out.id, out.startTime ?? null, out.endTime ?? null);
+  if ('timeStatus' in u) { out.timeStatus = normalizeTimeStatus(u.timeStatus, out.id, out.startTime ?? null, out.endTime ?? null, warnings); if (out.timeStatus === 'all-day') { out.startTime = null; out.endTime = null; } }
   if ('notes'     in u) out.notes = u.notes ?? null;
   if ('displayPriority' in u && VALID_EVENT_PRIORITY.has(Number(u.displayPriority) as EventDisplayPriority)) out.displayPriority = Number(u.displayPriority);
   if ('showInGrid' in u) out.showInGrid = Boolean(u.showInGrid);
   if ('showInExport' in u) out.showInExport = Boolean(u.showInExport);
   if ('eventKind' in u && VALID_EVENT_KIND.has(u.eventKind)) out.eventKind = u.eventKind;
   if ('linkedTaskIds' in u) out.linkedTaskIds = normalizeIds(u.linkedTaskIds ?? []);
+  if ('projectId' in u) out.projectId = u.projectId ? String(u.projectId) : null;
   if ('aiNotes' in u) out.aiNotes = u.aiNotes ?? null;
   if ('sourceNotes' in u) out.sourceNotes = u.sourceNotes ?? null;
   if ('recurringGroupId' in u) out.recurringGroupId = u.recurringGroupId ?? null;

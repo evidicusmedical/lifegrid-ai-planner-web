@@ -41,6 +41,9 @@ export function smartPriorityScore(task: Task, today: string): number {
   return 100 + distance + priority + blockedSignal;
 }
 export const clearTaskDueDate = <T extends Task>(task: T): T => ({ ...task, dueDate: null });
+export type TaskStatusFilter = 'all' | TaskStatus;
+export const filterTasksByStatus = <T extends Pick<Task, 'status'>>(tasks: readonly T[], status: TaskStatusFilter): T[] =>
+  status === 'all' ? [...tasks] : tasks.filter(task => task.status === status);
 
 export function sortTasks(tasks: readonly Task[], mode: TaskSortMode, categories: readonly Category[], today: string): Task[] {
   const labels = new Map(categories.map(category => [category.id, category.label]));

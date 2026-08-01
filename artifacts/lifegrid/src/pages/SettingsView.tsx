@@ -33,6 +33,13 @@ const PRESET_COLORS = CORE_COLOR_PALETTE;
 const slug = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `id-${Date.now()}`;
 
+const UpDownControl = ({ name, atStart, atEnd, onUp, onDown }: { name: string; atStart: boolean; atEnd: boolean; onUp: () => void; onDown: () => void }) => (
+  <div className="flex flex-col gap-0.5" data-testid="up-down-control">
+    <button type="button" onClick={event => { event.stopPropagation(); onUp(); }} disabled={atStart} aria-label={`Move ${name} up`} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"><ChevronUp size={13} /></button>
+    <button type="button" onClick={event => { event.stopPropagation(); onDown(); }} disabled={atEnd} aria-label={`Move ${name} down`} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"><ChevronDown size={13} /></button>
+  </div>
+);
+
 export const SettingsView = () => {
   return (
     <div className="flex flex-col h-full bg-background overflow-y-auto">
@@ -43,7 +50,6 @@ export const SettingsView = () => {
 
       <div className="p-4 pb-24 space-y-6">
         <CalendarVersions />
-        <TimeDataReview />
         <CategoryManager />
         <ProjectManager />
         <PeopleManager />
@@ -181,6 +187,7 @@ function CalendarVersions() {
 function CategoryManager() {
   const { categories, addCategory, updateCategory, deleteCategory, reorderCategories } = useAppData();
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
   const [label, setLabel] = useState('');
   const [color, setColor] = useState<string>(PRESET_COLORS[0]);
 
@@ -196,7 +203,8 @@ function CategoryManager() {
 
   return (
     <Section icon={<Tag size={16} />} title="Categories / tags" subtitle="Used to color and filter events and tasks. Use Up and Down to reorder.">
-      {categories.map((cat, idx) => (
+      <Input aria-label="Search Categories / Tags" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search Categories / Tags" />
+      {categories.filter(cat => cat.label.toLowerCase().includes(search.trim().toLowerCase())).map((cat) => { const idx = categories.findIndex(item => item.id === cat.id); return (
         <CategoryRow
           key={cat.id}
           cat={cat}
@@ -207,7 +215,7 @@ function CategoryManager() {
           onMoveUp={() => reorderCategories(idx, idx - 1)}
           onMoveDown={() => reorderCategories(idx, idx + 1)}
         />
-      ))}
+      );})}
 
       {adding ? (
         <div className="p-2 rounded-lg border border-border space-y-2">
@@ -258,27 +266,7 @@ function CategoryRow({ cat, idx, total, onUpdate, onDelete, onMoveUp, onMoveDown
       <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
       <span className="text-sm font-medium flex-1 truncate">{cat.label}</span>
 
-      {/* Reorder arrows */}
-      <div className="flex flex-col gap-0.5">
-        <button
-          onClick={onMoveUp}
-          disabled={idx === 0}
-          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"
-          title="Move up"
-          data-testid={`cat-up-${cat.id}`}
-        >
-          <ChevronUp size={13} />
-        </button>
-        <button
-          onClick={onMoveDown}
-          disabled={idx >= total - 1}
-          className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"
-          title="Move down"
-          data-testid={`cat-down-${cat.id}`}
-        >
-          <ChevronDown size={13} />
-        </button>
-      </div>
+      <UpDownControl name={cat.label} atStart={idx === 0} atEnd={idx >= total - 1} onUp={onMoveUp} onDown={onMoveDown} />
 
       <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground hover:text-foreground" data-testid={`edit-cat-${cat.id}`}>
         <Pencil size={14} />
@@ -318,10 +306,10 @@ function ProjectManager() {
     <button className="text-xs underline" onClick={()=>setOpen(!open)} aria-expanded={open}>{open?'Collapse Project Tags':'Manage Project Tags'}</button>
     {open&&<div className="space-y-2" data-testid="project-tag-manager"><Label htmlFor="project-tag-search">Search Project Tags</Label><div className="flex gap-2"><Input id="project-tag-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or alias"/><Button type="button" variant="outline" onClick={()=>setSearch('')}>Clear search</Button></div>
     {!tags.length&&<p className="py-3 text-center text-xs text-muted-foreground">No Project Tags match. Create one to organize Tasks.</p>}
-    {tags.map((p,i)=>{const u=usage[p.id];return <div key={p.id} className="rounded-lg border p-3" data-testid={`project-tag-${p.id}`}><div className="flex flex-wrap items-start gap-2"><span className="mt-1 h-3 w-3 rounded-full" style={{backgroundColor:p.color}} aria-label={`${p.name} color`}/><div className="min-w-0 flex-1"><strong className="wrap-anywhere">{p.name}</strong>{p.status==='archived'&&<span className="ml-2 text-xs">Archived</span>}<p className="wrap-anywhere text-xs text-muted-foreground">{p.aliases?.length?`Aliases: ${p.aliases.join(', ')}`:'No aliases'} · {u.openTasks} open, {u.completedTasks} completed, {u.relatedEvents} related events</p></div><div className="flex flex-wrap gap-1"><Button size="sm" variant="outline" aria-label={`Move ${p.name} up`} disabled={orderedTags.findIndex(tag=>tag.id===p.id)===0} onClick={e=>{e.stopPropagation();const index=orderedTags.findIndex(tag=>tag.id===p.id);app.reorderProjects(index,index-1)}}>↑</Button><Button size="sm" variant="outline" aria-label={`Move ${p.name} down`} disabled={orderedTags.findIndex(tag=>tag.id===p.id)===orderedTags.length-1} onClick={e=>{e.stopPropagation();const index=orderedTags.findIndex(tag=>tag.id===p.id);app.reorderProjects(index,index+1)}}>↓</Button><Button size="sm" variant="outline" onClick={()=>setDraft({...p,aliases:[...(p.aliases??[])]})}>Edit</Button><Button size="sm" variant="outline" onClick={()=>setDeleting(p)}>Delete</Button></div></div></div>})}
+    {tags.map((p,i)=>{const u=usage[p.id];return <div key={p.id} className="rounded-lg border p-3" data-testid={`project-tag-${p.id}`}><div className="flex flex-wrap items-start gap-2"><span className="mt-1 h-3 w-3 rounded-full" style={{backgroundColor:p.color}} aria-label={`${p.name} color`}/><div className="min-w-0 flex-1"><strong className="wrap-anywhere">{p.name}</strong>{p.status==='archived'&&<span className="ml-2 text-xs">Archived</span>}<p className="wrap-anywhere text-xs text-muted-foreground">{p.aliases?.length?`Aliases: ${p.aliases.join(', ')}`:'No aliases'} · {u.openTasks} open, {u.completedTasks} completed, {u.relatedEvents} related events</p></div><div className="flex flex-wrap gap-1"><UpDownControl name={p.name} atStart={orderedTags.findIndex(tag=>tag.id===p.id)===0} atEnd={orderedTags.findIndex(tag=>tag.id===p.id)===orderedTags.length-1} onUp={()=>{const index=orderedTags.findIndex(tag=>tag.id===p.id);app.reorderProjects(index,index-1)}} onDown={()=>{const index=orderedTags.findIndex(tag=>tag.id===p.id);app.reorderProjects(index,index+1)}} /><Button size="sm" variant="outline" onClick={()=>setDraft({...p,aliases:[...(p.aliases??[])]})}>Edit</Button><Button size="sm" variant="outline" onClick={()=>setDeleting(p)}>Delete</Button></div></div></div>})}
     <Button className="w-full" variant="secondary" onClick={()=>setDraft({id:`proj-${crypto.randomUUID()}`,name:'',color:PRESET_COLORS[2],aliases:[],order:app.projects.length,status:'active',notes:null})}>Create Project Tag</Button></div>}
     {draft&&<div className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center" role="dialog" aria-label="Project Tag editor"><div className="w-full space-y-3 rounded-t-xl bg-background p-4 sm:max-w-md sm:rounded-xl"><h2>{app.projects.some(p=>p.id===draft.id)?'Edit':'Create'} Project Tag</h2><Label>Name<Input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></Label><ColorPicker value={draft.color} onChange={color=>setDraft({...draft,color})}/><Label>Aliases (comma-separated)<Input value={draft.aliases.join(', ')} onChange={e=>setDraft({...draft,aliases:e.target.value.split(',')})}/></Label><Label>Notes<Textarea value={draft.notes??''} onChange={e=>setDraft({...draft,notes:e.target.value||null})}/></Label><div className="flex gap-2"><Button onClick={save}>Save</Button><Button variant="outline" onClick={()=>setDraft(null)}>Cancel</Button></div></div></div>}
-    {deleting&&<AlertDialog open onOpenChange={v=>!v&&setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete Project Tag “{deleting.name}”?</AlertDialogTitle><AlertDialogDescription>{usage[deleting.id].totalTasks?`${usage[deleting.id].openTasks} open Tasks, ${usage[deleting.id].completedTasks} completed Tasks, and ${usage[deleting.id].relatedEvents} related Events will remain. Choose how to update Task tags.`:'This unused Project Tag can be deleted.'}</AlertDialogDescription></AlertDialogHeader>{usage[deleting.id].totalTasks>0&&<><Label>Task handling<select className="ml-2" value={policy} onChange={e=>setPolicy(e.target.value as 'clear'|'reassign')}><option value="clear">Remove Project Tag from Tasks</option><option value="reassign">Reassign Tasks</option></select></Label>{policy==='reassign'&&<Label>Reassign to<select className="ml-2" value={destination} onChange={e=>setDestination(e.target.value)}><option value="">Choose active Project Tag</option>{app.projects.filter(p=>p.id!==deleting.id&&p.status!=='archived').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></Label>}</>}<AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={remove}>Delete Project Tag</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+    {deleting&&<AlertDialog open onOpenChange={v=>!v&&setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete Project Tag “{deleting.name}”?</AlertDialogTitle><AlertDialogDescription>{(usage[deleting.id].totalTasks>0||usage[deleting.id].relatedEvents>0)?`${usage[deleting.id].openTasks} open Tasks, ${usage[deleting.id].completedTasks} completed Tasks, and ${usage[deleting.id].relatedEvents} related Events use this Project. Choose how to update these assignments.`:'This unused Project Tag can be deleted.'}</AlertDialogDescription></AlertDialogHeader>{(usage[deleting.id].totalTasks>0||usage[deleting.id].relatedEvents>0)&&<><Label>Assignment handling<select className="ml-2" value={policy} onChange={e=>setPolicy(e.target.value as 'clear'|'reassign')}><option value="clear">Remove Project from Tasks and Events</option><option value="reassign">Reassign Tasks and Events</option></select></Label>{policy==='reassign'&&<Label>Reassign to<select className="ml-2" value={destination} onChange={e=>setDestination(e.target.value)}><option value="">Choose active Project Tag</option>{app.projects.filter(p=>p.id!==deleting.id&&p.status!=='archived').map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></Label>}</>}<AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={remove}>Delete Project Tag</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
   </Section>;
 }
 
@@ -329,6 +317,7 @@ function ProjectManager() {
 function PeopleManager() {
   const { people, addPerson, updatePerson, deletePerson, reorderPeople } = useAppData();
   const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
   const [label, setLabel] = useState('');
   const [color, setColor] = useState<string>(PRESET_COLORS[4]);
 
@@ -344,9 +333,10 @@ function PeopleManager() {
 
   return (
     <Section icon={<Users size={16} />} title="People" subtitle="Sections on the People tab for tracking others.">
-      {people.map((person, idx) => (
+      <Input aria-label="Search People" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search People" />
+      {people.filter(person => person.label.toLowerCase().includes(search.trim().toLowerCase())).map((person) => { const idx = people.findIndex(item => item.id === person.id); return (
         <PersonRow key={person.id} person={person} idx={idx} total={people.length} onUpdate={updatePerson} onDelete={deletePerson} onMoveUp={() => reorderPeople(idx, idx - 1)} onMoveDown={() => reorderPeople(idx, idx + 1)} />
-      ))}
+      );})}
 
       {adding ? (
         <div className="p-2 rounded-lg border border-border space-y-2">
@@ -390,10 +380,7 @@ function PersonRow({ person, idx, total, onUpdate, onDelete, onMoveUp, onMoveDow
     <div className="flex items-center gap-2 p-2 rounded-lg border border-border">
       <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: person.color }} />
       <span className="text-sm font-medium flex-1 truncate">{person.label}</span>
-      <div className="flex flex-col gap-0.5">
-        <button type="button" onClick={e => { e.stopPropagation(); onMoveUp(); }} disabled={idx === 0} aria-label={`Move ${person.label} up`} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"><ChevronUp size={13} /></button>
-        <button type="button" onClick={e => { e.stopPropagation(); onMoveDown(); }} disabled={idx === total - 1} aria-label={`Move ${person.label} down`} className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-25"><ChevronDown size={13} /></button>
-      </div>
+      <UpDownControl name={person.label} atStart={idx === 0} atEnd={idx === total - 1} onUp={onMoveUp} onDown={onMoveDown} />
       <button onClick={() => setEditing(true)} className="p-1.5 text-muted-foreground hover:text-foreground" data-testid={`edit-person-${person.id}`}>
         <Pencil size={14} />
       </button>

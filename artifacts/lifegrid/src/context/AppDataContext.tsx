@@ -154,8 +154,10 @@ const normalizeAppData = (raw: any): AppData => {
     const displayPriority = EVENT_DISPLAY_PRIORITIES.has(rawPriority as EventDisplayPriority)
       ? rawPriority as EventDisplayPriority
       : (startTime ? 2 : 4);
+    const project = !Object.prototype.hasOwnProperty.call(e, 'projectId') ? {} : { projectId: e.projectId && projectIds.has(e.projectId) ? e.projectId : null };
     return {
       ...e,
+      ...project,
       category: catIds.has(e.category) ? e.category : 'other',
       startTime,
       endTime: e.endTime ?? null,
@@ -417,10 +419,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Coerce a merged event so an invalid category falls back to "other" and a
     // category change recolors unless the update explicitly supplied a color.
-    const sanitizeEvent = (merged: Event, up: any): Event => {
+    const sanitizeEvent = (merged: Event, up: any, projectIds: Set<string>): Event => {
       const category = catIds.has(merged.category) ? merged.category : 'other';
       const explicitColor = typeof up?.color === 'string' && up.color.trim();
-      return { ...merged, category, color: explicitColor ? up.color : catColor(category) };
+      return { ...merged, category, projectId: merged.projectId && projectIds.has(merged.projectId) ? merged.projectId : null, color: explicitColor ? up.color : catColor(category) };
     };
     const sanitizeTask = (merged: Task, projectIds: Set<string>): Task => ({
       ...merged,
@@ -470,17 +472,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const deletedIds = new Set(update.projects.delete);
         next.projects = next.projects.filter(p => !deletedIds.has(p.id));
         next.tasks = next.tasks.map(t => t.projectId && deletedIds.has(t.projectId) ? { ...t, projectId: null } : t);
+        next.events = next.events.map(e => e.projectId && deletedIds.has(e.projectId) ? { ...e, projectId: null } : e);
       }
     }
 
     const projectIds = new Set(next.projects.map(p => p.id));
 
     if (update.events) {
-      if (Array.isArray(update.events.add)) next.events = [...next.events, ...update.events.add];
+      if (Array.isArray(update.events.add)) next.events = [...next.events, ...update.events.add.map((e: Event) => sanitizeEvent(e, e, projectIds))];
       if (Array.isArray(update.events.update)) {
         next.events = next.events.map(e => {
           const up = update.events.update.find((u: any) => u.id === e.id);
-          return up ? sanitizeEvent({ ...e, ...up }, up) : e;
+          return up ? sanitizeEvent({ ...e, ...up }, up, projectIds) : e;
         });
       }
       if (Array.isArray(update.events.delete)) {

@@ -8,21 +8,24 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @workspace/lifegrid test
       - run: pnpm --filter @workspace/lifegrid typecheck
       - run: pnpm --filter @workspace/lifegrid build
       - run: pnpm --filter @workspace/lifegrid exec playwright install --with-deps chromium
       - run: pnpm --filter @workspace/lifegrid test:e2e:smoke
+      - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/v0523.spec.ts --project=chromium
   cross-browser:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
-      - run: pnpm install
-      - run: pnpm --filter @workspace/lifegrid exec playwright install --with-deps firefox webkit
-      - run: pnpm --filter @workspace/lifegrid test:e2e:firefox
-      - run: pnpm --filter @workspace/lifegrid test:e2e:webkit
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/lifegrid exec playwright install --with-deps ${{ matrix.browser }}
+      - run: pnpm --filter @workspace/lifegrid exec playwright test --project=${{ matrix.browser }}

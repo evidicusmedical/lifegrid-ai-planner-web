@@ -73,6 +73,8 @@ export interface Event {
   timeZoneMode: TimeZoneMode | null;
   title: string;
   category: CategoryId;
+  /** Optional direct workstream assignment. Missing remains valid for legacy records. */
+  projectId?: string | null;
   startTime: string | null; // HH:MM
   endTime: string | null; // HH:MM
   color: string;

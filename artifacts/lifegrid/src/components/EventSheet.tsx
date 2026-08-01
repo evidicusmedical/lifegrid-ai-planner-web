@@ -20,6 +20,7 @@ import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
 import { TemporalFields } from './TemporalFields';
 import { eventProjectTags } from '../lib/projectOperations';
+import { normalizeEditableTimeStatus, normalizeEventTimeForSave } from '../lib/gridModel';
 import { isNotesOnlyRecurrenceEdit, repeatedOccurrenceRange, resolveAllDayEditRange, type RecurringNotesScope } from '../lib/recurrenceEdit';
 import { paletteWithCurrentColor } from '../lib/palette';
 
@@ -27,6 +28,7 @@ const schema = z.object({
   title: z.string().min(1, 'Title is required'),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD'),
   category: z.string().min(1),
+  projectId: z.string().nullable().optional(),
   startTime: z.string().nullable(),
   endTime: z.string().nullable(),
   color: z.string().min(1),
@@ -108,6 +110,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       title: '',
       date: defaultDate || new Date().toISOString().split('T')[0],
       category: firstCat?.id ?? 'work',
+      projectId: null,
       startTime: '',
       endTime: '',
       color: firstCat?.color ?? '#2563eb',
@@ -128,7 +131,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       setRepeat(false);
       setRepeatFreq('weekly');
       setRepeatCount(4);
-      setTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day'));
+      setTimeStatus(normalizeEditableTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day')));
       setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
       setTimeZone(initialData?.timeZone ?? '');
       setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? defaultDate ?? '');
@@ -140,6 +143,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
           title: initialData.title,
           date: initialData.date,
           category: initialData.category,
+          projectId: initialData.projectId ?? null,
           startTime: initialData.startTime || '',
           endTime: initialData.endTime || '',
           color: initialData.color,
@@ -156,6 +160,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
           title: '',
           date: defaultDate || new Date().toISOString().split('T')[0],
           category: firstCat?.id ?? 'work',
+          projectId: null,
           startTime: '',
           endTime: '',
           color: firstCat?.color ?? '#2563eb',
@@ -200,16 +205,19 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   }, [notesOnlyEdit, notesScopeWasChosen]);
 
   const onSubmit = (data: FormData) => {
-    const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
+    let normalizedTime;
+    try { normalizedTime = normalizeEventTimeForSave(timeStatus, data.startTime, data.endTime); }
+    catch (error) { form.setError('startTime', { message: error instanceof Error ? error.message : 'Enter valid start and end times.' }); return; }
     const allDayRange = timeStatus === 'all-day' && initialData
       ? resolveAllDayEditRange(data.date, temporalEndDate, initialData, endDateWasEdited)
       : { date: data.date, endDate: temporalEndDate || data.date };
     const base = {
       ...data,
       ...allDayRange,
-      timeStatus,
-      startTime: clocked ? (data.startTime || null) : null,
-      endTime: clocked ? (data.endTime || null) : null,
+      timeStatus: normalizedTime.timeStatus,
+      projectId: data.projectId ?? null,
+      startTime: normalizedTime.startTime,
+      endTime: normalizedTime.endTime,
       timeZone: initialData?.timeZone ?? null,
       timeZoneMode: initialData?.timeZoneMode ?? null,
       notes: data.notes || null,
@@ -247,12 +255,8 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     }
 
     if (multiDay && endDate && endDate >= data.date) {
-      const gid = crypto.randomUUID();
-      const days = daySpan(data.date, endDate);
-      for (let i = 0; i < days; i++) {
-        const occurrenceDate = shiftDate(data.date, i);
-        addEvent({ id: crypto.randomUUID(), ...base, date: occurrenceDate, endDate: occurrenceDate, startTime: null, endTime: null, recurringGroupId: gid });
-      }
+      // Multi-day owns the inclusive calendar span; the normalized base owns clock semantics.
+      addEvent({ id: crypto.randomUUID(), ...base, date: data.date, endDate });
     } else if (repeat && repeatCount > 1) {
       const gid = crypto.randomUUID();
       for (let i = 0; i < repeatCount; i++) {
@@ -272,7 +276,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   const saveLabel = initialData
     ? 'Save Event'
     : multiDayCount > 1
-    ? `Create ${multiDayCount} Events`
+    ? 'Create Multi-day Event'
     : repeat && repeatCount > 1
     ? `Create ${repeatCount} Events`
     : 'Save Event';
@@ -283,7 +287,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="bottom"
-          className="mobile-sheet rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
+          className="mobile-sheet rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden" data-testid="event-sheet"
         >
           {/* Sticky header — always reachable, large close button */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
@@ -363,84 +367,29 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
                   />
                 </div>
 
-                {/* ── Multi-day (new events only) ── */}
+                <FormField control={form.control} name="projectId" render={({ field }) => <FormItem><FormLabel>Project (optional)</FormLabel><Select value={field.value ?? 'none'} onValueChange={value => field.onChange(value === 'none' ? null : value)}><FormControl><SelectTrigger data-testid="event-project"><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">No project</SelectItem>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></FormItem>} />
+
+                {/* New Event span/frequency choices stay adjacent and mutually exclusive. */}
                 {!initialData && (
-                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-semibold">Multi-day event</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Conference, trip, vacation…</p>
+                  <section className="grid grid-cols-1 gap-3 sm:grid-cols-2" aria-label="Event span and repeat">
+                    <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><Label className="text-sm font-semibold">Multi-day event</Label><p className="mt-0.5 text-[11px] text-muted-foreground">One Event spanning consecutive dates.</p></div>
+                        <Switch checked={multiDay} disabled={repeat} onCheckedChange={(value) => { setMultiDay(value); if (value) { setRepeat(false); setRepeatFreq('weekly'); setRepeatCount(4); } }} data-testid="switch-multiday" />
                       </div>
-                      <Switch checked={multiDay} onCheckedChange={(v) => { setMultiDay(v); if (v) setRepeat(false); }} data-testid="switch-multiday" />
+                      {multiDay && <div className="space-y-2 animate-in fade-in"><Label className="text-xs text-muted-foreground">End Date<Input type="date" value={endDate} onChange={event => setEndDate(event.target.value)} min={startDateVal} className="mt-1 h-9 text-sm" data-testid="input-end-date" /></Label>{multiDayCount > 0 && <p className="text-xs font-semibold text-primary" data-testid="multiday-span-summary">Spans {multiDayCount} consecutive day{multiDayCount === 1 ? '' : 's'} as one Event.</p>}</div>}
                     </div>
-                    {multiDay && (
-                      <div className="space-y-2 animate-in fade-in">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">End Date</Label>
-                          <Input
-                            type="date"
-                            value={endDate}
-                            onChange={e => setEndDate(e.target.value)}
-                            min={startDateVal}
-                            className="h-9 text-sm mt-1"
-                            data-testid="input-end-date"
-                          />
-                        </div>
-                        {multiDayCount > 0 && (
-                          <p className="text-xs text-primary font-semibold">
-                            Will create {multiDayCount} event{multiDayCount !== 1 ? 's' : ''} — one per day, all-day
-                          </p>
-                        )}
+                    <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><Label className="text-sm font-semibold">Repeat</Label><p className="mt-0.5 text-[11px] text-muted-foreground">Separate editable Event occurrences on a frequency.</p></div>
+                        <Switch checked={repeat} disabled={multiDay} onCheckedChange={(value) => { setRepeat(value); if (value) { setMultiDay(false); setEndDate(''); } }} data-testid="switch-repeat" />
                       </div>
-                    )}
-                  </div>
+                      {repeat && <div className="space-y-3 animate-in fade-in"><div><Label className="mb-1 block text-xs text-muted-foreground">Frequency</Label><div className="grid grid-cols-2 gap-2">{(['daily','weekly','biweekly','monthly','yearly'] as const).map(frequency => <button key={frequency} type="button" onClick={() => setRepeatFreq(frequency)} className={`rounded-lg border py-2 text-xs font-semibold transition-all ${repeatFreq === frequency ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'}`}>{frequency === 'biweekly' ? 'Bi-weekly' : frequency.charAt(0).toUpperCase()+frequency.slice(1)}</button>)}</div></div><div><Label className="mb-1 block text-xs text-muted-foreground">How many times?</Label><div className="flex items-center gap-3"><button type="button" onClick={() => setRepeatCount(count => Math.max(2,count-1))} className="flex h-10 w-10 items-center justify-center rounded-xl border text-xl font-bold">−</button><span className="w-10 text-center text-xl font-bold">{repeatCount}</span><button type="button" onClick={() => setRepeatCount(count => Math.min(52,count+1))} className="flex h-10 w-10 items-center justify-center rounded-xl border text-xl font-bold">+</button><span className="text-xs text-muted-foreground">occurrences</span></div><p className="mt-1.5 text-xs font-semibold text-primary">Will create {repeatCount} events ({repeatFreq})</p></div></div>}
+                    </div>
+                  </section>
                 )}
 
                 <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={''} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) { setTemporalEndDate(next.endDate); setEndDateWasEdited(true); } if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
-
-                {/* ── Repeat (new events only, disabled when multi-day) ── */}
-                {!initialData && !multiDay && (
-                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-semibold">Repeat</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Create normal event records for each occurrence</p>
-                      </div>
-                      <Switch checked={repeat} onCheckedChange={setRepeat} data-testid="switch-repeat" />
-                    </div>
-                    {repeat && (
-                      <div className="space-y-3 animate-in fade-in">
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Frequency</Label>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const).map(f => (
-                              <button
-                                key={f}
-                                type="button"
-                                onClick={() => setRepeatFreq(f)}
-                                className={`py-2 rounded-lg border text-xs font-semibold transition-all ${
-                                  repeatFreq === f ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'
-                                }`}
-                              >
-                                {f === 'biweekly' ? 'Bi-weekly' : f.charAt(0).toUpperCase() + f.slice(1)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">How many times?</Label>
-                          <div className="flex items-center gap-3">
-                            <button type="button" onClick={() => setRepeatCount(c => Math.max(2, c - 1))} className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:bg-muted transition-colors">−</button>
-                            <span className="text-xl font-bold w-10 text-center">{repeatCount}</span>
-                            <button type="button" onClick={() => setRepeatCount(c => Math.min(52, c + 1))} className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:bg-muted transition-colors">+</button>
-                            <span className="text-xs text-muted-foreground">occurrences</span>
-                          </div>
-                          <p className="text-xs text-primary font-semibold mt-1.5">Will create {repeatCount} events ({repeatFreq})</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* ── Color ── */}
                 <FormField

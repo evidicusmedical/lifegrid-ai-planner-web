@@ -7,3 +7,5 @@ Editors expose All day and Timed. Editing legacy approximate normalizes to Timed
 A canonical multi-day Event remains one source record with inclusive `date`/`endDate`. Grid, Day Detail, annual export, and targeted export expand display occurrences only; Repeat remains separately materialized.
 
 Targeted export clips display expansion to the requested interval while retaining the source Event ID. Project deletion descriptions and controls count and update direct Event assignments even when no Task uses the Project.
+
+For new Events, Multi-day and Repeat are adjacent and always visible. Multi-day means “One Event spanning consecutive dates”; Repeat means “Separate editable Event occurrences on a frequency.” Selecting either clears and disables the other, turning it off re-enables the other, Multi-day persists one `date`/`endDate` source record, and Repeat materializes independent occurrences.

@@ -1086,6 +1086,7 @@ export const GridView = () => {
                   <button
                     key={id}
                     type="button"
+                    data-testid={`export-date-preset-${id}`}
                     onClick={() => setDatePreset(id as ExportDatePreset)}
                     className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.datePreset === id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}
                   >
@@ -1605,7 +1606,7 @@ export const GridView = () => {
         {gridReady ? "Grid ready" : "Loading grid"}
       </p>
 
-      {exporting && isTargetedDateExport && (
+      {(exporting || exportOptionsOpen) && isTargetedDateExport && (
         <div
           ref={targetedExportRef}
           className="fixed top-0 -left-[10000px] bg-background text-foreground"
@@ -1665,6 +1666,7 @@ export const GridView = () => {
                       return (
                         <td
                           key={day.date}
+                          data-testid={`targeted-export-day-${day.date}`}
                           className="border-b border-r border-border align-top last:border-r-0"
                           style={{ height: cellHeight, padding: 6 }}
                         >
@@ -1680,6 +1682,8 @@ export const GridView = () => {
                             {visibleEvents.map((evt) => (
                               <div
                                 key={evt.id}
+                                data-testid={`targeted-export-event-${day.date}-${evt.id}`}
+                                data-source-event-id={evt.id}
                                 className="flex items-center gap-1 overflow-hidden rounded-md px-1.5 py-1"
                                 style={{ backgroundColor: evt.color ?? undefined, color: getReadableTextColor(evt.color) }}
                               >

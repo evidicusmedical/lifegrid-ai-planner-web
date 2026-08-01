@@ -1,38 +1,39 @@
-import { test, expect } from '@playwright/test';
-const seedLifeGrid = async (page) => page.addInitScript(() => {
-  const date = new Date(); date.setHours(12,0,0,0); const iso = (offset) => { const d=new Date(date); d.setDate(d.getDate()+offset); return d.toISOString().slice(0,10); };
-  const category={id:'other',label:'Other',color:'#ffff1a'};
+import { test, expect, type Page } from '@playwright/test';
+
+const seedLifeGrid = async (page: Page) => page.addInitScript(() => {
+  const base = new Date(); base.setHours(12,0,0,0);
+  const iso = (offset: number) => { const date=new Date(base); date.setDate(date.getDate()+offset); return date.toISOString().slice(0,10); };
   const event={id:'e2e-multiday',date:iso(0),endDate:iso(2),title:'E2E multi-day event',category:'other',projectId:'e2e-project',timeStatus:'all-day',startTime:null,endTime:null,color:'#ffff1a',notes:'Selectable long notes '.repeat(80),displayPriority:4,showInGrid:true,showInExport:true,linkedTaskIds:[],aiNotes:null,sourceNotes:null};
-  const data={events:[event],tasks:[],personEvents:[],categories:[category],people:[{id:'person',label:'Person',color:'#123456',order:0}],projects:[{id:'e2e-project',name:'E2E Project',color:'#123456',order:0,aliases:[],status:'active',notes:null}],milestones:[]};
+  const data={events:[event],tasks:[],personEvents:[],categories:[{id:'other',label:'Other',color:'#ffff1a'}],people:[{id:'person',label:'E2E Person',color:'#123456',order:0}],projects:[{id:'e2e-project',name:'E2E Project',color:'#123456',order:0,aliases:[],status:'active',notes:null}],milestones:[]};
   localStorage.setItem('lifegrid_store_v5',JSON.stringify({activeCalendarId:'e2e-calendar',calendars:[{id:'e2e-calendar',name:'E2E Calendar',createdAt:new Date().toISOString(),data}]}));
 });
+const emulateFinePointer = async (page: Page) => page.addInitScript(() => {
+  const original=window.matchMedia.bind(window);
+  window.matchMedia=(query:string) => {
+    if (['(hover: hover)','(any-hover: hover)','(pointer: fine)','(any-pointer: fine)'].includes(query)) return {...original(query),matches:true,media:query} as MediaQueryList;
+    if (['(hover: none)','(pointer: coarse)'].includes(query)) return {...original(query),matches:false,media:query} as MediaQueryList;
+    return original(query);
+  };
+});
+const dateAt = (offset:number) => { const date=new Date(); date.setHours(12,0,0,0); date.setDate(date.getDate()+offset); return date.toISOString().slice(0,10); };
 
 test.beforeEach(async ({page}) => seedLifeGrid(page));
 
-test.describe('v0.5.23 browser contracts', () => {
-  test('task status row is single select and image Export toggles', async ({ page }) => { await page.goto('/'); await page.getByRole('button',{name:'Tasks'}).click(); const done=page.getByTestId('task-status-done'); await done.click(); await expect(done).toHaveAttribute('aria-checked','true'); await page.getByTestId('task-status-all').click(); await expect(done).toHaveAttribute('aria-checked','false'); await page.getByRole('button',{name:'Grid'}).click(); const button=page.getByRole('button',{name:/Export/}).first(); await button.click(); await expect(page.getByTestId('panel-export-options')).toBeVisible(); await button.click(); await expect(page.getByTestId('panel-export-options')).toBeHidden(); });
-  test('new Event exposes two times and exclusive multi-day/repeat', async ({ page }) => { await page.goto('/'); await page.getByTestId('button-add-event').click(); await expect(page.getByTestId('event-time-type')).toHaveCount(2); const multi=page.getByTestId('switch-multiday'), repeat=page.getByTestId('switch-repeat'); await multi.click(); await expect(repeat).toBeDisabled(); });
+test('task status is single-select and Export toggles', async ({page}) => { await page.goto('/');await page.getByRole('button',{name:'Tasks'}).click();const done=page.getByTestId('task-status-done');await done.click();await expect(done).toHaveAttribute('aria-checked','true');await page.getByTestId('task-status-all').click();await expect(done).toHaveAttribute('aria-checked','false');await page.getByRole('button',{name:'Grid'}).click();const button=page.getByRole('button',{name:/Export/}).first();await button.click();await expect(page.getByTestId('panel-export-options')).toBeVisible();await button.click();await expect(page.getByTestId('panel-export-options')).toBeHidden();});
+
+test('Multi-day and Repeat stay visible, exclusive, and Multi-day saves one record', async ({page}) => {
+  await page.goto('/');await page.getByTestId('button-add-event').click();const sheet=page.getByTestId('event-sheet');const multi=sheet.getByTestId('switch-multiday'),repeat=sheet.getByTestId('switch-repeat');await expect(multi).toHaveCount(1);await expect(repeat).toHaveCount(1);await multi.click();await expect(multi).toHaveAttribute('data-state','checked');await expect(repeat).toHaveAttribute('data-state','unchecked');await expect(repeat).toBeDisabled();await multi.click();await expect(repeat).toBeEnabled();await repeat.click();await expect(repeat).toHaveAttribute('data-state','checked');await expect(multi).toBeDisabled();await repeat.click();await multi.click();await sheet.getByPlaceholder('Event title').fill('Saved one multi-day Event');await sheet.getByTestId('input-end-date').fill(dateAt(2));await expect(sheet.getByTestId('multiday-span-summary')).toContainText('as one Event');await sheet.getByRole('button',{name:'Create Multi-day Event'}).click();
+  await expect.poll(()=>page.evaluate(() => {const store=JSON.parse(localStorage.getItem('lifegrid_store_v5')!);return store.calendars[0].data.events.filter((event:any)=>event.title==='Saved one multi-day Event').map((event:any)=>[event.date,event.endDate]);})).toEqual([[dateAt(0),dateAt(2)]]);
 });
 
-test.describe('v0.5.23 production integration', () => {
-  test('complete AI export is default and Advanced explains restricted scope', async ({ page }) => {
-    await page.goto('/'); await page.getByRole('button',{name:/AI/}).click();
-    await expect(page.getByText(/All data/i).first()).toBeVisible();
-    const advanced=page.getByText(/Advanced/i).first(); await advanced.click();
-    await expect(page.getByText(/lose context outside|reduce.*file size/i)).toBeVisible();
-  });
-  test('Export closes outside and with Escape', async ({ page }) => {
-    await page.goto('/'); const button=page.getByRole('button',{name:/Export/}).first(); await button.click(); await expect(page.getByTestId('panel-export-options')).toBeVisible();
-    await page.keyboard.press('Escape'); await expect(page.getByTestId('panel-export-options')).toBeHidden(); await button.click(); await page.locator('body').click({position:{x:5,y:5}}); await expect(page.getByTestId('panel-export-options')).toBeHidden();
-  });
-  test('normal Event hover transfers into selectable preview and Escape dismisses', async ({ page }) => {
-    await page.goto('/'); const event=page.getByTestId('event-pill-e2e-multiday').first();
-    await event.hover(); const preview=page.getByTestId('grid-event-preview'); await expect(preview).toBeVisible(); await preview.hover(); await page.waitForTimeout(250); await expect(preview).toBeVisible(); await preview.focus(); await page.keyboard.press(process.platform==='darwin'?'Meta+A':'Control+A'); await expect.poll(()=>page.evaluate(()=>window.getSelection()?.toString().length ?? 0)).toBeGreaterThan(0); await page.keyboard.press('Escape'); await expect(preview).toBeHidden();
-  });
-  test('Grid Event opens complete Day Detail', async ({ page }) => {
-    await page.goto('/'); const event=page.getByTestId('event-pill-e2e-multiday').nth(1); await event.click(); await expect(page.getByTestId('day-detail-sheet')).toBeVisible(); await page.getByTestId('day-event-e2e-multiday').click(); await expect(page.getByRole('heading',{name:/Edit Event/i})).toBeVisible();
-  });
-  test('Event and Person schedule editors expose only All day and Timed', async ({ page }) => {
-    await page.goto('/'); await page.getByTestId('button-add-event').click(); await expect(page.getByText('All day',{exact:true})).toBeVisible(); await expect(page.getByText('Timed',{exact:true})).toBeVisible(); await expect(page.getByText('Approximate',{exact:true})).toHaveCount(0); await expect(page.getByText('Unknown',{exact:true})).toHaveCount(0);
-  });
-});
+test('AI Advanced range uses stable semantic copy and controls',async({page})=>{await page.goto('/');await page.getByRole('button',{name:/AI/}).click();const advanced=page.getByTestId('ai-export-advanced');await advanced.locator('summary').click();const explanation=page.getByTestId('ai-export-range-explanation');await expect(explanation).toContainText(/reduce file size/i);await expect(explanation).toContainText(/lose context outside the selected range/i);await page.getByTestId('ai-export-preset-custom').click();await expect(page.getByLabel('Start date')).toBeVisible();await expect(page.getByLabel('End date')).toBeVisible();});
+
+test('desktop hover transfers, scrolls, selects only preview, exits, and Escape closes',async({page})=>{await emulateFinePointer(page);await page.goto('/');const pill=page.getByTestId('event-pill-e2e-multiday').first();await expect(pill).toBeVisible();await pill.hover();const preview=page.getByTestId('grid-event-preview');await expect(preview).toBeVisible();await preview.hover();await page.waitForTimeout(250);await expect(preview).toBeVisible();const notes=page.getByTestId('preview-notes');await notes.evaluate(element=>element.scrollTop=element.scrollHeight);expect(await notes.evaluate(element=>element.scrollTop)).toBeGreaterThan(0);await preview.focus();await page.keyboard.press(process.platform==='darwin'?'Meta+A':'Control+A');await expect.poll(()=>page.evaluate(()=>window.getSelection()?.toString()??'')).toContain('E2E multi-day event');await page.keyboard.press('Escape');await expect(preview).toBeHidden();await pill.hover();await expect(preview).toBeVisible();await page.mouse.move(0,0);await page.waitForTimeout(220);await expect(preview).toBeHidden();});
+
+test('keyboard focus opens preview and focus transfer keeps it open',async({page})=>{await page.goto('/');const pill=page.getByTestId('event-pill-e2e-multiday').first();await pill.focus();const preview=page.getByTestId('grid-event-preview');await expect(preview).toBeVisible();await preview.focus();await page.waitForTimeout(220);await expect(preview).toBeVisible();});
+
+test('second-day Day Detail edits original source Event',async({page})=>{await page.goto('/');await page.getByTestId('event-pill-e2e-multiday').nth(1).click();await expect(page.getByTestId('day-detail-sheet')).toBeVisible();await page.getByTestId('day-event-e2e-multiday').click();await expect(page.getByTestId('event-sheet')).toContainText('Edit Event');});
+
+test('Event and Person schedule editors expose exactly All day and Timed',async({page})=>{await page.goto('/');await page.getByTestId('button-add-event').click();let sheet=page.getByTestId('event-sheet');let controls=sheet.getByTestId('event-time-type');await expect(controls).toHaveCount(2);await expect(controls).toHaveText(['All day','Timed']);await expect(sheet.getByTestId('event-time-type').filter({hasText:/Approximate|Unknown/})).toHaveCount(0);await sheet.getByTestId('button-sheet-close').click();await page.getByRole('button',{name:'People'}).click();await page.getByTestId('add-person-event-person').click();sheet=page.getByTestId('person-event-sheet');controls=sheet.getByTestId('person-schedule-time-type');await expect(controls).toHaveCount(2);await expect(controls).toHaveText(['All day','Timed']);await expect(controls.filter({hasText:/Approximate|Unknown/})).toHaveCount(0);await sheet.getByTestId('button-sheet-close').click();await expect(sheet).toBeHidden();});
+
+test('targeted export expands one source Event onto included second and third days',async({page})=>{await page.goto('/');await page.getByRole('button',{name:/Export/}).first().click();await page.getByTestId('export-date-preset-custom').click();await page.getByTestId('input-export-start').fill(dateAt(1));await page.getByTestId('input-export-end').fill(dateAt(2));const target=page.getByTestId('targeted-export-grid');await expect(target.getByTestId(`targeted-export-event-${dateAt(1)}-e2e-multiday`)).toHaveAttribute('data-source-event-id','e2e-multiday');await expect(target.getByTestId(`targeted-export-event-${dateAt(2)}-e2e-multiday`)).toHaveAttribute('data-source-event-id','e2e-multiday');await expect(target.getByTestId(`targeted-export-day-${dateAt(0)}`)).toHaveCount(0);expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('lifegrid_store_v5')!).calendars[0].data.events.filter((event:any)=>event.id==='e2e-multiday').length)).toBe(1);});

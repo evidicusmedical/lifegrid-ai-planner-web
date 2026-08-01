@@ -158,6 +158,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
         <SheetContent
           side="bottom"
           className="mobile-sheet rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
+          data-testid="person-event-sheet"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
             <h2 className="font-bold text-base">{initialData ? 'Edit Entry' : 'New Entry'}</h2>

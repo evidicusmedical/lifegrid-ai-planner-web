@@ -285,7 +285,7 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
       <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
         <SheetContent
           side="bottom"
-          className="mobile-sheet rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden"
+          className="mobile-sheet rounded-t-2xl overflow-hidden flex flex-col p-0 [&>button:first-of-type]:hidden" data-testid="event-sheet"
         >
           {/* Sticky header — always reachable, large close button */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card shrink-0">
@@ -367,84 +367,27 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
 
                 <FormField control={form.control} name="projectId" render={({ field }) => <FormItem><FormLabel>Project (optional)</FormLabel><Select value={field.value ?? 'none'} onValueChange={value => field.onChange(value === 'none' ? null : value)}><FormControl><SelectTrigger data-testid="event-project"><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem value="none">No project</SelectItem>{projects.map(project => <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>)}</SelectContent></Select></FormItem>} />
 
-                {/* ── Multi-day (new events only) ── */}
+                {/* New Event span/frequency choices stay adjacent and mutually exclusive. */}
                 {!initialData && (
-                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-semibold">Multi-day event</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">One Event spanning consecutive dates. Repeat is cleared when selected.</p>
+                  <section className="grid grid-cols-1 gap-3 sm:grid-cols-2" aria-label="Event span and repeat">
+                    <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><Label className="text-sm font-semibold">Multi-day event</Label><p className="mt-0.5 text-[11px] text-muted-foreground">One Event spanning consecutive dates.</p></div>
+                        <Switch checked={multiDay} disabled={repeat} onCheckedChange={(value) => { setMultiDay(value); if (value) { setRepeat(false); setRepeatFreq('weekly'); setRepeatCount(4); } }} data-testid="switch-multiday" />
                       </div>
-                      <Switch checked={multiDay} onCheckedChange={(v) => { setMultiDay(v); if (v) setRepeat(false); }} data-testid="switch-multiday" />
+                      {multiDay && <div className="space-y-2 animate-in fade-in"><Label className="text-xs text-muted-foreground">End Date<Input type="date" value={endDate} onChange={event => setEndDate(event.target.value)} min={startDateVal} className="mt-1 h-9 text-sm" data-testid="input-end-date" /></Label>{multiDayCount > 0 && <p className="text-xs font-semibold text-primary" data-testid="multiday-span-summary">Spans {multiDayCount} consecutive day{multiDayCount === 1 ? '' : 's'} as one Event.</p>}</div>}
                     </div>
-                    {multiDay && (
-                      <div className="space-y-2 animate-in fade-in">
-                        <div>
-                          <Label className="text-xs text-muted-foreground">End Date</Label>
-                          <Input
-                            type="date"
-                            value={endDate}
-                            onChange={e => setEndDate(e.target.value)}
-                            min={startDateVal}
-                            className="h-9 text-sm mt-1"
-                            data-testid="input-end-date"
-                          />
-                        </div>
-                        {multiDayCount > 0 && (
-                          <p className="text-xs text-primary font-semibold">
-                            Will create {multiDayCount} event{multiDayCount !== 1 ? 's' : ''} — one per day, all-day
-                          </p>
-                        )}
+                    <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><Label className="text-sm font-semibold">Repeat</Label><p className="mt-0.5 text-[11px] text-muted-foreground">Separate editable Event occurrences on a frequency.</p></div>
+                        <Switch checked={repeat} disabled={multiDay} onCheckedChange={(value) => { setRepeat(value); if (value) { setMultiDay(false); setEndDate(''); } }} data-testid="switch-repeat" />
                       </div>
-                    )}
-                  </div>
+                      {repeat && <div className="space-y-3 animate-in fade-in"><div><Label className="mb-1 block text-xs text-muted-foreground">Frequency</Label><div className="grid grid-cols-2 gap-2">{(['daily','weekly','biweekly','monthly','yearly'] as const).map(frequency => <button key={frequency} type="button" onClick={() => setRepeatFreq(frequency)} className={`rounded-lg border py-2 text-xs font-semibold transition-all ${repeatFreq === frequency ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'}`}>{frequency === 'biweekly' ? 'Bi-weekly' : frequency.charAt(0).toUpperCase()+frequency.slice(1)}</button>)}</div></div><div><Label className="mb-1 block text-xs text-muted-foreground">How many times?</Label><div className="flex items-center gap-3"><button type="button" onClick={() => setRepeatCount(count => Math.max(2,count-1))} className="flex h-10 w-10 items-center justify-center rounded-xl border text-xl font-bold">−</button><span className="w-10 text-center text-xl font-bold">{repeatCount}</span><button type="button" onClick={() => setRepeatCount(count => Math.min(52,count+1))} className="flex h-10 w-10 items-center justify-center rounded-xl border text-xl font-bold">+</button><span className="text-xs text-muted-foreground">occurrences</span></div><p className="mt-1.5 text-xs font-semibold text-primary">Will create {repeatCount} events ({repeatFreq})</p></div></div>}
+                    </div>
+                  </section>
                 )}
 
                 <TemporalFields prefix="event" date={startDateVal} startTime={form.watch('startTime') || ''} endTime={form.watch('endTime') || ''} endDate={temporalEndDate} timeStatus={timeStatus} timeZoneMode={timeZoneMode} timeZone={timeZone} displayTimeZone={''} onChange={next => { if (next.startTime !== undefined) form.setValue('startTime', next.startTime); if (next.endTime !== undefined) form.setValue('endTime', next.endTime); if (next.endDate !== undefined) { setTemporalEndDate(next.endDate); setEndDateWasEdited(true); } if (next.timeStatus !== undefined) setTimeStatus(next.timeStatus); if (next.timeZoneMode !== undefined) setTimeZoneMode(next.timeZoneMode); if (next.timeZone !== undefined) setTimeZone(next.timeZone); }} />
-
-                {/* ── Repeat (new events only, disabled when multi-day) ── */}
-                {!initialData && !multiDay && (
-                  <div className="bg-muted/30 rounded-xl border border-border p-3 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-semibold">Repeat</Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">Create normal event records for each occurrence</p>
-                      </div>
-                      <Switch checked={repeat} disabled={multiDay} onCheckedChange={(v) => { setRepeat(v); if (v) { setMultiDay(false); setEndDate(''); } }} data-testid="switch-repeat" />
-                    </div>
-                    {repeat && (
-                      <div className="space-y-3 animate-in fade-in">
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">Frequency</Label>
-                          <div className="grid grid-cols-2 gap-2">
-                            {(['daily', 'weekly', 'biweekly', 'monthly', 'yearly'] as const).map(f => (
-                              <button
-                                key={f}
-                                type="button"
-                                onClick={() => setRepeatFreq(f)}
-                                className={`py-2 rounded-lg border text-xs font-semibold transition-all ${
-                                  repeatFreq === f ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground hover:border-primary/40'
-                                }`}
-                              >
-                                {f === 'biweekly' ? 'Bi-weekly' : f.charAt(0).toUpperCase() + f.slice(1)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground mb-1 block">How many times?</Label>
-                          <div className="flex items-center gap-3">
-                            <button type="button" onClick={() => setRepeatCount(c => Math.max(2, c - 1))} className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:bg-muted transition-colors">−</button>
-                            <span className="text-xl font-bold w-10 text-center">{repeatCount}</span>
-                            <button type="button" onClick={() => setRepeatCount(c => Math.min(52, c + 1))} className="w-10 h-10 rounded-xl border border-border text-xl font-bold flex items-center justify-center hover:bg-muted transition-colors">+</button>
-                            <span className="text-xs text-muted-foreground">occurrences</span>
-                          </div>
-                          <p className="text-xs text-primary font-semibold mt-1.5">Will create {repeatCount} events ({repeatFreq})</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* ── Color ── */}
                 <FormField

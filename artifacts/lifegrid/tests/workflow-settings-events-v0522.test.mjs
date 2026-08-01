@@ -98,3 +98,5 @@ test('corrected UI contracts and release markers are exposed',()=>{
 });
 
 test('v0.5.23 settings shares one UpDownControl and Event-only deletion UI',()=>{const source=readFileSync(new URL('../src/pages/SettingsView.tsx',import.meta.url),'utf8');assert.equal((source.match(/<UpDownControl /g)||[]).length,3);assert.doesNotMatch(source,/>↑<|>↓</);assert.match(source,/totalTasks>0\|\|usage\[deleting.id\]\.relatedEvents>0/);assert.match(source,/Remove Project from Tasks and Events/);assert.match(source,/Reassign Tasks and Events/);});
+
+test('v0.5.23 EventSheet keeps Multi-day and Repeat adjacent with single-record copy',()=>{const source=readFileSync(new URL('../src/components/EventSheet.tsx',import.meta.url),'utf8');assert.match(source,/aria-label="Event span and repeat"/);assert.match(source,/One Event spanning consecutive dates/);assert.match(source,/Separate editable Event occurrences on a frequency/);assert.match(source,/Spans \{multiDayCount\} consecutive day/);assert.doesNotMatch(source,/!initialData && !multiDay|one per day, all-day/);assert.match(source,/disabled=\{repeat\}/);assert.match(source,/disabled=\{multiDay\}/);});

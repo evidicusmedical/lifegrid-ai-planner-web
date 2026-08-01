@@ -24,3 +24,13 @@
 - [x] The cross-browser GitHub Actions job is enabled for PRs instead of being skipped by a main-push-only condition.
 - [ ] Local Chromium/WebKit execution was blocked by the container proxy: `playwright install --with-deps` could not update apt indexes (HTTP 403), leaving the configured executables absent. GitHub-hosted qualification must provide the authoritative browser result.
 - [ ] GitHub Actions and Vercel conclusions require a successful branch push and remote access.
+
+## Final browser-contract qualification
+- [x] Multi-day and Repeat remain adjacent and visible, clear/disable one another, and use single-record versus materialized-occurrence copy.
+- [x] Advanced AI range copy and controls have stable test IDs and semantic assertions.
+- [x] Desktop hover tests emulate fine-pointer capability locally; keyboard focus is tested separately.
+- [x] Event and Person schedule time controls are scoped to their sheets and contain exactly All day and Timed.
+- [x] Targeted export browser coverage asserts second/third-day expansion through the real production bucket DOM and one stored source ID.
+- [x] Chromium CI now runs smoke plus the v0.5.23 suite; Firefox and WebKit run as independent fail-fast-disabled matrix entries.
+- [x] Unit/integration qualification: 106 passed, 0 failed, 0 skipped; typecheck and build pass.
+- [ ] Local browser installation was blocked by apt proxy HTTP 403. Authoritative Chromium/Firefox/WebKit/mobile and remote CI/Vercel conclusions require the pushed GitHub workflow.

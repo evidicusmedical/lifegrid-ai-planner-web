@@ -1,6 +1,7 @@
 import { AppData, Event, Task, Category, Person, PersonEvent, Project, ProjectStatus, EventDisplayPriority, EventKind, TaskDueDateType, TaskTriageStatus } from '../types';
 import { APP_VERSION, AI_INTERCHANGE_VERSION } from './version.js';
 import { temporalErrors } from './temporal.js';
+import { aiExportManifest, sanitizeAIRelationships, selectAIExportData, type AIExportScope } from './releaseContracts.js';
 
 export const aiPromptContract = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
 
@@ -20,14 +21,13 @@ UNCERTAINTY
 When facts are insufficient, do not fabricate titles, names, dates, times, categories, Project Tags, people, assignments, completion, clinical facts, links, or stable IDs. Omit the uncertain record and put the minimum required clarification in warnings. For example, never emit {"id":"evt-generated-1","title":"Untitled event"}; instead emit {"warnings":["A possible appointment was mentioned for 2026-08-12, but its purpose was not identified. Clarify what the appointment is before adding an Event."]}.
 
 LOCAL TIME
-Dates are YYYY-MM-DD. Times are local 24-hour HH:MM or null. Never emit timeZone, timeZoneMode, displayTimeZone, UTC Event timestamps, offsets, or conversions. Never convert a supplied Event time. Use endDate for overnight Events. All-day Events use null times and timeStatus all-day; unknown-time Events use null times and timeStatus unknown; timed Events require both times. Never invent a clock time; a Task due date is not an Event time.
+Dates are YYYY-MM-DD. Times are local 24-hour HH:MM or null. Never emit timeZone, timeZoneMode, displayTimeZone, UTC Event timestamps, offsets, or conversions. Never convert a supplied Event time. Use endDate for overnight Events. New and modified Events use only all-day (null times) or timed (both times). Never invent a clock time; a Task due date is not an Event time.
 
 EXAMPLES BEFORE CURRENT LIFEGRID CONTEXT
 Task add: {"id":"task-example-confirm-key-pickup","name":"Confirm apartment key-pickup window","category":"moving-logistics","dueDate":"2026-07-19","status":"todo","owner":"self","nextAction":"Call the leasing office and record the confirmed pickup window.","notes":null,"priority":"high","schedulingNotes":"Complete before departure.","projectId":null,"dueDateType":"real-deadline","triageStatus":"ready","parentTaskId":null,"linkedEventIds":[],"recurringGroupId":null}
 Timed Event add: {"id":"evt-example-unit-checkin","date":"2026-07-21","endDate":"2026-07-21","title":"Unit check-in","category":"work","startTime":"08:00","endTime":"08:30","timeStatus":"timed","color":"#dc2626","notes":"Bring identification and onboarding documents.","displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"fixed-appointment","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
-Unknown-time Event: {"id":"evt-example-key-pickup","date":"2026-07-20","endDate":"2026-07-20","title":"Apartment key pickup — time unconfirmed","category":"moving-logistics","startTime":null,"endTime":null,"timeStatus":"unknown","color":"#d97706","notes":null,"displayPriority":2,"showInGrid":true,"showInExport":true,"eventKind":"placeholder","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
 All-day Event add: {"id":"evt-example-day","date":"2026-07-22","endDate":"2026-07-22","title":"Fictional planning day","category":"other","timeStatus":"all-day","startTime":null,"endTime":null,"color":"#6b7280","notes":null,"displayPriority":4,"showInGrid":true,"showInExport":true,"eventKind":"day-type","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
-Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Same-patch parents must be included under add before a child references them: every new Task projectId requires its new Project in projects.add, every new parentTaskId requires its parent Task in tasks.add, and linked Event/Task IDs must resolve in current context or this patch.
+Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Every new projectId requires its Project in current context or projects.add. Legacy parentTaskId, linkedEventIds, and linkedTaskIds in exported context are read-only: never add or modify them. Use category for classification, projectId for workstream grouping, and notes, schedulingNotes, aiNotes, or sourceNotes for dependency context.
 
 Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every child dependency has an included parent; all proposal IDs are unique; all linked IDs resolve; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
 export const universalSchema = aiPromptContract;
@@ -39,11 +39,9 @@ Prepare a human-reviewed LifeGrid patch from supplied information. Do not reveal
 ${aiPromptContract()}`;
 
 export const generateUniversalCurrentPackage = (data: AppData, calendar: { id: string; name: string }, range: { start: string | null; end: string | null }) => {
-  const inside = (date: string | null | undefined) => !range.start || !range.end || (!!date && date >= range.start && date <= range.end);
-  const events = data.events.filter(e => inside(e.date)); const schedule = data.personEvents.filter(e => inside(e.date));
-  const categoryIds = new Set(events.map(e => e.category)); const taskIds = new Set(events.flatMap(e => e.linkedTaskIds ?? []));
-  const tasks = data.tasks.filter(t => taskIds.has(t.id) || !range.start || !range.end || !t.dueDate || inside(t.dueDate)); tasks.forEach(t => categoryIds.add(t.category));
-  const context = { metadata: { application:'LifeGrid', applicationVersion:APP_VERSION, exportFormatVersion:AI_INTERCHANGE_VERSION, exportedAt:new Date().toISOString(), calendarId:calendar.id, calendarName:calendar.name, selectedDateRange:range }, categories:data.categories.filter(c=>categoryIds.has(c.id)||c.id==='other'), people:data.people, projects:data.projects, tasks, events, peopleSchedule:schedule };
+  const scope: AIExportScope = range.start && range.end ? { mode: 'range', start: range.start, end: range.end } : { mode: 'all' };
+  const selected = selectAIExportData(data, scope);
+  const context = { metadata: { application:'LifeGrid', applicationVersion:APP_VERSION, exportFormatVersion:AI_INTERCHANGE_VERSION, backupSchemaVersion:7, exportedAt:new Date().toISOString(), calendarId:calendar.id, calendarName:calendar.name, selectedDateRange:scope.mode === 'range' ? range : null }, manifest:aiExportManifest(selected, scope), categories:selected.categories, people:selected.people, projects:selected.projects, tasks:selected.tasks, events:selected.events, peopleSchedule:selected.personEvents, milestones:selected.milestones };
   return `Export Current LifeGrid to AI\n${aiPromptContract()}\n\nCURRENT LIFEGRID CONTEXT\n${JSON.stringify(context, null, 2)}`;
 };
 
@@ -1174,6 +1172,10 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
 
   const reviewItemAdds = normalizeReviewItems(parsed.reviewItems?.add ?? []);
   if (reviewItemAdds.length) result.reviewItems = { add: reviewItemAdds };
+
+  const sanitized = sanitizeAIRelationships(result);
+  Object.assign(result, sanitized.value);
+  warnings.push(...sanitized.warnings);
 
   const totalChanges =
     (result.projects?.add.length ?? 0) + (result.projects?.update.length ?? 0) + (result.projects?.delete.length ?? 0) +

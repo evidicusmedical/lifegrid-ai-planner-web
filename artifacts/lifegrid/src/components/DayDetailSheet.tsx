@@ -7,6 +7,7 @@ import { Event } from '../types';
 import { formatDateLong } from '../lib/format';
 
 import { eventProjectTags } from '../lib/projectOperations';
+import { eventsForDate } from '../lib/gridModel';
 
 interface DayDetailSheetProps {
   date: string | null;
@@ -18,11 +19,8 @@ interface DayDetailSheetProps {
 export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, onAddEvent, onEditEvent }) => {
   const { events, tasks, projects, categories, activeCalendar } = useAppData();
 
-  const dayEvents = date
-    ? events
-        .filter(e => e.date === date)
-        .sort((a, b) => (a.startTime || '99:99').localeCompare(b.startTime || '99:99'))
-    : [];
+  const categoryRank = new Map(categories.map((category, index) => [category.id, index]));
+  const dayEvents = date ? eventsForDate(events, date, categoryRank) : [];
 
   const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;
 

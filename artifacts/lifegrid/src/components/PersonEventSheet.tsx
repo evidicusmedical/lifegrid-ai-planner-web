@@ -19,6 +19,7 @@ import { PersonEvent, PersonType, TimeStatus, TimeZoneMode } from '../types';
 import { X } from 'lucide-react';
 import { temporalErrors } from '../lib/temporal';
 import { TemporalFields } from './TemporalFields';
+import { normalizeEditableTimeStatus } from '../lib/gridModel';
 
 const schema = z.object({
   title: z.string().min(1, 'Title is required'),
@@ -83,7 +84,7 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
     if (isOpen) {
       setMultiDay(false);
       setEndDate('');
-      setTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day'));
+      setTimeStatus(normalizeEditableTimeStatus(initialData?.timeStatus ?? (initialData?.startTime ? 'timed' : 'all-day')));
       setTimeZoneMode(initialData?.timeZoneMode ?? 'zoned');
       setTimeZone(initialData?.timeZone ?? '');
       setTemporalEndDate(initialData?.endDate ?? initialData?.date ?? '');
@@ -117,8 +118,9 @@ export const PersonEventSheet: React.FC<PersonEventSheetProps> = ({ isOpen, onCl
   const multiDayCount = multiDay && endDate && endDate >= startDateVal ? daySpan(startDateVal, endDate) : 0;
 
   const onSubmit = (data: FormData) => {
-    const clocked = timeStatus === 'timed' || timeStatus === 'approximate';
-    const base = { endDate: temporalEndDate || data.date, timeStatus, timeZone: initialData?.timeZone ?? null, timeZoneMode: initialData?.timeZoneMode ?? null,
+    const normalizedStatus = normalizeEditableTimeStatus(timeStatus);
+    const clocked = normalizedStatus === 'timed';
+    const base = { endDate: temporalEndDate || data.date, timeStatus: normalizedStatus, timeZone: initialData?.timeZone ?? null, timeZoneMode: initialData?.timeZoneMode ?? null,
       ...data,
       startTime: clocked ? data.startTime || null : null,
       endTime: clocked ? data.endTime || null : null,

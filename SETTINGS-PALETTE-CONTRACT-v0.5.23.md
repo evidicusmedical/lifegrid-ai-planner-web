@@ -1,5 +1,5 @@
 # Settings and palette contract
 
-Category, Project, and People management use stable IDs when filtered so Up/Down mutates the full ordered collection. Category and People search changes only the visible list. Up/Down remains the accessible ordering mechanism; drag-and-drop is intentionally absent. Flagged review analyzers remain compatible but the visible Settings section is removed.
+Category, Project, and People management retain stable-ID full-array reorder semantics while searched. Shared Up/Down controls remain accessible. Project clear/reassign updates both Tasks and directly assigned Events.
 
-The shared palette retains the original 16 in order and appends ruby/orange/sunflower/lime/green/mint/turquoise/sky/blue/royal/iris/purple/fuchsia/pink/ochre/steel families. All 32 normalized values and family names must be unique. Existing arbitrary colors are prepended unchanged. Practical review uses distinct hue/family identity rather than bulk recoloring or a destructive minimum-distance migration.
+The first 16 palette values are immutable. Sixteen new, uniquely named hue/chroma/lightness families are appended; arbitrary existing user colors are preserved without migration. Pairwise separation is calculated in CIE L*a*b* with CIE76 distance. Required minimum is 12; the final minimum is approximately 12.57 (`#4338ca` / `#1d4ed8`, an immutable legacy pair).

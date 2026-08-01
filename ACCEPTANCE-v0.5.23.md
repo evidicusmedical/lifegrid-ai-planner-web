@@ -1,13 +1,11 @@
-# v0.5.23 acceptance checklist
+# v0.5.23 correction acceptance
 
-- [x] Universal desktop hover preview is selectable, bounded, Escape-dismissible, and mobile remains Day Detail first.
-- [x] Pure Grid comparator and inclusive range expansion cover legacy time states.
-- [x] Editors expose All day/Timed; legacy states normalize only when edited.
-- [x] Event Project assignment/clear/validation and Project clear/reassignment include direct Events.
-- [x] Multi-day stores one inclusive Event; Repeat materializes separate occurrences; controls exclude each other.
-- [x] Dedicated single-select Task Status row combines with focus, Tag, and Project filters.
-- [x] AI current export defaults to All data and range controls are Advanced.
-- [x] AI hard relationship proposals are sanitized while stored/backup links remain compatible.
-- [x] Grid image Export toggles and retains outside/Escape/in-progress safety.
-- [x] Flagged-review Settings surface removed; Category and People search added; palette expanded to 32.
-- [ ] Manual desktop, touch mobile, and physical iPhone checks (handoff).
+- [x] Production AI package generator delegates complete/range selection to one scope helper and emits metadata plus manifest counts.
+- [x] AI parser sanitizes hard relationships before preflight; Event Projects are transactionally validated.
+- [x] Day Detail and image export share inclusive range expansion and deterministic ordering.
+- [x] One Grid-owned hover timer pair supports pointer/focus transfer.
+- [x] Person schedule editing normalizes legacy time states without load-time migration.
+- [x] Direct Event Projects participate in image filtering and existing clear/reassign helpers.
+- [x] Palette contains 32 named unique colors and passes the CIE76 distance contract.
+- [x] Typecheck, 100 unit/integration tests, build, and diff check pass.
+- [ ] Playwright browsers and physical desktop/mobile/iPhone verification remain environment-dependent.

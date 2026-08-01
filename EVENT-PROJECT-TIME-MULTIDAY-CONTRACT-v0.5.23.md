@@ -1,7 +1,7 @@
-# Event project, time, and multi-day contract
+# Event Project, time, and multi-day contract
 
-`Event.projectId?: string | null` is additive; null is canonical unassignment and non-null IDs validate against Projects. Category remains required. Project usage and deletion clear/reassign both Tasks and directly assigned Events; hover prefers the direct Project and may read one legacy linked-Task fallback.
+Event `projectId` is optional and canonical clearing is `null`; preflight accepts existing or selected same-patch Projects and blocks invalid/deselected references. Direct assignment is used first while legacy linked-Task inference remains readable.
 
-Editors expose only All day and Timed. Approximate reads/displays as Timed and unknown as All day, but stored records are not bulk rewritten. Editing normalizes the state; Timed requires both times. New AI records use only canonical states.
+Editors expose All day and Timed. Editing legacy approximate normalizes to Timed; unknown normalizes to All day. Person schedules use the same shared boundary, require both times for Timed, clear both for All day, and untouched stored records are never rewritten.
 
-Multi-day is one Event with inclusive `date`/`endDate`; Repeat remains separately materialized occurrences. The creation controls clear/disable one another. Existing materialized groups remain unchanged.
+A canonical multi-day Event remains one source record with inclusive `date`/`endDate`. Grid, Day Detail, annual export, and targeted export expand display occurrences only; Repeat remains separately materialized.

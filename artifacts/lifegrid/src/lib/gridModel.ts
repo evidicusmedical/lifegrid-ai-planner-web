@@ -20,6 +20,16 @@ export const normalizeEditableTimeStatus = (status: TimeStatus): 'all-day' | 'ti
   status === 'timed' || status === 'approximate' ? 'timed' : 'all-day';
 export const isGridTimed = (status: TimeStatus) => status === 'timed' || status === 'approximate';
 
+export const eventIntersectsDate = (event: Pick<Event, 'date'|'endDate'>, date: string) => {
+  if (!DATE.test(event.date) || !DATE.test(date)) return false;
+  const end = event.endDate && DATE.test(event.endDate) && event.endDate >= event.date ? event.endDate : event.date;
+  return event.date <= date && end >= date;
+};
+
+export const eventsForDate = (events: readonly Event[], date: string, categoryRank: ReadonlyMap<string, number>) =>
+  [...new Map(events.filter(event => eventIntersectsDate(event, date)).map(event => [event.id, event])).values()]
+    .sort(compareGridEvents(categoryRank));
+
 /** One deterministic ordering contract shared by every representation of a grid day. */
 export const compareGridEvents = (categoryRank: ReadonlyMap<string, number>) =>
   <T extends Pick<GridEventSummary, 'id'|'title'|'category'|'displayPriority'|'timeStatus'|'startTime'>>(a: T, b: T): number => {
@@ -47,6 +57,21 @@ export const expandGridEventRange = (summary: GridEventSummary, year: number): G
   const result: GridEventSummary[] = [];
   for (let date = start; date <= end; date = shiftDate(date, 1)) result.push(Object.freeze({ ...summary, date }));
   return result;
+};
+
+export const expandEventsToDateBuckets = (events: readonly Event[], start: string, end: string, categoryRank: ReadonlyMap<string, number>) => {
+  const buckets = new Map<string, GridEventSummary[]>();
+  if (!DATE.test(start) || !DATE.test(end) || start > end) return buckets;
+  for (const event of events) {
+    const eventEnd = event.endDate && DATE.test(event.endDate) && event.endDate >= event.date ? event.endDate : event.date;
+    for (let date = event.date < start ? start : event.date; date <= eventEnd && date <= end; date = shiftDate(date, 1)) {
+      const bucket = buckets.get(date) ?? [];
+      bucket.push({ ...toGridEventSummary(event), date });
+      buckets.set(date, bucket);
+    }
+  }
+  buckets.forEach(bucket => bucket.sort(compareGridEvents(categoryRank)));
+  return buckets;
 };
 
 /** Selects source records before temporal conversion. Zoned records get a one-day safety

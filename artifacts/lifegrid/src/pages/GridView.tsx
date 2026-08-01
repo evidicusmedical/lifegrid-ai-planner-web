@@ -49,7 +49,7 @@ import {
   validateExportRange,
 } from "../lib/gridAwareness";
 import { getLocalTemporalOccurrence } from "../lib/temporal";
-import { buildGridViewModel, filterGridEventsByCategories, resolveEventById, toGridEventSummary, type GridEventSummary } from "../lib/gridModel";
+import { buildGridViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
 import { gridMark } from "../lib/gridDiagnostics";
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
@@ -129,6 +129,7 @@ const getEventProjectIds = (
   tasksByLinkedEvent: Map<string, Task[]>,
 ) => {
   const projectIds = new Set<string>();
+  if (event.projectId) projectIds.add(event.projectId);
   event.linkedTaskIds.forEach((taskId) => {
     const task = taskById.get(taskId);
     if (task?.projectId) projectIds.add(task.projectId);
@@ -246,11 +247,29 @@ export const GridView = () => {
   const tableRef = useRef<HTMLTableElement>(null);
   const targetedExportRef = useRef<HTMLDivElement>(null);
   const publicationRef = useRef<HTMLDivElement>(null);
-  const previewTimerRef = useRef<number | null>(null);
+  const previewOpenTimerRef = useRef<number | null>(null);
+  const previewCloseTimerRef = useRef<number | null>(null);
   const didScrollRef = useRef(false);
   const priorGridModelRef = useRef<
     ReturnType<typeof buildGridViewModel> | undefined
   >(undefined);
+
+  const cancelPreviewTimers = useCallback(() => {
+    if (previewOpenTimerRef.current) window.clearTimeout(previewOpenTimerRef.current);
+    if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
+    previewOpenTimerRef.current = previewCloseTimerRef.current = null;
+  }, []);
+  const keepPreviewOpen = useCallback(() => {
+    if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
+    previewCloseTimerRef.current = null;
+  }, []);
+  const schedulePreviewClose = useCallback(() => {
+    if (previewOpenTimerRef.current) window.clearTimeout(previewOpenTimerRef.current);
+    if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
+    previewOpenTimerRef.current = null;
+    previewCloseTimerRef.current = window.setTimeout(() => setPreviewEvent(null), 180);
+  }, []);
+  useEffect(() => cancelPreviewTimers, [cancelPreviewTimers]);
 
   const todayStr = toISODate(today);
   const todayMonth = today.getMonth();
@@ -654,7 +673,7 @@ export const GridView = () => {
     isTargetedDateExport,
   );
   const focusedGridData = useMemo(() => { const map = new Map<string, readonly GridEventSummary[]>(); gridData.forEach((records, date) => map.set(date, filterGridEventsByCategories(records, focusedCats))); return map; }, [gridData, focusedCats]);
-  const exportGridData = useMemo(() => { const map = new Map<string, GridEventSummary[]>(); exportFilteredEvents.forEach(event => { const records = map.get(event.date) ?? []; records.push(toGridEventSummary(event)); map.set(event.date, records); }); map.forEach(records => records.sort((a, b) => a.displayPriority - b.displayPriority || Number(!a.startTime) - Number(!b.startTime) || (a.startTime ?? "").localeCompare(b.startTime ?? "") || (categoryRank.get(a.category) ?? 999) - (categoryRank.get(b.category) ?? 999) || a.title.localeCompare(b.title))); return map; }, [exportFilteredEvents, categoryRank]);
+  const exportGridData = useMemo(() => expandEventsToDateBuckets(exportFilteredEvents, exportRange.start, exportRange.end, categoryRank), [exportFilteredEvents, exportRange.start, exportRange.end, categoryRank]);
 
   // ── Image export (html-to-image renders modern CSS correctly) ──
   // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
@@ -1495,36 +1514,28 @@ export const GridView = () => {
                                       window.matchMedia("(hover: hover)")
                                         .matches
                                     ) {
-                                      previewTimerRef.current =
-                                        window.setTimeout(
-                                          () =>
-                                            setPreviewEvent({
-                                              event: fullEvent,
-                                              date: dateStr,
-                                              anchor:
-                                                e.currentTarget.getBoundingClientRect(),
-                                            }),
-                                          125,
-                                        );
+                                      cancelPreviewTimers();
+                                      const anchor = e.currentTarget.getBoundingClientRect();
+                                      previewOpenTimerRef.current = window.setTimeout(() =>
+                                        setPreviewEvent({ event: fullEvent, date: dateStr, anchor }), 125);
                                     }
                                   }}
-                                  onPointerLeave={() => { if (previewTimerRef.current) window.clearTimeout(previewTimerRef.current); previewTimerRef.current = window.setTimeout(() => setPreviewEvent(null), 180); }}
+                                  onPointerLeave={schedulePreviewClose}
                                   onFocus={(e) => {
                                     const fullEvent = resolveEventById(
                                       events,
                                       evt.id,
                                     );
-                                    if (
-                                      fullEvent &&
-                                      true
-                                    )
+                                    if (fullEvent) {
+                                      cancelPreviewTimers();
                                       setPreviewEvent({
                                         event: fullEvent,
                                         date: dateStr,
-                                        anchor:
-                                          e.currentTarget.getBoundingClientRect(),
+                                        anchor: e.currentTarget.getBoundingClientRect(),
                                       });
+                                    }
                                   }}
+                                  onBlur={schedulePreviewClose}
                                   aria-describedby={
                                     previewEvent?.event.id === evt.id
                                       ? `day-type-preview-${evt.id}`
@@ -1735,7 +1746,9 @@ export const GridView = () => {
         }
         project={projects.find(project => project.id === previewEvent?.event.projectId)?.name ?? null}
         anchor={previewEvent?.anchor ?? null}
-        onClose={() => setPreviewEvent(null)}
+        onClose={() => { cancelPreviewTimers(); setPreviewEvent(null); }}
+        onInteractionEnter={keepPreviewOpen}
+        onInteractionLeave={schedulePreviewClose}
       />
 
       <DayDetailSheet

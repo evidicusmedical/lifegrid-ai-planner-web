@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { APP_VERSION } from '../lib/version';
 import { Check, Copy, Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { copyText, downloadText } from '../lib/textDelivery';
 
 type Workflow = 'current' | 'external';
 type Preset = 'next7' | 'next30' | 'next90' | 'year' | 'all' | 'custom';
@@ -27,6 +28,8 @@ export const AIView = () => {
   const [response, setResponse] = useState('');
   const [preview, setPreview] = useState<ParsedUpdate | null>(null);
   const [error, setError] = useState('');
+  const [deliveryStatus, setDeliveryStatus] = useState('');
+  const [deliveryPending, setDeliveryPending] = useState(false);
   // The sole selection state: every review surface uses canonical proposal keys.
   const [selectedRecords, setSelectedRecords] = useState<Set<string>>(new Set());
   const initializedSession = useRef<string | null>(null);
@@ -39,11 +42,41 @@ export const AIView = () => {
     if (value === 'next90') { setStart(iso(now)); setEnd(plus(90)); }
     if (value === 'year') { const y = now.getFullYear(); setStart(`${y}-01-01`); setEnd(`${y}-12-31`); }
   };
-  const build = () => workflow === 'external'
+  const buildCurrentPackage = () => {
+    if (workflow === 'current' && preset !== 'all' && (!start || !end || start > end)) throw new Error('invalid-range');
+    return workflow === 'external'
     ? generateUniversalStarterPrompt()
-    : generateUniversalCurrentPackage(app, app.activeCalendar, preset === 'all' ? { start: null, end: null } : { start, end });
-  const copy = async () => { if (preset !== 'all' && workflow === 'current' && (!start || !end || start > end)) { toast.error('Choose a valid date range.'); return; } const value = build(); setPrompt(value); await navigator.clipboard.writeText(value); toast.success('Complete AI package copied'); };
-  const download = () => { const value = prompt || build(); setPrompt(value); const url = URL.createObjectURL(new Blob([value], { type: 'text/plain' })); const a = document.createElement('a'); a.href = url; a.download = `lifegrid-ai-package-${iso(new Date())}.txt`; a.click(); URL.revokeObjectURL(url); };
+    : generateUniversalCurrentPackage(app.activeCalendar.data, app.activeCalendar, preset === 'all' ? { start: null, end: null } : { start, end });
+  };
+  const generationFailure = (cause: unknown) => {
+    const message = cause instanceof Error && cause.message === 'invalid-range' ? 'Choose a valid date range.' : 'LifeGrid AI package could not be generated.';
+    setDeliveryStatus(message); toast.error(message);
+  };
+  const copy = async () => {
+    if (deliveryPending) return;
+    setDeliveryPending(true); setDeliveryStatus('');
+    let value: string;
+    try { value = buildCurrentPackage(); setPrompt(value); }
+    catch (cause) { generationFailure(cause); setDeliveryPending(false); return; }
+    try {
+      if (await copyText(value)) { setDeliveryStatus('Complete AI package copied'); toast.success('Complete AI package copied'); }
+      else { const message = 'Copy failed. The package is available under Preview package for manual copying.'; setDeliveryStatus(message); toast.error(message); }
+    } catch { const message = 'Copy failed. The package is available under Preview package for manual copying.'; setDeliveryStatus(message); toast.error(message); }
+    finally { setDeliveryPending(false); }
+  };
+  const download = () => {
+    if (deliveryPending) return;
+    setDeliveryPending(true); setDeliveryStatus('');
+    let value: string;
+    try { value = buildCurrentPackage(); setPrompt(value); }
+    catch (cause) { generationFailure(cause); setDeliveryPending(false); return; }
+    try {
+      if (!downloadText(value, `lifegrid-ai-package-${iso(new Date())}.txt`)) throw new Error('delivery-failed');
+      setDeliveryStatus('AI package download started'); toast.success('AI package download started');
+    } catch { const message = 'AI package download failed. No file was downloaded.'; setDeliveryStatus(message); toast.error(message); }
+    finally { setDeliveryPending(false); }
+  };
+  useEffect(() => { setPrompt(''); setDeliveryStatus(''); }, [workflow, preset, start, end, app.activeCalendar.id, app.activeCalendar.data]);
   const recordGroups = useMemo(() => preview ? toRecordGroups(preview, app.activeCalendar.data) : [], [preview, app.activeCalendar.data]);
   const dependencyAnalysis = useMemo(() => preview ? analyzeDependencies(preview, app, selectedRecords) : null, [preview, app.categories, app.people, app.projects, app.tasks, app.events, app.personEvents, selectedRecords]);
   const blockedKeys = dependencyAnalysis ? new Set([...dependencyAnalysis.blocked].filter(([key]) => selectedRecords.has(key)).map(([key]) => key)) : new Set<string>();
@@ -78,7 +111,7 @@ export const AIView = () => {
         <WorkflowCard selected={workflow === 'external'} onClick={() => { setWorkflow('external'); setPrompt(''); }} title="Build a New LifeGrid from External Information" description="Create a private starter prompt; no current LifeGrid records are included." />
       </section>
       {workflow === 'current' && <section className="rounded-xl border border-border bg-card p-4 space-y-3"><h2 className="font-semibold text-sm">1. All data (default)</h2><p className="text-xs text-muted-foreground">Complete LifeGrid: every catalog, schedule, Event, milestone, and Task status. Download is recommended for large mobile exports.</p><details data-testid="ai-export-advanced"><summary className="cursor-pointer text-xs font-semibold">Advanced · restricted date range</summary><p className="my-2 text-xs text-muted-foreground" data-testid="ai-export-range-explanation">Full Category, Project, and People catalogs plus all undated Tasks are always included. Dated Events and schedules intersect the inclusive range; milestones and Task due dates must be in range. Restricted exports reduce file size but intentionally lose context outside the selected range.</p><div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{([['next7','Next 7 Days'],['next30','Next 30 Days'],['next90','Next 90 Days'],['year','Current Year'],['all','All Data'],['custom','Custom Range']] as [Preset,string][]).map(([id,label]) => <button key={id} data-testid={`ai-export-preset-${id}`} onClick={() => selectPreset(id)} className={`rounded-lg border p-2 text-xs font-semibold ${preset === id ? 'border-primary bg-primary/10' : 'border-border'}`}>{label}</button>)}</div>{preset !== 'all' && <div className="mt-2 grid grid-cols-2 gap-2"><Input aria-label="Start date" type="date" value={start} onChange={e => { setPreset('custom'); setStart(e.target.value); }} /><Input aria-label="End date" type="date" value={end} onChange={e => { setPreset('custom'); setEnd(e.target.value); }} /></div>}</details></section>}
-      <section className="rounded-xl border border-border bg-card p-4 space-y-2"><h2 className="font-semibold text-sm">{workflow === 'current' ? '2' : '1'}. Send the package to any AI</h2><p className="text-xs text-muted-foreground">Tell the AI what to analyze or build. It must return LifeGrid JSON only when you request final changes.</p><div className="flex gap-2"><Button onClick={copy} className="flex-1 gap-2"><Copy size={15}/>Copy Complete AI Package</Button><Button variant="outline" onClick={download} className="gap-2"><Download size={15}/>Download</Button></div>{prompt && <details><summary className="text-xs text-primary cursor-pointer">Preview package</summary><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[10px] bg-muted p-2 rounded">{prompt}</pre></details>}</section>
+      <section className="rounded-xl border border-border bg-card p-4 space-y-2"><h2 className="font-semibold text-sm">{workflow === 'current' ? '2' : '1'}. Send the package to any AI</h2><p className="text-xs text-muted-foreground">Tell the AI what to analyze or build. It must return LifeGrid JSON only when you request final changes.</p><div className="flex gap-2"><Button data-testid="button-ai-copy-package" disabled={deliveryPending} onClick={copy} className="flex-1 gap-2"><Copy size={15}/>Copy Complete AI Package</Button><Button data-testid="button-ai-download-package" disabled={deliveryPending} variant="outline" onClick={download} className="gap-2"><Download size={15}/>Download</Button></div>{deliveryStatus && <p data-testid="ai-package-delivery-status" role="status" className="text-xs text-muted-foreground">{deliveryStatus}</p>}{prompt && <details><summary className="text-xs text-primary cursor-pointer">Preview package</summary><pre data-testid="ai-package-preview" className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[10px] bg-muted p-2 rounded">{prompt}</pre></details>}</section>
       <section className="rounded-xl border border-border bg-card p-4 space-y-3"><h2 className="font-semibold text-sm">{workflow === 'current' ? '3' : '2'}. Review returned JSON</h2><p className="text-xs text-muted-foreground">AI output is never applied automatically. Dependencies are checked again immediately before apply.</p><Button variant="outline" size="sm" onClick={() => { downloadCurrentBackup(app); toast.success('Current LifeGrid backup downloaded'); }}><Download size={14}/> Download Current LifeGrid Backup</Button><Textarea value={response} onChange={e => { setResponse(e.target.value); setPreview(null); setError(''); }} placeholder="Paste valid LifeGrid JSON returned by the external AI..." className="font-mono min-h-36 text-xs"/>{error && <p className="text-xs text-destructive whitespace-pre-wrap">{error}</p>}{!preview ? <Button disabled={!response.trim()} onClick={review} variant="secondary" className="gap-2"><Upload size={15}/>Review Preflight</Button> : <div className="border rounded-lg p-3 space-y-2 text-xs"><p className="font-semibold">Preflight — human approval required</p><p className="text-muted-foreground">{selectedRecords.size} selected of {totalRecords} proposed records. Deselecting a parent also deselects its dependent children; reselect them deliberately after restoring the parent.</p>{totalRecords >= 20 && <p className="rounded bg-amber-500/10 p-2 text-amber-800">This import contains {totalRecords} proposed records. Download a current JSON backup before applying.</p>}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded bg-muted/60 p-2 text-center"><span><b>{readiness?.selectedCount ?? 0}</b><br/>selected</span><span className="text-destructive"><b>{readiness?.blockingCount ?? 0}</b><br/>blocking errors</span><span className="text-amber-700"><b>{readiness?.warningCount ?? 0}</b><br/>warnings</span><span className="text-blue-700"><b>{readiness?.infoCount ?? 0}</b><br/>information</span></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setSelectedRecords(new Set(recordGroups.flatMap(g => g.records.map(r => r.key)).filter(k => !blockedKeys.has(k))))}>Select all valid</Button><Button size="sm" variant="outline" onClick={() => setSelectedRecords(new Set())}>Deselect all</Button><Button size="sm" variant="outline" onClick={() => setSelectedRecords(previous => new Set([...previous].filter(k => !blockedKeys.has(k))))}>Deselect blocking</Button></div>{(readiness?.findings.filter(f => f.severity === 'blocking').length ?? 0) > 0 && <details open><summary className="font-semibold text-destructive">Blocking errors</summary>{readiness?.findings.filter(f => f.severity === 'blocking').map((f,i) => <p key={i} className="text-destructive">{f.message}</p>)}</details>}<details><summary className="font-semibold text-amber-700">Warnings</summary>{preview.warnings?.map(w => <p key={w} className="text-amber-700">Warning: {w}</p>)}</details><details><summary className="font-semibold text-blue-700">Information</summary>{readiness?.findings.filter(f => f.severity === 'info').map((f,i) => <p key={i} className="text-blue-700">{f.message}</p>)}</details><div className="space-y-3">{recordGroups.map(group => <section key={group.title} className="rounded border border-border p-2"><label className="flex items-center gap-2 font-semibold"><input type="checkbox" checked={group.records.every(record => selectedRecords.has(record.key))} onChange={() => toggleGroup(group.records)} />{group.title} ({group.records.filter(record => selectedRecords.has(record.key)).length}/{group.records.length})</label><div className="mt-1 space-y-1">{group.records.map(record => <label key={record.key} className="flex gap-2 rounded bg-muted/50 p-1.5"><input type="checkbox" checked={selectedRecords.has(record.key)} disabled={blockedKeys.has(record.key)} onChange={() => toggleRecord(record.key)} /><span><b>{record.operation}</b> · {record.label} <span className="text-muted-foreground">({record.id})</span>{record.detail && <span className="block text-muted-foreground">{record.detail}</span>}{dependencyAnalysis?.blocked.get(record.key) && <span className="block text-destructive">{dependencyAnalysis.blocked.get(record.key)}</span>}</span></label>)}</div></section>)}</div>{!readiness?.canApply && <p className="text-destructive font-medium">{readiness?.disabledReason}</p>}<Button disabled={!readiness?.canApply} onClick={apply} className="gap-2"><Check size={15}/>Approve and Apply {readiness?.selectedCount ?? 0} Selected</Button></div>}</section>
       <p className="text-center text-[11px] text-muted-foreground">LifeGrid {APP_VERSION} · Universal AI Interchange v4</p>

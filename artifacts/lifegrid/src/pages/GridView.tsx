@@ -51,6 +51,7 @@ import {
 import { getLocalTemporalOccurrence } from "../lib/temporal";
 import { buildGridViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
 import { gridMark } from "../lib/gridDiagnostics";
+import { getReadableTextColor } from "../lib/palette";
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
 const MONTHS = [
@@ -270,6 +271,7 @@ export const GridView = () => {
     previewCloseTimerRef.current = window.setTimeout(() => setPreviewEvent(null), 180);
   }, []);
   useEffect(() => cancelPreviewTimers, [cancelPreviewTimers]);
+  useEffect(() => { cancelPreviewTimers(); setPreviewEvent(null); }, [activeCalendarId, year, cancelPreviewTimers]);
 
   const todayStr = toISODate(today);
   const todayMonth = today.getMonth();
@@ -366,29 +368,8 @@ export const GridView = () => {
     tasksByLinkedEvent,
   ]);
 
-  const sortEventsForCell = useCallback(
-    (a: Event, b: Event) => {
-      const byPriority = (a.displayPriority ?? 4) - (b.displayPriority ?? 4);
-      if (byPriority !== 0) return byPriority;
-      const aDisplayed = getLocalTemporalOccurrence(a);
-      const bDisplayed = getLocalTemporalOccurrence(b);
-      const aAllDay = !aDisplayed.displayedStartTime;
-      const bAllDay = !bDisplayed.displayedStartTime;
-      if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
-      if (!aAllDay && !bAllDay) {
-        const byTime = (aDisplayed.displayedStartTime ?? "").localeCompare(
-          bDisplayed.displayedStartTime ?? "",
-        );
-        if (byTime !== 0) return byTime;
-      }
-      const byCat =
-        (categoryRank.get(a.category) ?? 999) -
-        (categoryRank.get(b.category) ?? 999);
-      if (byCat !== 0) return byCat;
-      return a.title.localeCompare(b.title);
-    },
-    [categoryRank],
-  );
+  const exportRange = getExportDateRange();
+  const exportGridData = useMemo(() => expandEventsToDateBuckets(exportFilteredEvents, exportRange.start, exportRange.end, categoryRank), [exportFilteredEvents, exportRange.start, exportRange.end, categoryRank]);
 
   const isTargetedDateExport = useMemo(() => {
     if (exportFilters.datePreset === "current") return false;
@@ -403,21 +384,13 @@ export const GridView = () => {
     if (!start || !end || start > end) return [];
     const dates = getDatesInRange(start, end);
     const startDow = parseISODate(start).getDay();
-    const filteredByDate = new Map<string, Event[]>();
-    exportFilteredEvents.forEach((e) => {
-      const displayed = getLocalTemporalOccurrence(e);
-      const arr = filteredByDate.get(displayed.displayedStartDate) ?? [];
-      arr.push(e);
-      filteredByDate.set(displayed.displayedStartDate, arr);
-    });
-    filteredByDate.forEach((arr) => arr.sort(sortEventsForCell));
     const days = dates.map((date) => {
       const d = parseISODate(date);
       return {
         date,
         label: String(d.getDate()),
         weekday: DOW_SHORT[d.getDay()],
-        events: filteredByDate.get(date) ?? [],
+        events: exportGridData.get(date) ?? [],
       };
     });
     const padded: ((typeof days)[0] | null)[] = [
@@ -432,10 +405,9 @@ export const GridView = () => {
     }
     return weeks;
   }, [
-    exportFilteredEvents,
+    exportGridData,
     exportUiActive,
     getExportDateRange,
-    sortEventsForCell,
   ]);
 
   // The interactive grid deliberately receives summaries only. Export retains full records
@@ -565,7 +537,6 @@ export const GridView = () => {
 
   const selectAllExportCategories = () => setExportFilters(prev => ({ ...prev, categoryMode: "all", selectedCategoryIds: [] }));
 
-  const exportRange = getExportDateRange();
   // Validation is derived on every render, so corrected inputs, presets, calendar/year changes,
   // and reopening the options panel can never retain a stale disabled/error state.
   const exportRangeError = validateExportRange(exportRange, year);
@@ -621,6 +592,25 @@ export const GridView = () => {
   };
 
   useEffect(() => {
+    if (!exportOptionsOpen) return;
+    const pointerDown = (event: PointerEvent) => {
+      if (exporting) return;
+      const target = event.target as Node | null;
+      if (target && (exportDialogRef.current?.contains(target) || exportButtonRef.current?.contains(target))) return;
+      setExportOptionsOpen(false);
+    };
+    const keyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !exporting) setExportOptionsOpen(false);
+    };
+    document.addEventListener('pointerdown', pointerDown, true);
+    window.addEventListener('keydown', keyDown);
+    return () => {
+      document.removeEventListener('pointerdown', pointerDown, true);
+      window.removeEventListener('keydown', keyDown);
+    };
+  }, [exportOptionsOpen, exporting]);
+
+  useEffect(() => {
     if (didScrollRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
@@ -673,7 +663,6 @@ export const GridView = () => {
     isTargetedDateExport,
   );
   const focusedGridData = useMemo(() => { const map = new Map<string, readonly GridEventSummary[]>(); gridData.forEach((records, date) => map.set(date, filterGridEventsByCategories(records, focusedCats))); return map; }, [gridData, focusedCats]);
-  const exportGridData = useMemo(() => expandEventsToDateBuckets(exportFilteredEvents, exportRange.start, exportRange.end, categoryRank), [exportFilteredEvents, exportRange.start, exportRange.end, categoryRank]);
 
   // ── Image export (html-to-image renders modern CSS correctly) ──
   // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
@@ -835,12 +824,14 @@ export const GridView = () => {
   };
 
   const openAdd = (date: string) => {
+    cancelPreviewTimers(); setPreviewEvent(null);
     setEditEvent(null);
     setAddDate(date);
     setDetailDate(null);
     setEventSheetOpen(true);
   };
   const openEdit = (evt: Event) => {
+    cancelPreviewTimers(); setPreviewEvent(null);
     setEditEvent(evt);
     setAddDate(null);
     setDetailDate(null);
@@ -1165,11 +1156,11 @@ export const GridView = () => {
                     key={category.id}
                     type="button"
                     onClick={() => toggleExportCategory(category.id)}
-                    className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.categoryMode === "selected" && selectedCategorySet.has(category.id) ? "text-white" : "bg-muted text-muted-foreground"}`}
+                    className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.categoryMode === "selected" && selectedCategorySet.has(category.id) ? "" : "bg-muted text-muted-foreground"}`}
                     style={
                       exportFilters.categoryMode === "selected" &&
                       selectedCategorySet.has(category.id)
-                        ? { backgroundColor: category.color }
+                        ? { backgroundColor: category.color, color: getReadableTextColor(category.color) }
                         : undefined
                     }
                   >
@@ -1502,7 +1493,7 @@ export const GridView = () => {
                                   aria-label={`${evt.title}. Press Enter to open date details.`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setDetailDate(dateStr);
+                                    cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
                                   }}
                                   onPointerEnter={(e) => {
                                     const fullEvent = resolveEventById(
@@ -1548,11 +1539,12 @@ export const GridView = () => {
                                     }
                                     if (e.key === "Enter" || e.key === " ") {
                                       e.preventDefault();
-                                      setDetailDate(dateStr);
+                                      cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
                                     }
                                   }}
                                   style={{
                                     backgroundColor: evt.color ?? undefined,
+                                    color: getReadableTextColor(evt.color),
                                     height: isExpandedExport
                                       ? EVENT_PILL_H
                                       : 10,
@@ -1562,14 +1554,14 @@ export const GridView = () => {
                                 >
                                   {evt.startTime && (
                                     <span
-                                      className="text-white/80 shrink-0 tabular-nums"
+                                      className="shrink-0 tabular-nums"
                                       style={{ fontSize: 7, lineHeight: 1 }}
                                     >
                                       {evt.startTime}
                                     </span>
                                   )}
                                   <span
-                                    className="text-white font-semibold truncate"
+                                    className="font-semibold truncate"
                                     style={{ fontSize: 8, lineHeight: 1 }}
                                   >
                                     {evt.title}
@@ -1582,7 +1574,7 @@ export const GridView = () => {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    setDetailDate(dateStr);
+                                    cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
                                   }}
                                   aria-label={denseDay.overflowLabel}
                                   className="text-[7px] font-bold px-1 text-left"
@@ -1689,18 +1681,18 @@ export const GridView = () => {
                               <div
                                 key={evt.id}
                                 className="flex items-center gap-1 overflow-hidden rounded-md px-1.5 py-1"
-                                style={{ backgroundColor: evt.color }}
+                                style={{ backgroundColor: evt.color ?? undefined, color: getReadableTextColor(evt.color) }}
                               >
                                 {evt.startTime && (
                                   <span
-                                    className="shrink-0 tabular-nums text-white/80"
+                                    className="shrink-0 tabular-nums"
                                     style={{ fontSize: 9, lineHeight: 1.1 }}
                                   >
                                     {evt.startTime}
                                   </span>
                                 )}
                                 <span
-                                  className="truncate font-bold text-white"
+                                  className="truncate font-bold"
                                   style={{ fontSize: 10, lineHeight: 1.1 }}
                                 >
                                   {evt.title}

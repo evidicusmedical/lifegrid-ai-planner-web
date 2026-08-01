@@ -9,3 +9,9 @@
 - [x] Palette contains 32 named unique colors and passes the CIE76 distance contract.
 - [x] Typecheck, 100 unit/integration tests, build, and diff check pass.
 - [ ] Playwright browsers and physical desktop/mobile/iPhone verification remain environment-dependent.
+- [x] Targeted image export consumes the authoritative expanded export date buckets.
+- [x] AI Event additions/explicit time updates canonicalize to All day or Timed with one warning.
+- [x] Event-only Project deletion displays assignment handling and accurate counts.
+- [x] All three Settings managers share one stable-ID Up/Down control.
+- [x] Colored text surfaces dynamically select WCAG-readable black or white foreground.
+- [x] Desktop and compact Export panels share document-level outside/Escape dismissal.

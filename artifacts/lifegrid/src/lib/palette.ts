@@ -15,6 +15,25 @@ export const normalizedPaletteIsUnique = (colors: readonly string[] = CORE_COLOR
 export const paletteFamiliesAreDistinct = () => new Set(CORE_COLOR_FAMILIES).size === CORE_COLOR_PALETTE.length;
 export const paletteWithCurrentColor = (current?: string | null) => current && !CORE_COLOR_PALETTE.some(color => color.toLowerCase() === current.toLowerCase()) ? [current, ...CORE_COLOR_PALETTE] : [...CORE_COLOR_PALETTE];
 
+const relativeLuminance = (hex: string) => {
+  const channels = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4);
+  return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+};
+/** WCAG relative luminance; malformed colors safely fall back to white text. */
+export const getReadableTextColor = (backgroundHex?: string | null): '#000000' | '#ffffff' => {
+  if (!backgroundHex || !/^#[0-9a-f]{6}$/i.test(backgroundHex)) return '#ffffff';
+  const luminance = relativeLuminance(backgroundHex);
+  const blackContrast = (luminance + .05) / .05;
+  const whiteContrast = 1.05 / (luminance + .05);
+  return blackContrast >= whiteContrast ? '#000000' : '#ffffff';
+};
+export const readableContrastRatio = (backgroundHex: string) => {
+  if (!/^#[0-9a-f]{6}$/i.test(backgroundHex)) return 1;
+  const luminance = relativeLuminance(backgroundHex);
+  return getReadableTextColor(backgroundHex) === '#000000' ? (luminance + .05) / .05 : 1.05 / (luminance + .05);
+};
+
 const lab = (hex: string) => {
   const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v > .04045 ? ((v + .055) / 1.055) ** 2.4 : v / 12.92);
   const x = (rgb[0] * .4124 + rgb[1] * .3576 + rgb[2] * .1805) / .95047;

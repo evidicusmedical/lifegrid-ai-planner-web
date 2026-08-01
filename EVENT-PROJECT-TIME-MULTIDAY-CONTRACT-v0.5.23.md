@@ -5,3 +5,5 @@ Event `projectId` is optional and canonical clearing is `null`; preflight accept
 Editors expose All day and Timed. Editing legacy approximate normalizes to Timed; unknown normalizes to All day. Person schedules use the same shared boundary, require both times for Timed, clear both for All day, and untouched stored records are never rewritten.
 
 A canonical multi-day Event remains one source record with inclusive `date`/`endDate`. Grid, Day Detail, annual export, and targeted export expand display occurrences only; Repeat remains separately materialized.
+
+Targeted export clips display expansion to the requested interval while retaining the source Event ID. Project deletion descriptions and controls count and update direct Event assignments even when no Task uses the Project.

@@ -29,7 +29,7 @@ Timed Event add: {"id":"evt-example-unit-checkin","date":"2026-07-21","endDate":
 All-day Event add: {"id":"evt-example-day","date":"2026-07-22","endDate":"2026-07-22","title":"Fictional planning day","category":"other","timeStatus":"all-day","startTime":null,"endTime":null,"color":"#6b7280","notes":null,"displayPriority":4,"showInGrid":true,"showInExport":true,"eventKind":"day-type","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
 Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Every new projectId requires its Project in current context or projects.add. Legacy parentTaskId, linkedEventIds, and linkedTaskIds in exported context are read-only: never add or modify them. Use category for classification, projectId for workstream grouping, and notes, schedulingNotes, aiNotes, or sourceNotes for dependency context.
 
-Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every child dependency has an included parent; all proposal IDs are unique; all linked IDs resolve; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
+Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every Project dependency is present; all proposal IDs are unique; legacy hard links are treated as read-only and ignored when proposed; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
 export const universalSchema = aiPromptContract;
 
 export const generateUniversalStarterPrompt = () => `
@@ -1100,10 +1100,10 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
       });
     }
     result.events = {
-      add:    normalizeEvents(parsed.events.add ?? [], validCats, colorMap),
+      add:    normalizeEvents(parsed.events.add ?? [], validCats, colorMap, warnings),
       update: updateArr
         .filter((u: any) => u && typeof u.id === 'string')
-        .map((u: any) => normalizeEventUpdate(u, validCats, colorMap)),
+        .map((u: any) => normalizeEventUpdate(u, validCats, colorMap, warnings)),
       delete: deleteArr,
     };
     if (patchVersion === 4) {
@@ -1195,7 +1195,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     );
   }
 
-  if (warnings.length > 0) result.warnings = warnings;
+  if (warnings.length > 0) result.warnings = [...new Set(warnings)];
   return result;
 };
 
@@ -1207,16 +1207,16 @@ const VALID_TRIAGE_STATUS = new Set<TaskTriageStatus>(['ready', 'needs-review', 
 const VALID_EVENT_PRIORITY = new Set<EventDisplayPriority>([1, 2, 3, 4, 5]);
 const VALID_EVENT_KIND = EVENT_KIND_SET;
 const VALID_TIME_STATUS = new Set(['all-day', 'timed', 'unknown', 'approximate']);
-const normalizeTimeStatus = (raw: any, id: string, startTime: string | null, endTime: string | null) => {
-  if (raw !== undefined) {
-    if (!VALID_TIME_STATUS.has(raw)) throw new Error(`Invalid v4 event ${id} at events.timeStatus: expected one of all-day, timed, unknown, approximate. Correct timeStatus and return the complete record.`);
-    return raw as Event['timeStatus'];
-  }
-  // Legacy patches without this field infer timed only from a complete clock pair.
-  return startTime && endTime ? 'timed' : 'unknown';
+const AI_TIME_WARNING = 'AI Event time types were normalized to All day or Timed.';
+const normalizeTimeStatus = (raw: any, id: string, startTime: string | null, endTime: string | null, warnings: string[]) => {
+  if (raw !== undefined && !VALID_TIME_STATUS.has(raw)) throw new Error(`Invalid v4 event ${id} at events.timeStatus: expected all-day or timed. Correct timeStatus and return the complete record.`);
+  if (raw === 'approximate' || raw === 'unknown') warnings.push(AI_TIME_WARNING);
+  if (raw === 'timed' || raw === 'approximate') return 'timed' as const;
+  if (raw === 'all-day' || raw === 'unknown') return 'all-day' as const;
+  return startTime && endTime ? 'timed' as const : 'all-day' as const;
 };
 
-function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>): Event[] {
+function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<string, string>, warnings: string[]): Event[] {
   if (!Array.isArray(arr)) return [];
   return arr
     .filter(e => e && typeof e === 'object')
@@ -1227,6 +1227,7 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
       if (!date) return null;
       const id = String(e.id ?? `imp-evt-${Date.now()}-${i}`);
       const startTime = fixTime(e.startTime), endTime = fixTime(e.endTime);
+      const timeStatus = normalizeTimeStatus(e.timeStatus, id, startTime, endTime, warnings);
       return {
         id,
         date,
@@ -1234,9 +1235,9 @@ function normalizeEvents(arr: any[], validCats: Set<string>, colorMap: Record<st
         title:     String(e.title ?? ''),
         category:  cat,
         projectId: typeof e.projectId === 'string' ? e.projectId : null,
-        timeStatus: normalizeTimeStatus(e.timeStatus, id, startTime, endTime),
-        startTime,
-        endTime,
+        timeStatus,
+        startTime: timeStatus === 'all-day' ? null : startTime,
+        endTime: timeStatus === 'all-day' ? null : endTime,
         color:     e.color ?? colorMap[cat] ?? '#6b7280',
         notes:     e.notes ?? null,
         displayPriority: VALID_EVENT_PRIORITY.has(Number(e.displayPriority) as EventDisplayPriority)
@@ -1282,7 +1283,7 @@ function normalizeIds(arr: any[]): string[] {
 }
 
 function normalizeEventUpdate(
-  u: any, validCats: Set<string>, colorMap: Record<string, string>
+  u: any, validCats: Set<string>, colorMap: Record<string, string>, warnings: string[]
 ): { id: string } & Partial<Event> {
   const out: any = { id: String(u.id) };
   if (u.date !== undefined) { const d = fixDate(String(u.date)); if (d) out.date = d; }
@@ -1295,7 +1296,7 @@ function normalizeEventUpdate(
   if (u.color    !== undefined) out.color = String(u.color);
   if ('startTime' in u) out.startTime = fixTime(u.startTime);
   if ('endTime'   in u) out.endTime   = fixTime(u.endTime);
-  if ('timeStatus' in u) out.timeStatus = normalizeTimeStatus(u.timeStatus, out.id, out.startTime ?? null, out.endTime ?? null);
+  if ('timeStatus' in u) { out.timeStatus = normalizeTimeStatus(u.timeStatus, out.id, out.startTime ?? null, out.endTime ?? null, warnings); if (out.timeStatus === 'all-day') { out.startTime = null; out.endTime = null; } }
   if ('notes'     in u) out.notes = u.notes ?? null;
   if ('displayPriority' in u && VALID_EVENT_PRIORITY.has(Number(u.displayPriority) as EventDisplayPriority)) out.displayPriority = Number(u.displayPriority);
   if ('showInGrid' in u) out.showInGrid = Boolean(u.showInGrid);

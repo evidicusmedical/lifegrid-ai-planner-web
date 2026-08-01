@@ -15,7 +15,6 @@ jobs:
       - run: pnpm --filter @workspace/lifegrid exec playwright install --with-deps chromium
       - run: pnpm --filter @workspace/lifegrid test:e2e:smoke
   cross-browser:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

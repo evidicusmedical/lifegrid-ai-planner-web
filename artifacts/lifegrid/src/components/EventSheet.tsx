@@ -20,7 +20,7 @@ import { temporalErrors } from '../lib/temporal';
 import { X } from 'lucide-react';
 import { TemporalFields } from './TemporalFields';
 import { eventProjectTags } from '../lib/projectOperations';
-import { normalizeEditableTimeStatus } from '../lib/gridModel';
+import { normalizeEditableTimeStatus, normalizeEventTimeForSave } from '../lib/gridModel';
 import { isNotesOnlyRecurrenceEdit, repeatedOccurrenceRange, resolveAllDayEditRange, type RecurringNotesScope } from '../lib/recurrenceEdit';
 import { paletteWithCurrentColor } from '../lib/palette';
 
@@ -205,18 +205,19 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
   }, [notesOnlyEdit, notesScopeWasChosen]);
 
   const onSubmit = (data: FormData) => {
-    const normalizedTimeStatus = normalizeEditableTimeStatus(timeStatus);
-    const clocked = normalizedTimeStatus === 'timed';
+    let normalizedTime;
+    try { normalizedTime = normalizeEventTimeForSave(timeStatus, data.startTime, data.endTime); }
+    catch (error) { form.setError('startTime', { message: error instanceof Error ? error.message : 'Enter valid start and end times.' }); return; }
     const allDayRange = timeStatus === 'all-day' && initialData
       ? resolveAllDayEditRange(data.date, temporalEndDate, initialData, endDateWasEdited)
       : { date: data.date, endDate: temporalEndDate || data.date };
     const base = {
       ...data,
       ...allDayRange,
-      timeStatus: normalizedTimeStatus,
+      timeStatus: normalizedTime.timeStatus,
       projectId: data.projectId ?? null,
-      startTime: clocked ? (data.startTime || null) : null,
-      endTime: clocked ? (data.endTime || null) : null,
+      startTime: normalizedTime.startTime,
+      endTime: normalizedTime.endTime,
       timeZone: initialData?.timeZone ?? null,
       timeZoneMode: initialData?.timeZoneMode ?? null,
       notes: data.notes || null,
@@ -254,7 +255,8 @@ export const EventSheet: React.FC<EventSheetProps> = ({ isOpen, onClose, initial
     }
 
     if (multiDay && endDate && endDate >= data.date) {
-      addEvent({ id: crypto.randomUUID(), ...base, date: data.date, endDate, startTime: null, endTime: null, timeStatus: 'all-day' });
+      // Multi-day owns the inclusive calendar span; the normalized base owns clock semantics.
+      addEvent({ id: crypto.randomUUID(), ...base, date: data.date, endDate });
     } else if (repeat && repeatCount > 1) {
       const gid = crypto.randomUUID();
       for (let i = 0; i < repeatCount; i++) {

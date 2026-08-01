@@ -512,8 +512,15 @@ export const GridView = () => {
     });
   const dim = (catId: string) => isFocusActive && !focusedCats.has(catId);
 
-  const setDatePreset = (datePreset: ExportDatePreset) => {
-    setExportFilters((prev) => ({ ...prev, datePreset }));
+  const applyExportDatePreset = (datePreset: ExportDatePreset) => {
+    const sensibleDefaultStart = detailDate ?? todayStr;
+    const sensibleDefaultEnd = toISODate(addDays(parseISODate(sensibleDefaultStart), 6));
+    setExportFilters((previous) => ({
+      ...previous,
+      datePreset,
+      customStart: datePreset === "custom" ? previous.customStart || sensibleDefaultStart : previous.customStart,
+      customEnd: datePreset === "custom" ? previous.customEnd || sensibleDefaultEnd : previous.customEnd,
+    }));
   };
   const resetExportRange = () =>
     setExportFilters((prev) => ({
@@ -1087,7 +1094,8 @@ export const GridView = () => {
                     key={id}
                     type="button"
                     data-testid={`export-date-preset-${id}`}
-                    onClick={() => setDatePreset(id as ExportDatePreset)}
+                    aria-pressed={exportFilters.datePreset === id}
+                    onClick={() => applyExportDatePreset(id as ExportDatePreset)}
                     className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.datePreset === id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}
                   >
                     {label}

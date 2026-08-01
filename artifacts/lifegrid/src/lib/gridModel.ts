@@ -18,6 +18,11 @@ const shiftDate = (value: string, days: number) => {
 /** v0.5.23 compatibility boundary: editors normalize legacy states, readers do not mutate them. */
 export const normalizeEditableTimeStatus = (status: TimeStatus): 'all-day' | 'timed' =>
   status === 'timed' || status === 'approximate' ? 'timed' : 'all-day';
+export const normalizeEventTimeForSave = (status: TimeStatus, startTime?: string | null, endTime?: string | null) => {
+  const timeStatus = normalizeEditableTimeStatus(status);
+  if (timeStatus === 'timed' && (!startTime || !endTime)) throw new Error('Timed events require both a start and end time.');
+  return { timeStatus, startTime: timeStatus === 'timed' ? startTime! : null, endTime: timeStatus === 'timed' ? endTime! : null };
+};
 export const isGridTimed = (status: TimeStatus) => status === 'timed' || status === 'approximate';
 
 export const eventIntersectsDate = (event: Pick<Event, 'date'|'endDate'>, date: string) => {

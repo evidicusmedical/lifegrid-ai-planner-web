@@ -1,5 +1,5 @@
 import test from 'node:test'; import assert from 'node:assert/strict';
-import { compareGridEvents, expandGridEventRange, normalizeEditableTimeStatus, toGridEventSummary } from '../.test-build/lib/gridModel.js';
+import { compareGridEvents, expandGridEventRange, normalizeEditableTimeStatus, normalizeEventTimeForSave, toGridEventSummary } from '../.test-build/lib/gridModel.js';
 import { CORE_COLOR_PALETTE, CORE_COLOR_FAMILIES, normalizedPaletteIsUnique, paletteWithCurrentColor, minimumPaletteCIE76 } from '../.test-build/lib/palette.js';
 import { filterTasksByStatus } from '../.test-build/lib/taskWorkflow.js';
 import { planProjectTagDeletion } from '../.test-build/lib/projectOperations.js';
@@ -45,3 +45,6 @@ test('AI timed additions require a complete pair and explicit updates canonicali
 test('palette foregrounds satisfy WCAG contrast and malformed input is safe', async()=>{const {getReadableTextColor,readableContrastRatio}=await import('../.test-build/lib/palette.js');for(const color of CORE_COLOR_PALETTE)assert.ok(readableContrastRatio(color)>=4.5,`${color} contrast`);assert.equal(getReadableTextColor('#ffffff'),'#000000');assert.equal(getReadableTextColor('#000000'),'#ffffff');for(const color of ['#ffff1a','#1affff','#d6d2a9'])assert.equal(getReadableTextColor(color),'#000000');assert.equal(getReadableTextColor('bad'),'#ffffff');});
 
 test('targeted export buckets clip spanning Events at both boundaries in comparator order', async()=>{const {expandEventsToDateBuckets}=await import('../.test-build/lib/gridModel.js');const source=[event('before',{date:'2026-01-30',endDate:'2026-02-02'}),event('after',{date:'2026-02-03',endDate:'2026-02-09'}),event('cover',{date:'2026-01-01',endDate:'2026-12-31',displayPriority:5}),event('timed',{date:'2026-02-03',timeStatus:'timed',startTime:'09:00',endTime:'10:00'})],before=structuredClone(source),b=expandEventsToDateBuckets(source,'2026-02-01','2026-02-05',new Map([['c1',0]]));assert.deepEqual(b.get('2026-02-01').map(x=>x.id),['before','cover']);assert.deepEqual(b.get('2026-02-03').map(x=>x.id),['timed','after','cover']);assert.deepEqual(b.get('2026-02-05').map(x=>x.id),['after','cover']);assert.equal(b.has('2026-01-31'),false);assert.deepEqual(source,before);});
+
+
+test('multi-day save time normalization preserves all-day and timed contracts',()=>{assert.deepEqual(normalizeEventTimeForSave('all-day','09:00','10:00'),{timeStatus:'all-day',startTime:null,endTime:null});assert.deepEqual(normalizeEventTimeForSave('timed','09:00','10:00'),{timeStatus:'timed',startTime:'09:00',endTime:'10:00'});assert.throws(()=>normalizeEventTimeForSave('timed','09:00',null),/require both/);});

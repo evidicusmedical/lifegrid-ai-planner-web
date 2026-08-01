@@ -34,3 +34,11 @@
 - [x] Chromium CI now runs smoke plus the v0.5.23 suite; Firefox and WebKit run as independent fail-fast-disabled matrix entries.
 - [x] Unit/integration qualification: 106 passed, 0 failed, 0 skipped; typecheck and build pass.
 - [ ] Local browser installation was blocked by apt proxy HTTP 403. Authoritative Chromium/Firefox/WebKit/mobile and remote CI/Vercel conclusions require the pushed GitHub workflow.
+
+## Merge-blocking final correction
+- [x] Custom Export uses one authoritative preset handler, initializes/restores valid values, exposes pressed state, and renders inputs in the still-open panel.
+- [x] Targeted export tests separately diagnose preset/input state and real second/third-day buckets while retaining one source Event.
+- [x] Timed Multi-day creation preserves normalized start/end times and its inclusive calendar end date; All-day clears clock values.
+- [x] Invalid Timed saves are blocked by shared normalization; Repeat behavior and mutual exclusion remain unchanged.
+- [x] Unit/integration qualification: 107 passed, 0 failed, 0 skipped; typecheck and build pass.
+- [ ] New remote Chromium/Firefox/WebKit and Vercel conclusions require successful push; the prior reviewed run was 8/8 smoke and 7/8, 15/16, 15/16 respectively.

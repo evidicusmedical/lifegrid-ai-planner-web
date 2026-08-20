@@ -217,6 +217,7 @@ export const GridView = () => {
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<"idle" | "generating" | "ready" | "error">("idle");
   const [exportRenderer, setExportRenderer] = useState<GridImageRendererName | null>(null);
+  const [exportErrorCode, setExportErrorCode] = useState("");
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [shareAvailable, setShareAvailable] = useState(false);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
@@ -749,7 +750,9 @@ export const GridView = () => {
     if (feasibility.unsafe) { toast.error(`${feasibility.reason} Use Visible, select fewer categories, choose a shorter range, or use Fast.`, { id: "export" }); return; }
     setExporting(true);
     setExportStatus("generating");
-    setExportRenderer(null);
+    const firefoxTargeted = useTargetedLayout && /firefox/i.test(navigator.userAgent);
+    setExportRenderer(firefoxTargeted ? "html2canvas" : "html-to-image");
+    setExportErrorCode("");
     toast.loading(
       `Generating ${exportMode === "expanded" ? "expanded" : "visible"} ${exportPixelRatio === 1 ? "compact" : "sharp"} grid image…`,
       { id: "export" },
@@ -774,6 +777,7 @@ export const GridView = () => {
       }
       toast.error("Grid image capture is unavailable. Close Export and try again.", { id: "export" });
       setExportStatus("error");
+      setExportErrorCode(captureNode ? "CAPTURE_NODE_ZERO_SIZE" : "CAPTURE_NODE_UNAVAILABLE");
       setExporting(false);
       return;
     }
@@ -791,7 +795,7 @@ export const GridView = () => {
       width: captureNode.scrollWidth,
       height: captureNode.scrollHeight,
       targeted: useTargetedLayout,
-      firefox: /firefox/i.test(navigator.userAgent),
+      firefox: firefoxTargeted,
       safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
     };
 
@@ -818,6 +822,12 @@ export const GridView = () => {
       toast.success("Grid image ready — save or share it", { id: "export" });
     } catch (err) {
       setExportStatus("error");
+      const rendererErrorCode = err instanceof Error ? err.message : "HTML2CANVAS_RENDER_ERROR";
+      const safeErrorCodes = new Set([
+        "HTML2CANVAS_TIMEOUT", "HTML2CANVAS_RENDER_ERROR", "INVALID_PNG_OUTPUT",
+        "EMPTY_PNG_BLOB", "INVALID_PNG_MIME", "CAPTURE_NODE_UNAVAILABLE", "CAPTURE_NODE_ZERO_SIZE",
+      ]);
+      setExportErrorCode(safeErrorCodes.has(rendererErrorCode) ? rendererErrorCode : "INVALID_PNG_OUTPUT");
       console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
       toast.error(
         err instanceof Error && err.message === "EMPTY_PNG_BLOB"
@@ -1815,6 +1825,7 @@ export const GridView = () => {
         data-testid="grid-export-status"
         data-export-status={exportStatus}
         data-export-renderer={exportRenderer ?? ""}
+        data-export-error-code={exportErrorCode}
       >{exportStatus}</span>
 
       {/* Add-event FAB */}
@@ -1868,12 +1879,13 @@ export const GridView = () => {
       {/* Export image preview — iPhone-friendly (long-press to save) */}
       {exportUrl && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex flex-col"
+          className="fixed inset-0 z-[100] bg-black/80 flex flex-col"
           onClick={() => {
             setExportUrl(null);
             setShareAvailable(false);
             setExportStatus("idle");
             setExportRenderer(null);
+            setExportErrorCode("");
           }}
           data-testid="export-preview"
           data-export-renderer={exportRenderer ?? ""}
@@ -1886,6 +1898,7 @@ export const GridView = () => {
                 setShareAvailable(false);
                 setExportStatus("idle");
                 setExportRenderer(null);
+                setExportErrorCode("");
               }}
               className="p-1.5 rounded-lg hover:bg-white/10"
               data-testid="button-export-close"

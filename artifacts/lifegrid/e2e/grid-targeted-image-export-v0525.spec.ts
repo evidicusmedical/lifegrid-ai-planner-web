@@ -122,6 +122,13 @@ const selectPreset = async (page: Page, preset: string, start: string, end: stri
 
 const generateRealPng = async (page: Page) => {
   await page.getByTestId('button-export-generate').click();
+  const statusNode = page.getByTestId('grid-export-status');
+  await expect.poll(() => statusNode.getAttribute('data-export-status')).toMatch(/^(ready|error)$/);
+  const status = await statusNode.getAttribute('data-export-status');
+  if (status === 'error') {
+    const errorCode = await statusNode.getAttribute('data-export-error-code');
+    throw new Error(`Grid image generation failed: ${errorCode || 'UNKNOWN_RENDER_ERROR'}`);
+  }
   const image = page.getByTestId('export-preview-image');
   await expect(image).toBeVisible({ timeout: 30_000 });
   await expect.poll(() => image.evaluate((node: HTMLImageElement) => ({
@@ -230,8 +237,16 @@ test('empty targeted range retains its requested cells and generates a real PNG'
 test('Next 7 downloads a non-empty PNG with a range filename @chromium-native', async ({ page }) => {
   await selectPreset(page, 'next7', TODAY, at(6));
   await generateRealPng(page);
+  const button = page.getByTestId('button-export-download');
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  expect(await button.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    const target = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return target === node || node.contains(target);
+  })).toBe(true);
   const pendingDownload = page.waitForEvent('download');
-  await page.getByTestId('button-export-download').click();
+  await button.click();
   const download = await pendingDownload;
   expect(download.suggestedFilename()).toBe(`lifegrid-jon-s-calendar-${TODAY}-${at(6)}.png`);
   const path = await download.path();
@@ -239,4 +254,31 @@ test('Next 7 downloads a non-empty PNG with a range filename @chromium-native', 
   const bytes = await readFile(path!);
   expect(bytes.length).toBeGreaterThan(8);
   expect([...bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+});
+
+test('narrow preview keeps its real Download action above persistent navigation @chromium-native', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await selectPreset(page, 'next7', TODAY, at(6));
+  await generateRealPng(page);
+  const button = page.getByTestId('button-export-download');
+  const nav = page.getByTestId('bottom-nav');
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+  await expect(nav).toBeVisible();
+  const layout = await button.evaluate((buttonNode) => {
+    const navNode = document.querySelector<HTMLElement>('[data-testid="bottom-nav"]');
+    if (!navNode) throw new Error('bottom-nav unavailable');
+    const buttonRect = buttonNode.getBoundingClientRect();
+    const navRect = navNode.getBoundingClientRect();
+    const hit = document.elementFromPoint(buttonRect.left + buttonRect.width / 2, buttonRect.top + buttonRect.height / 2);
+    return {
+      unobstructed: hit === buttonNode || buttonNode.contains(hit),
+      separatedOrAbove: buttonRect.bottom <= navRect.top || Number(getComputedStyle(buttonNode.closest('[data-testid="export-preview"]')!).zIndex) > Number(getComputedStyle(navNode).zIndex),
+    };
+  });
+  expect(layout).toEqual({ unobstructed: true, separatedOrAbove: true });
+  const pendingDownload = page.waitForEvent('download');
+  await button.click();
+  const download = await pendingDownload;
+  expect(download.suggestedFilename()).toBe(`lifegrid-jon-s-calendar-${TODAY}-${at(6)}.png`);
 });

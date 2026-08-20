@@ -1185,6 +1185,7 @@ export const GridView = () => {
                 {categories.map((category) => (
                   <button
                     key={category.id}
+                    data-testid={`export-category-${category.id}`}
                     type="button"
                     onClick={() => toggleExportCategory(category.id)}
                     className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.categoryMode === "selected" && selectedCategorySet.has(category.id) ? "" : "bg-muted text-muted-foreground"}`}

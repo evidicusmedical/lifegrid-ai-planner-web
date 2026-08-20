@@ -165,7 +165,7 @@ test('Custom clips a multi-day Event and keeps Category controls authoritative',
   await page.getByTestId('export-date-preset-custom').click();
   await page.getByTestId('input-export-start').fill(at(1));
   await page.getByTestId('input-export-end').fill(at(2));
-  await page.getByRole('button', { name: 'Work', exact: true }).click();
+  await page.getByTestId('export-category-work').click();
   await expect(page.getByTestId('export-filter-summary')).toContainText(`${at(1)} → ${at(2)} · 1 tag · All projects`);
   const target = page.getByTestId('targeted-export-grid');
   await expect(target.getByTestId(`targeted-export-event-${at(1)}-multi-day`)).toHaveCount(1);

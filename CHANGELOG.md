@@ -159,3 +159,8 @@ Settings and exports
 - Repeating grid events are generated as individual normal event records at creation time; there is still no rule-based recurring-event engine or "edit this and future" workflow.
 - Large full-calendar prompts may still exceed or slow some external AI model contexts; users should narrow the range or disable optional context when needed.
 - Offline/PWA behavior and JSON backup/import/export behavior are unchanged.
+
+## v0.5.25
+- Made targeted Grid PNG capture deterministic at normal coordinates and independent of the annual Grid table.
+- Anchored Next 7/14/30 to today, allowed targeted cross-year ranges up to 45 days, respected `showInExport`, and enabled empty schedule images.
+- Added unit and real Chromium/Firefox/WebKit image-generation qualification plus PNG download signature coverage.

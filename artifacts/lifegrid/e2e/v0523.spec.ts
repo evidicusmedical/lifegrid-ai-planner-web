@@ -32,7 +32,60 @@ test('desktop hover transfers, scrolls, selects only preview, exits, and Escape 
 
 test('keyboard focus opens preview and focus transfer keeps it open',async({page})=>{await page.goto('/');const pill=page.getByTestId('event-pill-e2e-multiday').first();await pill.focus();const preview=page.getByTestId('grid-event-preview');await expect(preview).toBeVisible();await preview.focus();await page.waitForTimeout(220);await expect(preview).toBeVisible();});
 
-test('second-day Day Detail edits original source Event',async({page})=>{await page.goto('/');await page.getByTestId('event-pill-e2e-multiday').nth(1).click();await expect(page.getByTestId('day-detail-sheet')).toBeVisible();await page.getByTestId('day-event-e2e-multiday').click();await expect(page.getByTestId('event-sheet')).toContainText('Edit Event');});
+test('second-day Day Detail edits original source Event',async({page})=>{
+  await page.goto('/');
+  const secondDate=dateAt(1);
+  const secondDayCell=page.getByTestId(`cell-${secondDate}`);
+  await expect(secondDayCell).toBeVisible();
+  const secondDayPill=secondDayCell.getByTestId('event-pill-e2e-multiday');
+  await expect(secondDayPill).toHaveCount(1);
+  await expect(secondDayPill).toHaveAttribute('data-occurrence-date',secondDate);
+  await secondDayPill.scrollIntoViewIfNeeded();
+  await secondDayPill.click();
+  const grid=page.getByTestId('grid-content');
+  await expect(grid).toHaveAttribute('data-detail-date',secondDate);
+  await expect(grid).toHaveAttribute('data-day-detail-open','true');
+  const detail=page.getByTestId('day-detail-sheet');
+  await expect(detail).toBeVisible();
+  const date=new Date(`${secondDate}T12:00:00`),day=date.getDate(),mod100=day%100;
+  const suffix=mod100>=11&&mod100<=13?'th':day%10===1?'st':day%10===2?'nd':day%10===3?'rd':'th';
+  const expectedDate=`${date.toLocaleDateString('en-US',{weekday:'long'})}, ${date.toLocaleDateString('en-US',{month:'long'})} ${day}${suffix}`;
+  await expect(detail).toContainText(expectedDate);
+  await page.getByTestId('day-event-e2e-multiday').click();
+  await expect(page.getByTestId('event-sheet')).toContainText('Edit Event');
+  await expect(grid).toHaveAttribute('data-day-detail-open','false');
+  await expect.poll(()=>page.evaluate(()=>{const events=JSON.parse(localStorage.getItem('lifegrid_store_v5')!).calendars[0].data.events.filter((event:any)=>event.id==='e2e-multiday');return events.map((event:any)=>({date:event.date,endDate:event.endDate}));})).toEqual([{date:dateAt(0),endDate:dateAt(2)}]);
+});
+
+test('exact date cell controls explicit Day Detail open state',async({page})=>{
+  await page.goto('/');
+  const selectedDate=dateAt(5),grid=page.getByTestId('grid-content');
+  const cell=page.getByTestId(`cell-${selectedDate}`);
+  await expect(cell).toBeVisible();
+  await cell.click();
+  await expect(grid).toHaveAttribute('data-detail-date',selectedDate);
+  await expect(grid).toHaveAttribute('data-day-detail-open','true');
+  const detail=page.getByTestId('day-detail-sheet');
+  await expect(detail).toBeVisible();
+  await detail.getByRole('button',{name:'Close'}).click();
+  await expect(grid).toHaveAttribute('data-day-detail-open','false');
+  await expect(grid).toHaveAttribute('data-detail-date','');
+});
+
+test('delayed hover preview cannot reopen after Event pill activation',async({page})=>{
+  await emulateFinePointer(page);await page.goto('/');
+  const secondDate=dateAt(1),grid=page.getByTestId('grid-content');
+  const pill=page.getByTestId(`cell-${secondDate}`).getByTestId('event-pill-e2e-multiday');
+  await pill.hover();
+  await expect(page.getByTestId('grid-event-preview')).toBeVisible();
+  await pill.click();
+  await expect(grid).toHaveAttribute('data-detail-date',secondDate);
+  await expect(grid).toHaveAttribute('data-day-detail-open','true');
+  await expect(page.getByTestId('day-detail-sheet')).toBeVisible();
+  await expect(page.getByTestId('grid-event-preview')).toBeHidden();
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('grid-event-preview')).toBeHidden();
+});
 
 test('Event and Person schedule editors expose exactly All day and Timed',async({page})=>{await page.goto('/');await page.getByTestId('button-add-event').click();let sheet=page.getByTestId('event-sheet');let controls=sheet.getByTestId('event-time-type');await expect(controls).toHaveCount(2);await expect(controls).toHaveText(['All day','Timed']);await expect(sheet.getByTestId('event-time-type').filter({hasText:/Approximate|Unknown/})).toHaveCount(0);await sheet.getByTestId('button-sheet-close').click();await page.getByRole('button',{name:'People'}).click();await page.getByTestId('add-person-event-person').click();sheet=page.getByTestId('person-event-sheet');controls=sheet.getByTestId('person-schedule-time-type');await expect(controls).toHaveCount(2);await expect(controls).toHaveText(['All day','Timed']);await expect(controls.filter({hasText:/Approximate|Unknown/})).toHaveCount(0);await sheet.getByTestId('button-sheet-close').click();await expect(sheet).toBeHidden();});
 

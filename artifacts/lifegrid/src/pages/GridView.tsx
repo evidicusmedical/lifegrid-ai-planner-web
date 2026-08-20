@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
+import { createPortal } from "react-dom";
 import { useAppData } from "../context/AppDataContext";
 import { useTheme } from "../context/ThemeContext";
 import { Event, Project, Task } from "../types";
@@ -46,12 +47,15 @@ import {
 } from "../lib/gridPublication";
 import {
   getDateTemporalState,
+  filterEventsForGridExport,
+  resolveExportDateRange,
   validateExportRange,
 } from "../lib/gridAwareness";
 import { getLocalTemporalOccurrence } from "../lib/temporal";
 import { buildGridViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
+import { renderGridPng, type GridImageRendererName } from "../lib/gridImageRenderer";
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
 const MONTHS = [
@@ -206,10 +210,14 @@ export const GridView = () => {
   const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [detailDate, setDetailDate] = useState<string | null>(null);
+  const [dayDetailOpen, setDayDetailOpen] = useState(false);
   const [editEvent, setEditEvent] = useState<Event | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<"idle" | "generating" | "ready" | "error">("idle");
+  const [exportRenderer, setExportRenderer] = useState<GridImageRendererName | null>(null);
+  const [exportErrorCode, setExportErrorCode] = useState("");
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [shareAvailable, setShareAvailable] = useState(false);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
@@ -250,6 +258,8 @@ export const GridView = () => {
   const publicationRef = useRef<HTMLDivElement>(null);
   const previewOpenTimerRef = useRef<number | null>(null);
   const previewCloseTimerRef = useRef<number | null>(null);
+  const eventPointerActivationRef = useRef(false);
+  const eventPointerActivationResetRef = useRef<number | null>(null);
   const didScrollRef = useRef(false);
   const priorGridModelRef = useRef<
     ReturnType<typeof buildGridViewModel> | undefined
@@ -260,6 +270,25 @@ export const GridView = () => {
     if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
     previewOpenTimerRef.current = previewCloseTimerRef.current = null;
   }, []);
+  const finishEventPointerActivation = useCallback(() => {
+    eventPointerActivationRef.current = false;
+    if (eventPointerActivationResetRef.current !== null) {
+      window.clearTimeout(eventPointerActivationResetRef.current);
+      eventPointerActivationResetRef.current = null;
+    }
+  }, []);
+  const beginEventPointerActivation = useCallback(() => {
+    cancelPreviewTimers();
+    setPreviewEvent(null);
+    eventPointerActivationRef.current = true;
+    if (eventPointerActivationResetRef.current !== null) {
+      window.clearTimeout(eventPointerActivationResetRef.current);
+    }
+    eventPointerActivationResetRef.current = window.setTimeout(() => {
+      eventPointerActivationRef.current = false;
+      eventPointerActivationResetRef.current = null;
+    }, 750);
+  }, [cancelPreviewTimers]);
   const keepPreviewOpen = useCallback(() => {
     if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
     previewCloseTimerRef.current = null;
@@ -270,8 +299,25 @@ export const GridView = () => {
     previewOpenTimerRef.current = null;
     previewCloseTimerRef.current = window.setTimeout(() => setPreviewEvent(null), 180);
   }, []);
-  useEffect(() => cancelPreviewTimers, [cancelPreviewTimers]);
-  useEffect(() => { cancelPreviewTimers(); setPreviewEvent(null); }, [activeCalendarId, year, cancelPreviewTimers]);
+  const openDayDetail = useCallback((date: string) => {
+    cancelPreviewTimers();
+    setPreviewEvent(null);
+    setDetailDate(date);
+    setDayDetailOpen(true);
+  }, [cancelPreviewTimers]);
+  const closeDayDetail = useCallback(() => {
+    setDayDetailOpen(false);
+    setDetailDate(null);
+  }, []);
+  useEffect(() => () => {
+    cancelPreviewTimers();
+    finishEventPointerActivation();
+  }, [cancelPreviewTimers, finishEventPointerActivation]);
+  useEffect(() => {
+    cancelPreviewTimers();
+    setPreviewEvent(null);
+    closeDayDetail();
+  }, [activeCalendarId, year, cancelPreviewTimers, closeDayDetail]);
 
   const todayStr = toISODate(today);
   const todayMonth = today.getMonth();
@@ -307,27 +353,18 @@ export const GridView = () => {
   }, [tasks]);
 
   const getExportDateRange = useCallback(() => {
-    if (exportFilters.datePreset === "custom") {
-      return { start: exportFilters.customStart, end: exportFilters.customEnd };
-    }
-    if (exportFilters.datePreset === "current") {
-      return { start: `${year}-01-01`, end: `${year}-12-31` };
-    }
-    const days =
-      exportFilters.datePreset === "next7"
-        ? 7
-        : exportFilters.datePreset === "next14"
-          ? 14
-          : 30;
-    const anchor = detailDate ? parseISODate(detailDate) : today;
-    return { start: toISODate(anchor), end: toISODate(addDays(anchor, days - 1)) };
+    return resolveExportDateRange(
+      exportFilters.datePreset,
+      year,
+      todayStr,
+      exportFilters.customStart,
+      exportFilters.customEnd,
+    );
   }, [
     exportFilters.customEnd,
     exportFilters.customStart,
     exportFilters.datePreset,
-    today,
     todayStr,
-    detailDate,
     year,
   ]);
 
@@ -340,23 +377,13 @@ export const GridView = () => {
     if (!exportUiActive) return [];
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) return [];
-    return events.filter((event) => {
-      if (event.date > end || (event.endDate ?? event.date) < start) return false;
-      if (
-        exportFilters.categoryMode === "selected" &&
-        !selectedCategorySet.has(event.category)
-      )
-        return false;
-      if (exportFilters.projectId !== "all") {
-        const eventProjectIds = getEventProjectIds(
-          event,
-          taskById,
-          tasksByLinkedEvent,
-        );
-        if (!eventProjectIds.has(exportFilters.projectId)) return false;
-      }
-      return true;
-    });
+    return filterEventsForGridExport(
+      events,
+      { start, end },
+      exportFilters.categoryMode === "selected" ? selectedCategorySet : null,
+      exportFilters.projectId === "all" ? null : exportFilters.projectId,
+      event => getEventProjectIds(event, taskById, tasksByLinkedEvent),
+    );
   }, [
     events,
     exportFilters.categoryMode,
@@ -546,7 +573,12 @@ export const GridView = () => {
 
   // Validation is derived on every render, so corrected inputs, presets, calendar/year changes,
   // and reopening the options panel can never retain a stale disabled/error state.
-  const exportRangeError = validateExportRange(exportRange, year);
+  const exportRangeError = validateExportRange(
+    exportRange,
+    year,
+    exportFilters.datePreset !== "current",
+    TARGETED_EXPORT_MAX_DAYS,
+  );
   const isDefaultExportFilter =
     exportFilters.datePreset === "current" &&
     exportFilters.categoryMode === "all" &&
@@ -635,9 +667,9 @@ export const GridView = () => {
 
   const exportFileName =
     `lifegrid-${activeCalendar?.name ?? "calendar"}-${exportRange.start || year}-${exportRange.end || year}.png`.replace(
-      /\s+/g,
+      /[^a-zA-Z0-9._-]+/g,
       "-",
-    );
+    ).replace(/-+/g, "-").toLowerCase();
   const exportLegend = useMemo(
     () =>
       exportUiActive
@@ -671,15 +703,26 @@ export const GridView = () => {
   );
   const focusedGridData = useMemo(() => { const map = new Map<string, readonly GridEventSummary[]>(); gridData.forEach((records, date) => map.set(date, filterGridEventsByCategories(records, focusedCats))); return map; }, [gridData, focusedCats]);
 
+  const getExportCaptureNode = useCallback(
+    () => isTargetedDateExport ? targetedExportRef.current : publicationRef.current,
+    [isTargetedDateExport],
+  );
+
   // ── Image export (html-to-image renders modern CSS correctly) ──
   // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
   // download we render the PNG and show it in an in-app preview the user can
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
-    if (!tableRef.current || !container) return;
     const { start, end } = getExportDateRange();
-    const rangeError = validateExportRange({ start, end }, year);
+    const useTargetedLayout = exportFilters.datePreset !== "current";
+    if (!useTargetedLayout && (!tableRef.current || !container)) {
+      toast.error("The Current Grid capture is not ready. Wait for the Grid to load and try again.", { id: "export" });
+      return;
+    }
+    const rangeError = validateExportRange(
+      { start, end }, year, useTargetedLayout, TARGETED_EXPORT_MAX_DAYS,
+    );
     if (rangeError) {
       toast.error(rangeError, { id: "export" });
       return;
@@ -694,7 +737,7 @@ export const GridView = () => {
       );
       return;
     }
-    if (exportFilteredEvents.length === 0) {
+    if (!useTargetedLayout && exportFilteredEvents.length === 0) {
       const selected = exportFilters.categoryMode === "selected" ? categories.filter(c => selectedCategorySet.has(c.id)).map(c => c.label).join(", ") : "selected";
       toast.error(`No ${selected} events overlap ${start} through ${end}. Choose another range or use Custom.`, {
         id: "export",
@@ -706,64 +749,60 @@ export const GridView = () => {
     const feasibility = estimateExportFeasibility({ width: exportDimensions.width, height: estimatedHeight, pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio, mobile: window.matchMedia("(pointer: coarse)").matches, expanded: exportMode === "expanded", records: exportFilteredEvents.length, maxPerDate });
     if (feasibility.unsafe) { toast.error(`${feasibility.reason} Use Visible, select fewer categories, choose a shorter range, or use Fast.`, { id: "export" }); return; }
     setExporting(true);
+    setExportStatus("generating");
+    const firefoxTargeted = useTargetedLayout && /firefox/i.test(navigator.userAgent);
+    setExportRenderer(firefoxTargeted ? "html2canvas" : "html-to-image");
+    setExportErrorCode("");
     toast.loading(
       `Generating ${exportMode === "expanded" ? "expanded" : "visible"} ${exportPixelRatio === 1 ? "compact" : "sharp"} grid image…`,
       { id: "export" },
     );
 
-    const prevOverflow = container.style.overflow;
-    const prevW = container.style.width;
-    const prevH = container.style.height;
-    const useTargetedLayout = isTargetedDateExport;
-
-    if (!useTargetedLayout) {
+    const prevOverflow = container?.style.overflow ?? "";
+    const prevW = container?.style.width ?? "";
+    const prevH = container?.style.height ?? "";
+    if (!useTargetedLayout && container) {
       container.style.overflow = "visible";
     }
 
     await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
 
-    const captureNode = useTargetedLayout
-      ? targetedExportRef.current
-      : publicationRef.current;
+    const captureNode = getExportCaptureNode();
     if (!captureNode || captureNode.scrollWidth <= 0 || captureNode.scrollHeight <= 0) {
-      toast.error("Export failed — try again", { id: "export" });
+      if (container) {
+        container.style.overflow = prevOverflow;
+        container.style.width = prevW;
+        container.style.height = prevH;
+      }
+      toast.error("Grid image capture is unavailable. Close Export and try again.", { id: "export" });
+      setExportStatus("error");
+      setExportErrorCode(captureNode ? "CAPTURE_NODE_ZERO_SIZE" : "CAPTURE_NODE_UNAVAILABLE");
       setExporting(false);
       return;
     }
 
-    if (!useTargetedLayout) {
+    if (!useTargetedLayout && container) {
       container.style.width = captureNode.scrollWidth + "px";
       container.style.height = captureNode.scrollHeight + "px";
     }
 
     await new Promise(requestAnimationFrame);
 
-    const opts = {
+    const rendererOptions = {
       pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio,
       backgroundColor: theme === "dark" ? "#0d1526" : "#ffffff",
       width: captureNode.scrollWidth,
       height: captureNode.scrollHeight,
-      cacheBust: true,
+      targeted: useTargetedLayout,
+      firefox: firefoxTargeted,
+      safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
     };
 
     try {
-      // Safari frequently renders a blank/partial image on the first pass
-      // (fonts/styles not yet inlined). Rendering a few times fixes it.
-      const isSafari = /^((?!chrome|android).)*safari/i.test(
-        navigator.userAgent,
-      );
-      const { toPng } = await import("html-to-image");
-      let dataUrl = await toPng(captureNode, opts);
-      if (isSafari) {
-        await toPng(captureNode, opts);
-        dataUrl = await toPng(captureNode, opts);
-      }
-
-      // Keep the image preview open after generation. iOS can then offer a native
-      // share sheet, while every browser retains a visible save/download fallback.
+      const result = await renderGridPng(captureNode, rendererOptions);
+      const { dataUrl, blob } = result;
       try {
-        const blob = await (await fetch(dataUrl)).blob();
-        if (!blob.size) throw new Error("empty image output");
         const file = new File([blob], exportFileName, { type: "image/png" });
         const nav = navigator as Navigator & {
           canShare?: (data: ShareData) => boolean;
@@ -777,15 +816,31 @@ export const GridView = () => {
       } catch {
         setShareAvailable(false);
       }
+      setExportRenderer(result.renderer);
+      setExportStatus("ready");
       setExportUrl(dataUrl);
       toast.success("Grid image ready — save or share it", { id: "export" });
     } catch (err) {
-      console.error("Export failed", err);
-      toast.error("Export failed — try again", { id: "export" });
+      setExportStatus("error");
+      const rendererErrorCode = err instanceof Error ? err.message : "HTML2CANVAS_RENDER_ERROR";
+      const safeErrorCodes = new Set([
+        "HTML2CANVAS_TIMEOUT", "HTML2CANVAS_RENDER_ERROR", "INVALID_PNG_OUTPUT",
+        "EMPTY_PNG_BLOB", "INVALID_PNG_MIME", "CAPTURE_NODE_UNAVAILABLE", "CAPTURE_NODE_ZERO_SIZE",
+      ]);
+      setExportErrorCode(safeErrorCodes.has(rendererErrorCode) ? rendererErrorCode : "INVALID_PNG_OUTPUT");
+      console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
+      toast.error(
+        err instanceof Error && err.message === "EMPTY_PNG_BLOB"
+          ? "Grid image renderer returned an empty image. Try Fast quality or a shorter range."
+          : "Grid image could not be generated. Try Fast quality or a shorter range.",
+        { id: "export" },
+      );
     } finally {
-      container.style.overflow = prevOverflow;
-      container.style.width = prevW;
-      container.style.height = prevH;
+      if (container) {
+        container.style.overflow = prevOverflow;
+        container.style.width = prevW;
+        container.style.height = prevH;
+      }
       setExporting(false);
     }
   }, [
@@ -797,6 +852,7 @@ export const GridView = () => {
     exportFilters,
     exportFilteredEvents.length,
     getExportDateRange,
+    getExportCaptureNode,
     isDefaultExportFilter,
     isTargetedDateExport,
     year,
@@ -823,25 +879,36 @@ export const GridView = () => {
   };
 
   const downloadExport = () => {
-    if (!exportUrl) return;
-    const a = document.createElement("a");
-    a.href = exportUrl;
-    a.download = exportFileName;
-    a.click();
+    if (!exportUrl) {
+      toast.error("Download failed because no generated image is available.");
+      return;
+    }
+    try {
+      const a = document.createElement("a");
+      a.href = exportUrl;
+      a.download = exportFileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      toast.error("The PNG could not be downloaded. Generate the image again.");
+    }
   };
 
   const openAdd = (date: string) => {
     cancelPreviewTimers(); setPreviewEvent(null);
+    setDayDetailOpen(false);
+    setDetailDate(null);
     setEditEvent(null);
     setAddDate(date);
-    setDetailDate(null);
     setEventSheetOpen(true);
   };
   const openEdit = (evt: Event) => {
     cancelPreviewTimers(); setPreviewEvent(null);
+    setDayDetailOpen(false);
+    setDetailDate(null);
     setEditEvent(evt);
     setAddDate(null);
-    setDetailDate(null);
     setEventSheetOpen(true);
   };
 
@@ -1012,7 +1079,7 @@ export const GridView = () => {
           >
             {compactExportLayout && (
               <header className="export-modal-header flex flex-none items-center justify-between gap-3 border-b border-border bg-card px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
-                <div className="min-w-0"><h2 id="mobile-export-title" className="text-sm font-bold">Image export</h2><p className="truncate text-[11px] text-muted-foreground">{exportFilterSummary}</p></div>
+                <div className="min-w-0"><h2 id="mobile-export-title" className="text-sm font-bold">Image export</h2><p className="truncate text-[11px] text-muted-foreground" data-testid="export-filter-summary">{exportFilterSummary}</p></div>
                 <Button type="button" variant="outline" onClick={closeExportOptions} disabled={exporting} className="min-h-11 shrink-0" aria-label="Close image export">Close</Button>
               </header>
             )}
@@ -1020,7 +1087,7 @@ export const GridView = () => {
             <div className={compactExportLayout ? "space-y-4" : undefined}>
           {!compactExportLayout && <div>
             <div className="text-xs font-bold text-foreground">Image export filters</div>
-            <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+            <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground" data-testid="export-filter-summary">{exportFilterSummary}</div>
           </div>}
 
           {compactExportLayout && (
@@ -1071,7 +1138,7 @@ export const GridView = () => {
               Include generated timestamp
             </label>
           </div>
-          <p className="text-[11px] text-muted-foreground" role="status">
+          <p className="text-[11px] text-muted-foreground" role="status" data-testid="export-publication-summary">
             Preview: {exportMetadata.title} · {exportLegend.recordCount} records
             · {exportLegend.entries.length} categories · approximately{" "}
             {exportDimensions.width} × {exportDimensions.height}px. Detailed
@@ -1102,6 +1169,9 @@ export const GridView = () => {
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-muted-foreground">
+                Next presets begin today. Use Custom for another starting date.
+              </p>
               {exportFilters.datePreset === "custom" && (
                 <div className="grid grid-cols-2 gap-2">
                   <input
@@ -1163,6 +1233,7 @@ export const GridView = () => {
                 {categories.map((category) => (
                   <button
                     key={category.id}
+                    data-testid={`export-category-${category.id}`}
                     type="button"
                     onClick={() => toggleExportCategory(category.id)}
                     className={`rounded-full px-2 py-1 text-[10px] font-bold transition-colors ${exportFilters.categoryMode === "selected" && selectedCategorySet.has(category.id) ? "" : "bg-muted text-muted-foreground"}`}
@@ -1268,6 +1339,8 @@ export const GridView = () => {
         className="flex-1 overflow-auto"
         aria-busy={!gridReady}
         data-testid="grid-content"
+        data-detail-date={detailDate ?? ""}
+        data-day-detail-open={dayDetailOpen ? "true" : "false"}
       >
         {!gridReady && (
           <div
@@ -1455,7 +1528,7 @@ export const GridView = () => {
                                 : cellBg,
                               padding: "2px 3px",
                             }}
-                            onClick={() => setDetailDate(dateStr)}
+                            onClick={() => openDayDetail(dateStr)}
                             aria-label={`${dateStr}${isToday ? ", Today" : ""}${temporal.isPast ? ", past date" : ""}${temporal.isSelected ? ", selected" : ""}`}
                             data-testid={`cell-${dateStr}`}
                           >
@@ -1494,16 +1567,19 @@ export const GridView = () => {
                               }
                             >
                               {visEvents.map((evt) => (
-                                <div
+                                <button
+                                  type="button"
                                   key={evt.id}
-                                  className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
-                                  tabIndex={0}
+                                  className="w-full rounded-sm border-0 px-1 flex items-center gap-0.5 overflow-hidden text-left transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
                                   title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ""}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ""}` : ""}`}
                                   aria-label={`${evt.title}. Press Enter to open date details.`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
+                                    finishEventPointerActivation();
+                                    openDayDetail(dateStr);
                                   }}
+                                  onPointerDown={beginEventPointerActivation}
+                                  onPointerCancel={finishEventPointerActivation}
                                   onPointerEnter={(e) => {
                                     const fullEvent = resolveEventById(
                                       events,
@@ -1522,6 +1598,7 @@ export const GridView = () => {
                                   }}
                                   onPointerLeave={schedulePreviewClose}
                                   onFocus={(e) => {
+                                    if (eventPointerActivationRef.current) return;
                                     const fullEvent = resolveEventById(
                                       events,
                                       evt.id,
@@ -1543,12 +1620,10 @@ export const GridView = () => {
                                   }
                                   onKeyDown={(e) => {
                                     if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      cancelPreviewTimers();
                                       setPreviewEvent(null);
                                       e.currentTarget.focus();
-                                    }
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
                                     }
                                   }}
                                   style={{
@@ -1560,6 +1635,7 @@ export const GridView = () => {
                                     opacity: dim(evt.category) ? 0.18 : 1,
                                   }}
                                   data-testid={`event-pill-${evt.id}`}
+                                  data-occurrence-date={dateStr}
                                 >
                                   {evt.startTime && (
                                     <span
@@ -1575,7 +1651,7 @@ export const GridView = () => {
                                   >
                                     {evt.title}
                                   </span>
-                                </div>
+                                </button>
                               ))}
 
                               {overflow > 0 && (
@@ -1583,7 +1659,7 @@ export const GridView = () => {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
+                                    openDayDetail(dateStr);
                                   }}
                                   aria-label={denseDay.overflowLabel}
                                   className="text-[7px] font-bold px-1 text-left"
@@ -1614,20 +1690,29 @@ export const GridView = () => {
         {gridReady ? "Grid ready" : "Loading grid"}
       </p>
 
-      {(exporting || exportOptionsOpen) && isTargetedDateExport && (
+      {(exporting || exportOptionsOpen) && isTargetedDateExport && createPortal(
         <div
           ref={targetedExportRef}
-          className="fixed top-0 -left-[10000px] bg-background text-foreground"
+          className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"
           style={{
             width: exportDimensions.width,
             padding: EXPORT_DENSITY[exportDensity].padding,
+            zIndex: 40,
+            opacity: exporting ? 1 : 0,
           }}
           data-testid="targeted-export-grid"
+          aria-hidden="true"
         >
           <ExportPublicationHeader
             metadata={exportMetadata}
             legend={exportLegend.entries}
           />
+
+          {exportFilteredEvents.length === 0 && (
+            <p className="border-x border-t border-border px-3 py-2 text-sm text-muted-foreground" data-testid="targeted-export-empty">
+              No matching events in this range.
+            </p>
+          )}
 
           <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
@@ -1725,8 +1810,23 @@ export const GridView = () => {
               })}
             </tbody>
           </table>
-        </div>
+        </div>,
+        document.body,
       )}
+      {exporting && isTargetedDateExport && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background" data-testid="export-generation-mask">
+          <span className="rounded-lg bg-card px-4 py-3 text-sm font-semibold shadow-lg">Generating grid image…</span>
+        </div>,
+        document.body,
+      )}
+
+      <span
+        className="sr-only"
+        data-testid="grid-export-status"
+        data-export-status={exportStatus}
+        data-export-renderer={exportRenderer ?? ""}
+        data-export-error-code={exportErrorCode}
+      >{exportStatus}</span>
 
       {/* Add-event FAB */}
       <button
@@ -1757,7 +1857,8 @@ export const GridView = () => {
 
       <DayDetailSheet
         date={detailDate}
-        onClose={() => setDetailDate(null)}
+        isOpen={dayDetailOpen}
+        onClose={closeDayDetail}
         onAddEvent={openAdd}
         onEditEvent={openEdit}
       />
@@ -1778,12 +1879,16 @@ export const GridView = () => {
       {/* Export image preview — iPhone-friendly (long-press to save) */}
       {exportUrl && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex flex-col"
+          className="fixed inset-0 z-[100] bg-black/80 flex flex-col"
           onClick={() => {
             setExportUrl(null);
             setShareAvailable(false);
+            setExportStatus("idle");
+            setExportRenderer(null);
+            setExportErrorCode("");
           }}
           data-testid="export-preview"
+          data-export-renderer={exportRenderer ?? ""}
         >
           <div className="flex-none px-4 py-3 flex items-center justify-between text-white">
             <span className="text-sm font-semibold">Your grid image</span>
@@ -1791,6 +1896,9 @@ export const GridView = () => {
               onClick={() => {
                 setExportUrl(null);
                 setShareAvailable(false);
+                setExportStatus("idle");
+                setExportRenderer(null);
+                setExportErrorCode("");
               }}
               className="p-1.5 rounded-lg hover:bg-white/10"
               data-testid="button-export-close"
@@ -1805,6 +1913,7 @@ export const GridView = () => {
             <img
               src={exportUrl}
               alt="LifeGrid calendar export"
+              data-testid="export-preview-image"
               className="max-w-full rounded-lg shadow-2xl"
             />
           </div>

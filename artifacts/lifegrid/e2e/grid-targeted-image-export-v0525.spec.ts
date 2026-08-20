@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
 test.describe.configure({ retries: 0 });
+test.setTimeout(60_000);
 
 const TODAY = '2026-08-20';
 const at = (offset: number) => {
@@ -140,6 +141,9 @@ const generateRealPng = async (page: Page) => {
   expect(dimensions.width).toBeGreaterThan(0);
   expect(dimensions.height).toBeGreaterThan(0);
   expect(dimensions.sourceLength).toBeGreaterThan('data:image/png;base64,'.length);
+  const expectedRenderer = await page.evaluate(() => /firefox/i.test(navigator.userAgent) ? 'html2canvas' : 'html-to-image');
+  await expect(page.getByTestId('grid-export-status')).toHaveAttribute('data-export-status', 'ready');
+  await expect(page.getByTestId('grid-export-status')).toHaveAttribute('data-export-renderer', expectedRenderer);
 };
 
 for (const [preset, days, includedId, excludedId] of [

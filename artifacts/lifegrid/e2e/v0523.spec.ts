@@ -77,9 +77,12 @@ test('delayed hover preview cannot reopen after Event pill activation',async({pa
   const secondDate=dateAt(1),grid=page.getByTestId('grid-content');
   const pill=page.getByTestId(`cell-${secondDate}`).getByTestId('event-pill-e2e-multiday');
   await pill.hover();
+  await expect(page.getByTestId('grid-event-preview')).toBeVisible();
   await pill.click();
   await expect(grid).toHaveAttribute('data-detail-date',secondDate);
+  await expect(grid).toHaveAttribute('data-day-detail-open','true');
   await expect(page.getByTestId('day-detail-sheet')).toBeVisible();
+  await expect(page.getByTestId('grid-event-preview')).toBeHidden();
   await page.waitForTimeout(300);
   await expect(page.getByTestId('grid-event-preview')).toBeHidden();
 });

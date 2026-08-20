@@ -55,6 +55,7 @@ import { getLocalTemporalOccurrence } from "../lib/temporal";
 import { buildGridViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
+import { renderGridPng, type GridImageRendererName } from "../lib/gridImageRenderer";
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
 const MONTHS = [
@@ -214,6 +215,8 @@ export const GridView = () => {
   const [addDate, setAddDate] = useState<string | null>(null);
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<"idle" | "generating" | "ready" | "error">("idle");
+  const [exportRenderer, setExportRenderer] = useState<GridImageRendererName | null>(null);
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [shareAvailable, setShareAvailable] = useState(false);
   const [exportPixelRatio, setExportPixelRatio] = useState(1);
@@ -254,6 +257,8 @@ export const GridView = () => {
   const publicationRef = useRef<HTMLDivElement>(null);
   const previewOpenTimerRef = useRef<number | null>(null);
   const previewCloseTimerRef = useRef<number | null>(null);
+  const eventPointerActivationRef = useRef(false);
+  const eventPointerActivationResetRef = useRef<number | null>(null);
   const didScrollRef = useRef(false);
   const priorGridModelRef = useRef<
     ReturnType<typeof buildGridViewModel> | undefined
@@ -264,6 +269,25 @@ export const GridView = () => {
     if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
     previewOpenTimerRef.current = previewCloseTimerRef.current = null;
   }, []);
+  const finishEventPointerActivation = useCallback(() => {
+    eventPointerActivationRef.current = false;
+    if (eventPointerActivationResetRef.current !== null) {
+      window.clearTimeout(eventPointerActivationResetRef.current);
+      eventPointerActivationResetRef.current = null;
+    }
+  }, []);
+  const beginEventPointerActivation = useCallback(() => {
+    cancelPreviewTimers();
+    setPreviewEvent(null);
+    eventPointerActivationRef.current = true;
+    if (eventPointerActivationResetRef.current !== null) {
+      window.clearTimeout(eventPointerActivationResetRef.current);
+    }
+    eventPointerActivationResetRef.current = window.setTimeout(() => {
+      eventPointerActivationRef.current = false;
+      eventPointerActivationResetRef.current = null;
+    }, 750);
+  }, [cancelPreviewTimers]);
   const keepPreviewOpen = useCallback(() => {
     if (previewCloseTimerRef.current) window.clearTimeout(previewCloseTimerRef.current);
     previewCloseTimerRef.current = null;
@@ -284,7 +308,10 @@ export const GridView = () => {
     setDayDetailOpen(false);
     setDetailDate(null);
   }, []);
-  useEffect(() => cancelPreviewTimers, [cancelPreviewTimers]);
+  useEffect(() => () => {
+    cancelPreviewTimers();
+    finishEventPointerActivation();
+  }, [cancelPreviewTimers, finishEventPointerActivation]);
   useEffect(() => {
     cancelPreviewTimers();
     setPreviewEvent(null);
@@ -721,6 +748,8 @@ export const GridView = () => {
     const feasibility = estimateExportFeasibility({ width: exportDimensions.width, height: estimatedHeight, pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio, mobile: window.matchMedia("(pointer: coarse)").matches, expanded: exportMode === "expanded", records: exportFilteredEvents.length, maxPerDate });
     if (feasibility.unsafe) { toast.error(`${feasibility.reason} Use Visible, select fewer categories, choose a shorter range, or use Fast.`, { id: "export" }); return; }
     setExporting(true);
+    setExportStatus("generating");
+    setExportRenderer(null);
     toast.loading(
       `Generating ${exportMode === "expanded" ? "expanded" : "visible"} ${exportPixelRatio === 1 ? "compact" : "sharp"} grid image…`,
       { id: "export" },
@@ -734,6 +763,7 @@ export const GridView = () => {
     }
 
     await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
 
     const captureNode = getExportCaptureNode();
     if (!captureNode || captureNode.scrollWidth <= 0 || captureNode.scrollHeight <= 0) {
@@ -743,6 +773,7 @@ export const GridView = () => {
         container.style.height = prevH;
       }
       toast.error("Grid image capture is unavailable. Close Export and try again.", { id: "export" });
+      setExportStatus("error");
       setExporting(false);
       return;
     }
@@ -754,32 +785,19 @@ export const GridView = () => {
 
     await new Promise(requestAnimationFrame);
 
-    const opts = {
+    const rendererOptions = {
       pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio,
       backgroundColor: theme === "dark" ? "#0d1526" : "#ffffff",
       width: captureNode.scrollWidth,
       height: captureNode.scrollHeight,
-      cacheBust: true,
+      targeted: useTargetedLayout,
+      firefox: /firefox/i.test(navigator.userAgent),
+      safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
     };
 
     try {
-      // Safari frequently renders a blank/partial image on the first pass
-      // (fonts/styles not yet inlined). Rendering a few times fixes it.
-      const isSafari = /^((?!chrome|android).)*safari/i.test(
-        navigator.userAgent,
-      );
-      const { toPng } = await import("html-to-image");
-      let dataUrl = await toPng(captureNode, opts);
-      if (isSafari) {
-        await toPng(captureNode, opts);
-        dataUrl = await toPng(captureNode, opts);
-      }
-
-      // Keep the image preview open after generation. iOS can then offer a native
-      // share sheet, while every browser retains a visible save/download fallback.
-      if (!dataUrl.startsWith("data:image/png")) throw new Error("INVALID_PNG_OUTPUT");
-      const blob = await (await fetch(dataUrl)).blob();
-      if (!blob.size) throw new Error("EMPTY_PNG_BLOB");
+      const result = await renderGridPng(captureNode, rendererOptions);
+      const { dataUrl, blob } = result;
       try {
         const file = new File([blob], exportFileName, { type: "image/png" });
         const nav = navigator as Navigator & {
@@ -794,9 +812,12 @@ export const GridView = () => {
       } catch {
         setShareAvailable(false);
       }
+      setExportRenderer(result.renderer);
+      setExportStatus("ready");
       setExportUrl(dataUrl);
       toast.success("Grid image ready — save or share it", { id: "export" });
     } catch (err) {
+      setExportStatus("error");
       console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
       toast.error(
         err instanceof Error && err.message === "EMPTY_PNG_BLOB"
@@ -1544,8 +1565,11 @@ export const GridView = () => {
                                   aria-label={`${evt.title}. Press Enter to open date details.`}
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    finishEventPointerActivation();
                                     openDayDetail(dateStr);
                                   }}
+                                  onPointerDown={beginEventPointerActivation}
+                                  onPointerCancel={finishEventPointerActivation}
                                   onPointerEnter={(e) => {
                                     const fullEvent = resolveEventById(
                                       events,
@@ -1564,6 +1588,7 @@ export const GridView = () => {
                                   }}
                                   onPointerLeave={schedulePreviewClose}
                                   onFocus={(e) => {
+                                    if (eventPointerActivationRef.current) return;
                                     const fullEvent = resolveEventById(
                                       events,
                                       evt.id,
@@ -1662,7 +1687,8 @@ export const GridView = () => {
           style={{
             width: exportDimensions.width,
             padding: EXPORT_DENSITY[exportDensity].padding,
-            zIndex: -2147483647,
+            zIndex: 40,
+            opacity: exporting ? 1 : 0,
           }}
           data-testid="targeted-export-grid"
           aria-hidden="true"
@@ -1777,6 +1803,19 @@ export const GridView = () => {
         </div>,
         document.body,
       )}
+      {exporting && isTargetedDateExport && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background" data-testid="export-generation-mask">
+          <span className="rounded-lg bg-card px-4 py-3 text-sm font-semibold shadow-lg">Generating grid image…</span>
+        </div>,
+        document.body,
+      )}
+
+      <span
+        className="sr-only"
+        data-testid="grid-export-status"
+        data-export-status={exportStatus}
+        data-export-renderer={exportRenderer ?? ""}
+      >{exportStatus}</span>
 
       {/* Add-event FAB */}
       <button
@@ -1833,8 +1872,11 @@ export const GridView = () => {
           onClick={() => {
             setExportUrl(null);
             setShareAvailable(false);
+            setExportStatus("idle");
+            setExportRenderer(null);
           }}
           data-testid="export-preview"
+          data-export-renderer={exportRenderer ?? ""}
         >
           <div className="flex-none px-4 py-3 flex items-center justify-between text-white">
             <span className="text-sm font-semibold">Your grid image</span>
@@ -1842,6 +1884,8 @@ export const GridView = () => {
               onClick={() => {
                 setExportUrl(null);
                 setShareAvailable(false);
+                setExportStatus("idle");
+                setExportRenderer(null);
               }}
               className="p-1.5 rounded-lg hover:bg-white/10"
               data-testid="button-export-close"

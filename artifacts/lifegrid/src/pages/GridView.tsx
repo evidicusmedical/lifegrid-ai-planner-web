@@ -46,6 +46,8 @@ import {
 } from "../lib/gridPublication";
 import {
   getDateTemporalState,
+  filterEventsForGridExport,
+  resolveExportDateRange,
   validateExportRange,
 } from "../lib/gridAwareness";
 import { getLocalTemporalOccurrence } from "../lib/temporal";
@@ -307,27 +309,18 @@ export const GridView = () => {
   }, [tasks]);
 
   const getExportDateRange = useCallback(() => {
-    if (exportFilters.datePreset === "custom") {
-      return { start: exportFilters.customStart, end: exportFilters.customEnd };
-    }
-    if (exportFilters.datePreset === "current") {
-      return { start: `${year}-01-01`, end: `${year}-12-31` };
-    }
-    const days =
-      exportFilters.datePreset === "next7"
-        ? 7
-        : exportFilters.datePreset === "next14"
-          ? 14
-          : 30;
-    const anchor = detailDate ? parseISODate(detailDate) : today;
-    return { start: toISODate(anchor), end: toISODate(addDays(anchor, days - 1)) };
+    return resolveExportDateRange(
+      exportFilters.datePreset,
+      year,
+      todayStr,
+      exportFilters.customStart,
+      exportFilters.customEnd,
+    );
   }, [
     exportFilters.customEnd,
     exportFilters.customStart,
     exportFilters.datePreset,
-    today,
     todayStr,
-    detailDate,
     year,
   ]);
 
@@ -340,23 +333,13 @@ export const GridView = () => {
     if (!exportUiActive) return [];
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) return [];
-    return events.filter((event) => {
-      if (event.date > end || (event.endDate ?? event.date) < start) return false;
-      if (
-        exportFilters.categoryMode === "selected" &&
-        !selectedCategorySet.has(event.category)
-      )
-        return false;
-      if (exportFilters.projectId !== "all") {
-        const eventProjectIds = getEventProjectIds(
-          event,
-          taskById,
-          tasksByLinkedEvent,
-        );
-        if (!eventProjectIds.has(exportFilters.projectId)) return false;
-      }
-      return true;
-    });
+    return filterEventsForGridExport(
+      events,
+      { start, end },
+      exportFilters.categoryMode === "selected" ? selectedCategorySet : null,
+      exportFilters.projectId === "all" ? null : exportFilters.projectId,
+      event => getEventProjectIds(event, taskById, tasksByLinkedEvent),
+    );
   }, [
     events,
     exportFilters.categoryMode,
@@ -546,7 +529,12 @@ export const GridView = () => {
 
   // Validation is derived on every render, so corrected inputs, presets, calendar/year changes,
   // and reopening the options panel can never retain a stale disabled/error state.
-  const exportRangeError = validateExportRange(exportRange, year);
+  const exportRangeError = validateExportRange(
+    exportRange,
+    year,
+    exportFilters.datePreset !== "current",
+    TARGETED_EXPORT_MAX_DAYS,
+  );
   const isDefaultExportFilter =
     exportFilters.datePreset === "current" &&
     exportFilters.categoryMode === "all" &&
@@ -635,9 +623,9 @@ export const GridView = () => {
 
   const exportFileName =
     `lifegrid-${activeCalendar?.name ?? "calendar"}-${exportRange.start || year}-${exportRange.end || year}.png`.replace(
-      /\s+/g,
+      /[^a-zA-Z0-9._-]+/g,
       "-",
-    );
+    ).replace(/-+/g, "-").toLowerCase();
   const exportLegend = useMemo(
     () =>
       exportUiActive
@@ -677,9 +665,15 @@ export const GridView = () => {
   // save (long-press) or share via the native share sheet.
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
-    if (!tableRef.current || !container) return;
     const { start, end } = getExportDateRange();
-    const rangeError = validateExportRange({ start, end }, year);
+    const useTargetedLayout = exportFilters.datePreset !== "current";
+    if (!useTargetedLayout && (!tableRef.current || !container)) {
+      toast.error("The Current Grid capture is not ready. Wait for the Grid to load and try again.", { id: "export" });
+      return;
+    }
+    const rangeError = validateExportRange(
+      { start, end }, year, useTargetedLayout, TARGETED_EXPORT_MAX_DAYS,
+    );
     if (rangeError) {
       toast.error(rangeError, { id: "export" });
       return;
@@ -694,7 +688,7 @@ export const GridView = () => {
       );
       return;
     }
-    if (exportFilteredEvents.length === 0) {
+    if (!useTargetedLayout && exportFilteredEvents.length === 0) {
       const selected = exportFilters.categoryMode === "selected" ? categories.filter(c => selectedCategorySet.has(c.id)).map(c => c.label).join(", ") : "selected";
       toast.error(`No ${selected} events overlap ${start} through ${end}. Choose another range or use Custom.`, {
         id: "export",
@@ -711,27 +705,31 @@ export const GridView = () => {
       { id: "export" },
     );
 
-    const prevOverflow = container.style.overflow;
-    const prevW = container.style.width;
-    const prevH = container.style.height;
-    const useTargetedLayout = isTargetedDateExport;
-
-    if (!useTargetedLayout) {
+    const prevOverflow = container?.style.overflow ?? "";
+    const prevW = container?.style.width ?? "";
+    const prevH = container?.style.height ?? "";
+    if (!useTargetedLayout && container) {
       container.style.overflow = "visible";
     }
 
     await new Promise(requestAnimationFrame);
 
-    const captureNode = useTargetedLayout
+    const getExportCaptureNode = () => useTargetedLayout
       ? targetedExportRef.current
       : publicationRef.current;
+    const captureNode = getExportCaptureNode();
     if (!captureNode || captureNode.scrollWidth <= 0 || captureNode.scrollHeight <= 0) {
-      toast.error("Export failed — try again", { id: "export" });
+      if (container) {
+        container.style.overflow = prevOverflow;
+        container.style.width = prevW;
+        container.style.height = prevH;
+      }
+      toast.error("Grid image capture is unavailable. Close Export and try again.", { id: "export" });
       setExporting(false);
       return;
     }
 
-    if (!useTargetedLayout) {
+    if (!useTargetedLayout && container) {
       container.style.width = captureNode.scrollWidth + "px";
       container.style.height = captureNode.scrollHeight + "px";
     }
@@ -761,9 +759,10 @@ export const GridView = () => {
 
       // Keep the image preview open after generation. iOS can then offer a native
       // share sheet, while every browser retains a visible save/download fallback.
+      if (!dataUrl.startsWith("data:image/png")) throw new Error("renderer returned non-PNG output");
+      const blob = await (await fetch(dataUrl)).blob();
+      if (!blob.size) throw new Error("empty image output");
       try {
-        const blob = await (await fetch(dataUrl)).blob();
-        if (!blob.size) throw new Error("empty image output");
         const file = new File([blob], exportFileName, { type: "image/png" });
         const nav = navigator as Navigator & {
           canShare?: (data: ShareData) => boolean;
@@ -780,12 +779,14 @@ export const GridView = () => {
       setExportUrl(dataUrl);
       toast.success("Grid image ready — save or share it", { id: "export" });
     } catch (err) {
-      console.error("Export failed", err);
-      toast.error("Export failed — try again", { id: "export" });
+      console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
+      toast.error("Grid image could not be generated. Try Fast quality or a shorter range.", { id: "export" });
     } finally {
-      container.style.overflow = prevOverflow;
-      container.style.width = prevW;
-      container.style.height = prevH;
+      if (container) {
+        container.style.overflow = prevOverflow;
+        container.style.width = prevW;
+        container.style.height = prevH;
+      }
       setExporting(false);
     }
   }, [
@@ -823,11 +824,20 @@ export const GridView = () => {
   };
 
   const downloadExport = () => {
-    if (!exportUrl) return;
-    const a = document.createElement("a");
-    a.href = exportUrl;
-    a.download = exportFileName;
-    a.click();
+    if (!exportUrl) {
+      toast.error("Download failed because no generated image is available.");
+      return;
+    }
+    try {
+      const a = document.createElement("a");
+      a.href = exportUrl;
+      a.download = exportFileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      toast.error("The PNG could not be downloaded. Generate the image again.");
+    }
   };
 
   const openAdd = (date: string) => {
@@ -1102,6 +1112,9 @@ export const GridView = () => {
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-muted-foreground">
+                Next presets begin today. Use Custom for another starting date.
+              </p>
               {exportFilters.datePreset === "custom" && (
                 <div className="grid grid-cols-2 gap-2">
                   <input
@@ -1617,10 +1630,11 @@ export const GridView = () => {
       {(exporting || exportOptionsOpen) && isTargetedDateExport && (
         <div
           ref={targetedExportRef}
-          className="fixed top-0 -left-[10000px] bg-background text-foreground"
+          className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"
           style={{
             width: exportDimensions.width,
             padding: EXPORT_DENSITY[exportDensity].padding,
+            zIndex: -2147483647,
           }}
           data-testid="targeted-export-grid"
         >
@@ -1628,6 +1642,12 @@ export const GridView = () => {
             metadata={exportMetadata}
             legend={exportLegend.entries}
           />
+
+          {exportFilteredEvents.length === 0 && (
+            <p className="border-x border-t border-border px-3 py-2 text-sm text-muted-foreground" data-testid="targeted-export-empty">
+              No matching events in this range.
+            </p>
+          )}
 
           <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
@@ -1805,6 +1825,7 @@ export const GridView = () => {
             <img
               src={exportUrl}
               alt="LifeGrid calendar export"
+              data-testid="export-preview-image"
               className="max-w-full rounded-lg shadow-2xl"
             />
           </div>

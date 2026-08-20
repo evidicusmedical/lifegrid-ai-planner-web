@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
+import { createPortal } from "react-dom";
 import { useAppData } from "../context/AppDataContext";
 import { useTheme } from "../context/ThemeContext";
 import { Event, Project, Task } from "../types";
@@ -659,6 +660,11 @@ export const GridView = () => {
   );
   const focusedGridData = useMemo(() => { const map = new Map<string, readonly GridEventSummary[]>(); gridData.forEach((records, date) => map.set(date, filterGridEventsByCategories(records, focusedCats))); return map; }, [gridData, focusedCats]);
 
+  const getExportCaptureNode = useCallback(
+    () => isTargetedDateExport ? targetedExportRef.current : publicationRef.current,
+    [isTargetedDateExport],
+  );
+
   // ── Image export (html-to-image renders modern CSS correctly) ──
   // iPhone Safari ignores <a download> for data-URLs, so instead of a silent
   // download we render the PNG and show it in an in-app preview the user can
@@ -714,9 +720,6 @@ export const GridView = () => {
 
     await new Promise(requestAnimationFrame);
 
-    const getExportCaptureNode = () => useTargetedLayout
-      ? targetedExportRef.current
-      : publicationRef.current;
     const captureNode = getExportCaptureNode();
     if (!captureNode || captureNode.scrollWidth <= 0 || captureNode.scrollHeight <= 0) {
       if (container) {
@@ -759,9 +762,9 @@ export const GridView = () => {
 
       // Keep the image preview open after generation. iOS can then offer a native
       // share sheet, while every browser retains a visible save/download fallback.
-      if (!dataUrl.startsWith("data:image/png")) throw new Error("renderer returned non-PNG output");
+      if (!dataUrl.startsWith("data:image/png")) throw new Error("INVALID_PNG_OUTPUT");
       const blob = await (await fetch(dataUrl)).blob();
-      if (!blob.size) throw new Error("empty image output");
+      if (!blob.size) throw new Error("EMPTY_PNG_BLOB");
       try {
         const file = new File([blob], exportFileName, { type: "image/png" });
         const nav = navigator as Navigator & {
@@ -780,7 +783,12 @@ export const GridView = () => {
       toast.success("Grid image ready — save or share it", { id: "export" });
     } catch (err) {
       console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
-      toast.error("Grid image could not be generated. Try Fast quality or a shorter range.", { id: "export" });
+      toast.error(
+        err instanceof Error && err.message === "EMPTY_PNG_BLOB"
+          ? "Grid image renderer returned an empty image. Try Fast quality or a shorter range."
+          : "Grid image could not be generated. Try Fast quality or a shorter range.",
+        { id: "export" },
+      );
     } finally {
       if (container) {
         container.style.overflow = prevOverflow;
@@ -798,6 +806,7 @@ export const GridView = () => {
     exportFilters,
     exportFilteredEvents.length,
     getExportDateRange,
+    getExportCaptureNode,
     isDefaultExportFilter,
     isTargetedDateExport,
     year,
@@ -1022,7 +1031,7 @@ export const GridView = () => {
           >
             {compactExportLayout && (
               <header className="export-modal-header flex flex-none items-center justify-between gap-3 border-b border-border bg-card px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
-                <div className="min-w-0"><h2 id="mobile-export-title" className="text-sm font-bold">Image export</h2><p className="truncate text-[11px] text-muted-foreground">{exportFilterSummary}</p></div>
+                <div className="min-w-0"><h2 id="mobile-export-title" className="text-sm font-bold">Image export</h2><p className="truncate text-[11px] text-muted-foreground" data-testid="export-filter-summary">{exportFilterSummary}</p></div>
                 <Button type="button" variant="outline" onClick={closeExportOptions} disabled={exporting} className="min-h-11 shrink-0" aria-label="Close image export">Close</Button>
               </header>
             )}
@@ -1030,7 +1039,7 @@ export const GridView = () => {
             <div className={compactExportLayout ? "space-y-4" : undefined}>
           {!compactExportLayout && <div>
             <div className="text-xs font-bold text-foreground">Image export filters</div>
-            <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground">{exportFilterSummary}</div>
+            <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground" data-testid="export-filter-summary">{exportFilterSummary}</div>
           </div>}
 
           {compactExportLayout && (
@@ -1081,7 +1090,7 @@ export const GridView = () => {
               Include generated timestamp
             </label>
           </div>
-          <p className="text-[11px] text-muted-foreground" role="status">
+          <p className="text-[11px] text-muted-foreground" role="status" data-testid="export-publication-summary">
             Preview: {exportMetadata.title} · {exportLegend.recordCount} records
             · {exportLegend.entries.length} categories · approximately{" "}
             {exportDimensions.width} × {exportDimensions.height}px. Detailed
@@ -1627,7 +1636,7 @@ export const GridView = () => {
         {gridReady ? "Grid ready" : "Loading grid"}
       </p>
 
-      {(exporting || exportOptionsOpen) && isTargetedDateExport && (
+      {(exporting || exportOptionsOpen) && isTargetedDateExport && createPortal(
         <div
           ref={targetedExportRef}
           className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"
@@ -1637,6 +1646,7 @@ export const GridView = () => {
             zIndex: -2147483647,
           }}
           data-testid="targeted-export-grid"
+          aria-hidden="true"
         >
           <ExportPublicationHeader
             metadata={exportMetadata}
@@ -1745,7 +1755,8 @@ export const GridView = () => {
               })}
             </tbody>
           </table>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Add-event FAB */}

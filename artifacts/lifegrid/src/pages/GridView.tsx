@@ -209,6 +209,7 @@ export const GridView = () => {
   const today = useMemo(() => new Date(), []);
   const [year, setYear] = useState(today.getFullYear());
   const [detailDate, setDetailDate] = useState<string | null>(null);
+  const [dayDetailOpen, setDayDetailOpen] = useState(false);
   const [editEvent, setEditEvent] = useState<Event | null>(null);
   const [addDate, setAddDate] = useState<string | null>(null);
   const [eventSheetOpen, setEventSheetOpen] = useState(false);
@@ -273,8 +274,22 @@ export const GridView = () => {
     previewOpenTimerRef.current = null;
     previewCloseTimerRef.current = window.setTimeout(() => setPreviewEvent(null), 180);
   }, []);
+  const openDayDetail = useCallback((date: string) => {
+    cancelPreviewTimers();
+    setPreviewEvent(null);
+    setDetailDate(date);
+    setDayDetailOpen(true);
+  }, [cancelPreviewTimers]);
+  const closeDayDetail = useCallback(() => {
+    setDayDetailOpen(false);
+    setDetailDate(null);
+  }, []);
   useEffect(() => cancelPreviewTimers, [cancelPreviewTimers]);
-  useEffect(() => { cancelPreviewTimers(); setPreviewEvent(null); }, [activeCalendarId, year, cancelPreviewTimers]);
+  useEffect(() => {
+    cancelPreviewTimers();
+    setPreviewEvent(null);
+    closeDayDetail();
+  }, [activeCalendarId, year, cancelPreviewTimers, closeDayDetail]);
 
   const todayStr = toISODate(today);
   const todayMonth = today.getMonth();
@@ -851,16 +866,18 @@ export const GridView = () => {
 
   const openAdd = (date: string) => {
     cancelPreviewTimers(); setPreviewEvent(null);
+    setDayDetailOpen(false);
+    setDetailDate(null);
     setEditEvent(null);
     setAddDate(date);
-    setDetailDate(null);
     setEventSheetOpen(true);
   };
   const openEdit = (evt: Event) => {
     cancelPreviewTimers(); setPreviewEvent(null);
+    setDayDetailOpen(false);
+    setDetailDate(null);
     setEditEvent(evt);
     setAddDate(null);
-    setDetailDate(null);
     setEventSheetOpen(true);
   };
 
@@ -1291,6 +1308,8 @@ export const GridView = () => {
         className="flex-1 overflow-auto"
         aria-busy={!gridReady}
         data-testid="grid-content"
+        data-detail-date={detailDate ?? ""}
+        data-day-detail-open={dayDetailOpen ? "true" : "false"}
       >
         {!gridReady && (
           <div
@@ -1478,7 +1497,7 @@ export const GridView = () => {
                                 : cellBg,
                               padding: "2px 3px",
                             }}
-                            onClick={() => setDetailDate(dateStr)}
+                            onClick={() => openDayDetail(dateStr)}
                             aria-label={`${dateStr}${isToday ? ", Today" : ""}${temporal.isPast ? ", past date" : ""}${temporal.isSelected ? ", selected" : ""}`}
                             data-testid={`cell-${dateStr}`}
                           >
@@ -1517,15 +1536,15 @@ export const GridView = () => {
                               }
                             >
                               {visEvents.map((evt) => (
-                                <div
+                                <button
+                                  type="button"
                                   key={evt.id}
-                                  className="rounded-sm px-1 flex items-center gap-0.5 overflow-hidden transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
-                                  tabIndex={0}
+                                  className="w-full rounded-sm border-0 px-1 flex items-center gap-0.5 overflow-hidden text-left transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
                                   title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ""}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ""}` : ""}`}
                                   aria-label={`${evt.title}. Press Enter to open date details.`}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
+                                    openDayDetail(dateStr);
                                   }}
                                   onPointerEnter={(e) => {
                                     const fullEvent = resolveEventById(
@@ -1566,12 +1585,10 @@ export const GridView = () => {
                                   }
                                   onKeyDown={(e) => {
                                     if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      cancelPreviewTimers();
                                       setPreviewEvent(null);
                                       e.currentTarget.focus();
-                                    }
-                                    if (e.key === "Enter" || e.key === " ") {
-                                      e.preventDefault();
-                                      cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
                                     }
                                   }}
                                   style={{
@@ -1583,6 +1600,7 @@ export const GridView = () => {
                                     opacity: dim(evt.category) ? 0.18 : 1,
                                   }}
                                   data-testid={`event-pill-${evt.id}`}
+                                  data-occurrence-date={dateStr}
                                 >
                                   {evt.startTime && (
                                     <span
@@ -1598,7 +1616,7 @@ export const GridView = () => {
                                   >
                                     {evt.title}
                                   </span>
-                                </div>
+                                </button>
                               ))}
 
                               {overflow > 0 && (
@@ -1606,7 +1624,7 @@ export const GridView = () => {
                                   type="button"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    cancelPreviewTimers(); setPreviewEvent(null); setDetailDate(dateStr);
+                                    openDayDetail(dateStr);
                                   }}
                                   aria-label={denseDay.overflowLabel}
                                   className="text-[7px] font-bold px-1 text-left"
@@ -1789,7 +1807,8 @@ export const GridView = () => {
 
       <DayDetailSheet
         date={detailDate}
-        onClose={() => setDetailDate(null)}
+        isOpen={dayDetailOpen}
+        onClose={closeDayDetail}
         onAddEvent={openAdd}
         onEditEvent={openEdit}
       />

@@ -24,7 +24,9 @@ test('canonical annual model creates fixed January-to-December slots regardless 
 test('current and selected dates remain highlights inside their canonical annual cells', () => {
   assert.match(grid, /const temporal = getDateTemporalState\(\s*dateStr,\s*todayStr,\s*detailDate,?\s*\)/);
   assert.match(grid, /temporal\.isSelected/);
-  assert.match(grid, /setDetailDate\(dateStr\)/);
+  assert.match(grid, /onClick=\{\(\) => openDayDetail\(dateStr\)\}/);
+  assert.match(grid, /data-detail-date=\{detailDate \?\? ""\}/);
+  assert.match(grid, /data-day-detail-open=\{dayDetailOpen \? "true" : "false"\}/);
 });
 
 test('July priority cannot move July before June in DOM or visual slot order', () => {

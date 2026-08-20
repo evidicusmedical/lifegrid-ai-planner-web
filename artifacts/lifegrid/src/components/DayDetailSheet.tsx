@@ -11,12 +11,13 @@ import { eventsForDate } from '../lib/gridModel';
 
 interface DayDetailSheetProps {
   date: string | null;
+  isOpen: boolean;
   onClose: () => void;
   onAddEvent: (date: string) => void;
   onEditEvent: (event: Event) => void;
 }
 
-export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, onAddEvent, onEditEvent }) => {
+export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, isOpen, onClose, onAddEvent, onEditEvent }) => {
   const { events, tasks, projects, categories, activeCalendar } = useAppData();
 
   const categoryRank = new Map(categories.map((category, index) => [category.id, index]));
@@ -25,7 +26,7 @@ export const DayDetailSheet: React.FC<DayDetailSheetProps> = ({ date, onClose, o
   const catLabel = (id: string) => categories.find(c => c.id === id)?.label ?? id;
 
   return (
-    <Sheet open={!!date} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={isOpen && !!date} onOpenChange={(open) => { if (!open) onClose(); }}>
       <SheetContent side="bottom" className="mobile-sheet mobile-scroll max-h-none overflow-y-auto rounded-t-2xl sm:max-w-md sm:mx-auto sm:right-auto sm:left-1/2 sm:-translate-x-1/2" data-testid="day-detail-sheet">
         <SheetHeader>
           <SheetTitle>{date ? formatDateLong(date) : ''}</SheetTitle>

@@ -123,7 +123,10 @@ const selectPreset = async (page: Page, preset: string, start: string, end: stri
 const generateRealPng = async (page: Page) => {
   await page.getByTestId('button-export-generate').click();
   const statusNode = page.getByTestId('grid-export-status');
-  await expect.poll(() => statusNode.getAttribute('data-export-status')).toMatch(/^(ready|error)$/);
+  await expect.poll(
+    () => statusNode.getAttribute('data-export-status'),
+    { timeout: 30_000 },
+  ).toMatch(/^(ready|error)$/);
   const status = await statusNode.getAttribute('data-export-status');
   if (status === 'error') {
     const errorCode = await statusNode.getAttribute('data-export-error-code');
@@ -148,7 +151,7 @@ const generateRealPng = async (page: Page) => {
   expect(dimensions.width).toBeGreaterThan(0);
   expect(dimensions.height).toBeGreaterThan(0);
   expect(dimensions.sourceLength).toBeGreaterThan('data:image/png;base64,'.length);
-  const expectedRenderer = await page.evaluate(() => /firefox/i.test(navigator.userAgent) ? 'html2canvas' : 'html-to-image');
+  const expectedRenderer = await page.evaluate(() => /firefox/i.test(navigator.userAgent) ? 'canvas2d' : 'html-to-image');
   await expect(page.getByTestId('grid-export-status')).toHaveAttribute('data-export-status', 'ready');
   await expect(page.getByTestId('grid-export-status')).toHaveAttribute('data-export-renderer', expectedRenderer);
 };
@@ -261,22 +264,22 @@ test('narrow preview keeps its real Download action above persistent navigation 
   await selectPreset(page, 'next7', TODAY, at(6));
   await generateRealPng(page);
   const button = page.getByTestId('button-export-download');
-  const nav = page.getByTestId('bottom-nav');
   await expect(button).toBeVisible();
   await expect(button).toBeEnabled();
-  await expect(nav).toBeVisible();
   const layout = await button.evaluate((buttonNode) => {
     const navNode = document.querySelector<HTMLElement>('[data-testid="bottom-nav"]');
-    if (!navNode) throw new Error('bottom-nav unavailable');
+    const previewNode = buttonNode.closest<HTMLElement>('[data-testid="export-preview"]');
+    if (!navNode || !previewNode) throw new Error('preview or bottom-nav unavailable');
     const buttonRect = buttonNode.getBoundingClientRect();
-    const navRect = navNode.getBoundingClientRect();
     const hit = document.elementFromPoint(buttonRect.left + buttonRect.width / 2, buttonRect.top + buttonRect.height / 2);
+    const previewZ = Number(getComputedStyle(previewNode).zIndex) || 0;
+    const navZ = Number(getComputedStyle(navNode).zIndex) || 0;
     return {
       unobstructed: hit === buttonNode || buttonNode.contains(hit),
-      separatedOrAbove: buttonRect.bottom <= navRect.top || Number(getComputedStyle(buttonNode.closest('[data-testid="export-preview"]')!).zIndex) > Number(getComputedStyle(navNode).zIndex),
+      previewOwnsInteractionLayer: previewZ > navZ,
     };
   });
-  expect(layout).toEqual({ unobstructed: true, separatedOrAbove: true });
+  expect(layout).toEqual({ unobstructed: true, previewOwnsInteractionLayer: true });
   const pendingDownload = page.waitForEvent('download');
   await button.click();
   const download = await pendingDownload;

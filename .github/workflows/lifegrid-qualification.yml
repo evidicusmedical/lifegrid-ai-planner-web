@@ -17,6 +17,7 @@ jobs:
       - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/v0523.spec.ts --project=chromium
       - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/ai-export-delivery-v0524.spec.ts --project=chromium
       - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/grid-targeted-image-export-v0525.spec.ts --project=chromium
+      - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/ai-deletion-v0526.spec.ts --project=chromium
   cross-browser:
     runs-on: ubuntu-latest
     strategy:

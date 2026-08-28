@@ -12,3 +12,6 @@
 - [x] AI Interchange 5; backup schema 7 unchanged.
 - [x] Local unit suite, typecheck, and build pass.
 - [ ] Hosted Chromium, Firefox, WebKit, GitHub Actions, and Vercel conclusions require the existing PR branch to be pushed.
+- [x] Interactive Grid hides `showInGrid:false`; Grid/export visibility are independently unit-qualified.
+- [x] Same-patch Project + Task additions remain valid together and selection conflicts remain user-resolvable.
+- [x] Deterministic browser seed preserves navigation/reload mutations and persistence checks use polling with zero retries.

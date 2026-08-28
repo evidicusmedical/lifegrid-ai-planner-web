@@ -171,3 +171,5 @@ Settings and exports
 - Backup schema remains 7; hiding an Event remains a reversible update distinct from deletion.
 - Refined v0.5.26 review so only selected deletions affect transaction conflicts and impact counts reflect surviving records.
 - Documented and qualified v5 add/update/move/reschedule/recategorize/hide/restore/detach authority while retaining LifeGrid as the validation and approval boundary.
+- Enforced `showInGrid` at interactive Grid model/day-detail boundaries without changing `showInExport` publication semantics.
+- Replaced per-row singleton preflights with one intrinsic validation pass and made the v0.5.26 persistence harness navigation-safe.

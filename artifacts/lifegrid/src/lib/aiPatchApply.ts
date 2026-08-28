@@ -25,6 +25,40 @@ const duplicateKey = (group: string, record: any): string | null => {
   }
 };
 const duplicateLabel = (group: string, record: any) => group === 'events' || group === 'peopleSchedule' ? String(record.title ?? '') : String(record.name ?? record.label ?? '');
+
+/** Proposal-local validation. Findings here cannot be repaired by selecting a
+ * different combination of proposals from this patch. Transaction conflicts
+ * deliberately remain in preflightPatch(). */
+export function getIntrinsicProposalFindings(current: AppData, patch: any): ValidationFinding[] {
+  const findings: ValidationFinding[] = [];
+  const persisted: Record<string, Set<string>> = { categories:new Set(current.categories.map(x=>x.id)), people:new Set(current.people.map(x=>x.id)), projects:new Set(current.projects.map(x=>x.id)), tasks:new Set(current.tasks.map(x=>x.id)), events:new Set(current.events.map(x=>x.id)), peopleSchedule:new Set(current.personEvents.map(x=>x.id)) };
+  const added: Record<string, Set<string>> = Object.fromEntries(groups.map(group => [group, new Set<string>()]));
+  for (const group of groups) for (const record of patch?.[group]?.add ?? []) if (typeof record?.id === 'string' && record.id) added[group].add(record.id);
+  for (const group of groups) {
+    for (const [index, record] of (patch?.[group]?.add ?? []).entries()) {
+      const id=typeof record?.id==='string'?record.id:''; const base={section:group,operation:'add' as const,recordId:id,fieldPath:`${group}.add[${index}]`};
+      if(!id) findings.push({code:'required-id',severity:'blocking',...base,message:`${group} add requires an id.`});
+      else if(persisted[group].has(id)) findings.push({code:'ADDITION_ID_ALREADY_EXISTS',severity:'blocking',...base,message:`${group} add reuses an existing ID.`});
+      const issue=validateAddedEntityIdentity(group,record); if(issue) findings.push({code:issue.code,severity:issue.severity,...base,fieldPath:`${base.fieldPath}.${issue.field}`,correction:issue.correction,message:issue.explanation});
+      for(const [target,targetId] of references(group,record)) if(!persisted[target].has(targetId)&&!added[target].has(targetId)) findings.push({code:'MISSING_INTRINSIC_DEPENDENCY',severity:'blocking',...base,dependencyRecordIds:[targetId],message:`${group} ${id} references ${target} ${targetId}, which is neither stored nor added by this patch.`});
+    }
+    for (const [index, record] of (patch?.[group]?.update ?? []).entries()) {
+      const id=typeof record?.id==='string'?record.id:''; const base={section:group,operation:'update' as const,recordId:id,fieldPath:`${group}.update[${index}]`};
+      if(!id) findings.push({code:'required-id',severity:'blocking',...base,message:`${group} update requires an id.`});
+      else if(!persisted[group].has(id)) findings.push({code:'UPDATE_TARGET_NOT_FOUND',severity:'blocking',...base,message:`Cannot update missing ${group} id: ${id}.`});
+      if(Object.keys(record??{}).filter(field=>field!=='id').length===0) findings.push({code:'UPDATE_MISSING_CHANGED_FIELDS',severity:'blocking',...base,message:`${group} update contains no changed fields.`});
+      if(group==='categories'&&id==='other') findings.push({code:'protected-identity',severity:'blocking',...base,message:'The protected Other category cannot be updated by an AI patch.'});
+      for(const [target,targetId] of references(group,record)) if(!persisted[target].has(targetId)&&!added[target].has(targetId)) findings.push({code:'MISSING_INTRINSIC_DEPENDENCY',severity:'blocking',...base,dependencyRecordIds:[targetId],message:`${group} ${id} references ${target} ${targetId}, which is neither stored nor added by this patch.`});
+    }
+    for(const idValue of patch?.[group]?.delete ?? []) { const id=String(idValue),base={section:group,operation:'delete' as const,recordId:id};
+      if(group==='people'||group==='peopleSchedule') findings.push({code:'UNSUPPORTED_DELETE_ENTITY',severity:'blocking',...base,message:`AI deletion is not supported for ${group==='people'?'People':'People Schedule'} records.`});
+      else if(!persisted[group].has(id)) findings.push({code:'DELETE_TARGET_NOT_FOUND',severity:'blocking',...base,message:`Cannot delete missing ${group} id: ${id}.`});
+      if(group==='categories'&&id==='other') findings.push({code:'DELETE_PROTECTED_OTHER_CATEGORY',severity:'blocking',...base,message:'The required Other category cannot be deleted.'});
+    }
+  }
+  return findings;
+}
+export const getIntrinsicBlockedProposalKeys = (current: AppData, patch: any) => new Set(getIntrinsicProposalFindings(current,patch).filter(f=>f.severity==='blocking'&&f.section&&f.operation&&f.recordId!==undefined).map(f=>key(f.section!,f.operation!,f.recordId!)));
 /** Indexes are built once per preflight; exact identity is blocking, title-only similarity is advisory. */
 function addDuplicateFindings(current: AppData, active: any[], findings: ValidationFinding[]) {
   const exact = new Map<string, string>(); const names = new Map<string, string>();

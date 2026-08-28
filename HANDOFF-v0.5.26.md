@@ -11,3 +11,6 @@ Task deletion removes surviving Event links and detaches surviving children. Eve
 
 ## Qualification
 The correction updates stale startup markers to v0.5.26 / interchange 5 / backup 7, fixes the AI route to `/#ai`, and expands v0.5.26 unit and browser coverage. Local browser installation is blocked by the execution environment's HTTP 403 proxy; hosted CI results must be recorded on PR #50 after push.
+
+## Final convergence correction
+The deterministic v0.5.26 browser seed now initializes only an absent store, persistence assertions poll real storage, and the destructive suite has retries disabled. Interactive Grid readers now enforce `showInGrid !== false`, while publication continues to use only `showInExport`. Intrinsic proposal validation is a single linear analysis that recognizes same-patch additions; selected-transaction preflight separately owns live dependency and deletion conflicts. Local qualification is 144/144 units, typecheck, and build green. Hosted browser/Actions results must not be recorded as green until the correction reaches PR #50.

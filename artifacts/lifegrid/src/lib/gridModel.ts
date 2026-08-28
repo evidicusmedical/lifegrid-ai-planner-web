@@ -31,8 +31,11 @@ export const eventIntersectsDate = (event: Pick<Event, 'date'|'endDate'>, date: 
   return event.date <= date && end >= date;
 };
 
+/** Interactive Grid visibility is independent from publication/export visibility. */
+export const isEventVisibleOnGrid = (event: Pick<Event, 'showInGrid'>) => event.showInGrid !== false;
+
 export const eventsForDate = (events: readonly Event[], date: string, categoryRank: ReadonlyMap<string, number>) =>
-  [...new Map(events.filter(event => eventIntersectsDate(event, date)).map(event => [event.id, event])).values()]
+  [...new Map(events.filter(event => isEventVisibleOnGrid(event) && eventIntersectsDate(event, date)).map(event => [event.id, event])).values()]
     .sort(compareGridEvents(categoryRank));
 
 /** One deterministic ordering contract shared by every representation of a grid day. */
@@ -106,7 +109,7 @@ export const buildGridViewModel = (events: readonly Event[], year: number, legac
   const legacyCall = typeof legacyOrRank === 'string';
   const categoryRank = (legacyCall ? rankOrPrevious : legacyOrRank) as ReadonlyMap<string, number>;
   const prior = (legacyCall ? previous : rankOrPrevious) as GridViewModel | undefined;
-  const summaries = selectEventsIntersectingYear(events, year).flatMap(event => expandGridEventRange(toGridEventSummary(event), year));
+  const summaries = selectEventsIntersectingYear(events.filter(isEventVisibleOnGrid), year).flatMap(event => expandGridEventRange(toGridEventSummary(event), year));
   const byDate = new Map<string, GridEventSummary[]>();
   for (const summary of summaries) { const bucket = byDate.get(summary.date) ?? []; bucket.push(summary); byDate.set(summary.date, bucket); }
   byDate.forEach(bucket => bucket.sort(compareGridEvents(categoryRank)));

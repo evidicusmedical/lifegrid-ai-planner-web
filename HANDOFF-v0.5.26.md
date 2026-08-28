@@ -1,7 +1,13 @@
 # Handoff — LifeGrid v0.5.26
+
 ## Architecture
-The canonical parsed proposal → preflight selection → immutable atomic apply pipeline now owns deletion. No parallel direct-delete path was introduced. Selected deletion sets repair references before exactly those stored IDs are removed.
-## Semantics
-Task deletion removes Event links and detaches surviving children. Event deletion removes Task links. Category deletion protects Other and moves surviving records to Other, recoloring Events. Project deletion uses clear semantics. One recurring occurrence never implies its siblings. Event visibility flags remain reversible updates.
+The canonical parsed proposal → preflight selection → immutable atomic apply pipeline owns all AI manipulation. External models can propose ADD, UPDATE, MOVE, RESCHEDULE, RECATEGORIZE, HIDE, RESTORE, DETACH, and DELETE operations, but LifeGrid exclusively controls validation, selection, destructive approval, relationship repair, and persistence. No parallel direct-delete path or cloud AI execution was introduced.
+
+## Selection and deletion semantics
+Valid additions and updates begin selected; every deletion begins unchecked. Intrinsic proposal errors disable only that proposal. Transaction conflicts are computed only from `selectedRecords`, so an unchecked delete cannot block a selected update. Surviving-record impacts update with the selected deletion set. People and People Schedule deletion are rejected.
+
+## Repairs
+Task deletion removes surviving Event links and detaches surviving children. Event deletion removes surviving Task links. Category deletion protects Other, rehomes surviving Events/Tasks, and applies the Other color to Events. Project deletion clears surviving `projectId` references. A recurring delete removes only listed IDs. Visibility/publication flags remain reversible updates.
+
 ## Qualification
-Local unit, typecheck, build, and browser results are recorded in the PR/final delivery. GitHub Actions run ID and Vercel conclusion must be filled from remote checks after push. PR head SHA is the committed head.
+The correction updates stale startup markers to v0.5.26 / interchange 5 / backup 7, fixes the AI route to `/#ai`, and expands v0.5.26 unit and browser coverage. Local browser installation is blocked by the execution environment's HTTP 403 proxy; hosted CI results must be recorded on PR #50 after push.

@@ -16,7 +16,7 @@ export function analyzeDependencies(update: ParsedUpdate, data: AppData, selecte
   groups.forEach(group => ['add', 'update'].forEach(operation => ((update[group] as any)?.[operation] ?? []).forEach((r: any, i: number) => { if (operation === 'add') { const key = patchProposalKey(group, 'add', String(r.id)); keys.set(`${group}:${r.id}`, key); } })));
   const deleting: Record<string, Set<string>> = Object.fromEntries(groups.map(group => [group, new Set(((update[group] as any)?.delete ?? []).filter((id: string) => selected.has(patchProposalKey(group, 'delete', id))))]));
   const refs = (group: string, r: any): [string, string][] => {
-    if (group === 'events') return [['categories', r.category], ...((r.linkedTaskIds ?? []).map((id: string) => ['tasks', id] as [string, string]))].filter((x): x is [string,string] => !!x[1]);
+    if (group === 'events') return [['categories', r.category], ['projects', r.projectId], ...((r.linkedTaskIds ?? []).map((id: string) => ['tasks', id] as [string, string]))].filter((x): x is [string,string] => !!x[1]);
     if (group === 'tasks') return [['categories', r.category], ['projects', r.projectId], ['tasks', r.parentTaskId], ...((r.linkedEventIds ?? []).map((id: string) => ['events', id] as [string,string]))].filter((x): x is [string,string] => !!x[1]);
     if (group === 'projects') return [];
     if (group === 'peopleSchedule') return [['people', r.person]].filter((x): x is [string,string] => !!x[1]);

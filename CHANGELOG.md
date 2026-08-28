@@ -169,3 +169,5 @@ Settings and exports
 - Adds stable-ID-only Task, Event, Category, and Project deletion to Universal AI Interchange v5.
 - Deletions default unselected, have dedicated destructive review and final confirmation, and apply atomically with relationship repair.
 - Backup schema remains 7; hiding an Event remains a reversible update distinct from deletion.
+- Refined v0.5.26 review so only selected deletions affect transaction conflicts and impact counts reflect surviving records.
+- Documented and qualified v5 add/update/move/reschedule/recategorize/hide/restore/detach authority while retaining LifeGrid as the validation and approval boundary.

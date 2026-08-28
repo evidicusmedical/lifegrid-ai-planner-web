@@ -14,6 +14,21 @@ Add, update, and human-reviewed deletion are supported. Delete arrays contain ex
 ENTITY GUIDE
 Tasks are actionable work with a completion state. Events are dated occurrences, commitments, shifts, trips, reminders, protected blocks, or Day Types. A Day Type is one all-day Event that summarizes capacity for a date, not a replacement for every Task. People Schedule is another person's availability, not the user's Task or Event. Projects are lightweight Project Tags for Tasks. Categories are shared Task/Event classifications. People are real referenced people. When classification is materially ambiguous, emit a warning instead of guessing.
 
+EXISTING RECORD MANIPULATION
+When the user requests it and a stable ID exists, update Tasks to rename them, change status/priority/dueDate (null clears it), recategorize, move or detach Project Tags (projectId or null), and change nextAction, notes, or schedulingNotes. Update Events to rename, move dates, change endDate or timed/all-day fields, recategorize, move/detach Projects, change displayPriority, hide/restore Grid visibility, or exclude/restore publication. Categories may be renamed/recolored; Projects may be renamed/recolored or have status and other supported fields updated. Moving and recategorizing always update the existing record.
+
+V5 UPDATE AND DELETE EXAMPLES
+Task recategorization: {"id":"task-existing-id","category":"work"}
+Task Project move: {"id":"task-existing-id","projectId":"project-known-id"}
+Task Project detach: {"id":"task-existing-id","projectId":null}
+Task due-date move: {"id":"task-existing-id","dueDate":"2026-09-15"}
+Event recategorization: {"id":"event-existing-id","category":"personal"}
+Event reschedule: {"id":"event-existing-id","date":"2026-09-21","endDate":"2026-09-21","timeStatus":"timed","startTime":"14:00","endTime":"15:00"}
+Event hide: {"id":"event-existing-id","showInGrid":false}
+Event delete: "events":{"add":[],"update":[],"delete":["event-existing-id"]}
+Task delete: "tasks":{"add":[],"update":[],"delete":["task-existing-id"]}
+HIDE != DELETE. "Hide this from my Grid" means showInGrid:false; "Do not include this in exports" means showInExport:false; restore with true. "Delete/remove permanently" means the delete array. "Move this" updates its existing record. "Recategorize this" updates category. Vague cleanup language does not justify permanent deletion when a reversible update is sufficient.
+
 MEANINGFUL ADDITION IDENTITIES
 Every addition needs Task.name, Event.title, PeopleSchedule.title, Project.name, Category.label, or Person.label. The identity must be concrete and human-readable. Never emit empty, whitespace-only, Untitled, New task, New event, Task, Event, Item, TBD, Unknown, Placeholder, To do, Title, Name, punctuation-only, UUID-only, generated-ID-only, date-only, or time-only identities. A meaningful phrase containing one of those words is allowed. Prefer actionable, independently distinguishable Task names and specific Event titles. eventKind placeholder never permits a generic title.
 
@@ -29,7 +44,7 @@ Timed Event add: {"id":"evt-example-unit-checkin","date":"2026-07-21","endDate":
 All-day Event add: {"id":"evt-example-day","date":"2026-07-22","endDate":"2026-07-22","title":"Fictional planning day","category":"other","timeStatus":"all-day","startTime":null,"endTime":null,"color":"#6b7280","notes":null,"displayPriority":4,"showInGrid":true,"showInExport":true,"eventKind":"day-type","linkedTaskIds":[],"aiNotes":null,"sourceNotes":null,"recurringGroupId":null}
 Sparse updates: {"id":"existing-task-id","status":"done","notes":"Completed and confirmation saved."} and {"id":"existing-event-id","startTime":"09:00","endTime":"09:30"}. Every new projectId requires its Project in current context or projects.add. Legacy parentTaskId, linkedEventIds, and linkedTaskIds in exported context are read-only: never add or modify them. Use category for classification, projectId for workstream grouping, and notes, schedulingNotes, aiNotes, or sourceNotes for dependency context.
 
-Before final output, internally verify the JSON parses; version 4; the exact complete envelope; every Project dependency is present; all proposal IDs are unique; legacy hard links are treated as read-only and ignored when proposed; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
+Before final output, internally verify the JSON parses; version 5; the exact complete envelope; every Project dependency is present; all proposal IDs are unique; legacy hard links are treated as read-only and ignored when proposed; no typographic quotes, unsupported fields, Project Operations, milestone operations, partial objects, or placeholder tokens; meaningful additions; real update IDs; changed update fields; no time-zone fields or invented dates/times; and unresolved facts as warnings. Do not output this checklist.`;
 export const universalSchema = aiPromptContract;
 
 export const generateUniversalStarterPrompt = () => `

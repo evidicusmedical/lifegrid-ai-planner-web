@@ -1,6 +1,7 @@
 import type { AppData } from '../types';
 import { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
 import { identityField, validateAddedEntityIdentity } from './aiEntityQuality.js';
+import { temporalErrors } from './temporal.js';
 export { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
 
 export type ValidationSeverity = 'blocking' | 'warning' | 'info';
@@ -40,6 +41,7 @@ export function getIntrinsicProposalFindings(current: AppData, patch: any): Vali
       if(!id) findings.push({code:'required-id',severity:'blocking',...base,message:`${group} add requires an id.`});
       else if(persisted[group].has(id)) findings.push({code:'ADDITION_ID_ALREADY_EXISTS',severity:'blocking',...base,message:`${group} add reuses an existing ID.`});
       const issue=validateAddedEntityIdentity(group,record); if(issue) findings.push({code:issue.code,severity:issue.severity,...base,fieldPath:`${base.fieldPath}.${issue.field}`,correction:issue.correction,message:issue.explanation});
+      if(group==='events'&&record?.date){const errors=temporalErrors(record);if(errors.length)findings.push({code:'INVALID_TEMPORAL_EVENT',severity:'blocking',...base,message:`Invalid Event ${id}: ${errors.join(' ')}`});}
       for(const [target,targetId] of references(group,record)) if(!persisted[target].has(targetId)&&!added[target].has(targetId)) findings.push({code:'MISSING_INTRINSIC_DEPENDENCY',severity:'blocking',...base,dependencyRecordIds:[targetId],message:`${group} ${id} references ${target} ${targetId}, which is neither stored nor added by this patch.`});
     }
     for (const [index, record] of (patch?.[group]?.update ?? []).entries()) {
@@ -48,6 +50,7 @@ export function getIntrinsicProposalFindings(current: AppData, patch: any): Vali
       else if(!persisted[group].has(id)) findings.push({code:'UPDATE_TARGET_NOT_FOUND',severity:'blocking',...base,message:`Cannot update missing ${group} id: ${id}.`});
       if(Object.keys(record??{}).filter(field=>field!=='id').length===0) findings.push({code:'UPDATE_MISSING_CHANGED_FIELDS',severity:'blocking',...base,message:`${group} update contains no changed fields.`});
       if(group==='categories'&&id==='other') findings.push({code:'protected-identity',severity:'blocking',...base,message:'The protected Other category cannot be updated by an AI patch.'});
+      if(group==='events'&&persisted.events.has(id)){const merged={...current.events.find(event=>event.id===id),...record};const errors=temporalErrors(merged as any);if(errors.length)findings.push({code:'INVALID_TEMPORAL_EVENT',severity:'blocking',...base,message:`Invalid Event ${id}: ${errors.join(' ')}`});}
       for(const [target,targetId] of references(group,record)) if(!persisted[target].has(targetId)&&!added[target].has(targetId)) findings.push({code:'MISSING_INTRINSIC_DEPENDENCY',severity:'blocking',...base,dependencyRecordIds:[targetId],message:`${group} ${id} references ${target} ${targetId}, which is neither stored nor added by this patch.`});
     }
     for(const idValue of patch?.[group]?.delete ?? []) { const id=String(idValue),base={section:group,operation:'delete' as const,recordId:id};
@@ -121,6 +124,12 @@ export function preflightPatch(current: AppData, patch: any, selected?: Set<stri
     Object.keys(r).forEach(field => { if (field !== 'id' && has(r, field)) merged[field] = clone(r[field]); });
     records[index] = merged;
     findings.push({ code:'merged-update', severity:'info', section:group, operation:'update', recordId:r.id, message:`Update ${r.id} was merged with the current record.` });
+  }
+  for (const item of active.filter(x => x.group === 'events' && (x.operation === 'add' || x.operation === 'update'))) {
+    const finalEvent = next.events.find((event:any) => event.id === item.recordId);
+    if (!finalEvent) continue;
+    const errors = finalEvent.date ? temporalErrors(finalEvent) : [];
+    if (errors.length) findings.push({ code:'INVALID_TEMPORAL_EVENT', severity:'blocking', section:'events', operation:item.operation, recordId:item.recordId, message:`Invalid Event ${item.recordId}: ${errors.join(' ')}` });
   }
   const deleting: Record<string, Set<string>> = Object.fromEntries(groups.map(group => [group, new Set(active.filter(x=>x.group===group&&x.operation==='delete').map(x=>x.recordId))]));
   // Defined repairs occur before removing exactly the selected records.

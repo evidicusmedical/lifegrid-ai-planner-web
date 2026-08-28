@@ -1100,6 +1100,17 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   if (parsed.events) {
     const updateArr = Array.isArray(parsed.events.update) ? parsed.events.update : [];
     const deleteArr = normalizeIds(parsed.events.delete ?? []);
+    if (patchVersion === 5) {
+      const existing = new Map((existingData?.events ?? []).map(event => [event.id, event]));
+      const proposed = [
+        ...(Array.isArray(parsed.events.add) ? parsed.events.add : []),
+        ...updateArr.map((update: any) => ({ ...(existing.get(update?.id) ?? {}), ...update })),
+      ];
+      proposed.forEach((event: any) => {
+        const errors = temporalErrors(event);
+        if (errors.length) throw new Error(`Invalid v${patchVersion} event ${event?.id ?? 'missing'}: ${errors.join(' ')}`);
+      });
+    }
     // Warn on unknown update/delete IDs
     if (existingData) {
       updateArr.forEach((u: any) => {
@@ -1120,11 +1131,11 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
         .map((u: any) => normalizeEventUpdate(u, validCats, colorMap, warnings)),
       delete: deleteArr,
     };
-    if (patchVersion === 4) {
+    if (typeof patchVersion === 'number' && patchVersion >= 4 && patchVersion <= AI_INTERCHANGE_VERSION) {
       const existing = new Map((existingData?.events ?? []).map(e => [e.id, e]));
       [...result.events.add, ...result.events.update.map(update => ({ ...(existing.get(update.id) ?? {}), ...update }))].forEach((event: any) => {
         const errors = temporalErrors(event);
-        if (errors.length) throw new Error(`Invalid v4 event ${event.id}: ${errors.join(' ')}`);
+        if (errors.length) throw new Error(`Invalid v${patchVersion} event ${event.id}: ${errors.join(' ')}`);
       });
     }
   }

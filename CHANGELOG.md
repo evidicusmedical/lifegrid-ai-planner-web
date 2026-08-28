@@ -164,3 +164,8 @@ Settings and exports
 - Made targeted Grid PNG capture deterministic at normal coordinates and independent of the annual Grid table.
 - Anchored Next 7/14/30 to today, allowed targeted cross-year ranges up to 45 days, respected `showInExport`, and enabled empty schedule images.
 - Added unit and real Chromium/Firefox/WebKit image-generation qualification plus PNG download signature coverage.
+
+## v0.5.26 — Human-reviewed AI deletion
+- Adds stable-ID-only Task, Event, Category, and Project deletion to Universal AI Interchange v5.
+- Deletions default unselected, have dedicated destructive review and final confirmation, and apply atomically with relationship repair.
+- Backup schema remains 7; hiding an Event remains a reversible update distinct from deletion.

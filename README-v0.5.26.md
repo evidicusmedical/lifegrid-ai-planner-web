@@ -1,0 +1,2 @@
+# LifeGrid v0.5.26
+LifeGrid now reviews AI-proposed permanent deletion of Tasks, Events, Categories/Tags, and Project Tags as first-class patch operations. Delete proposals require stable existing IDs, default unchecked, appear in a red destructive section, support explicit bulk approval, and receive a final confirmation. Event hiding uses `showInGrid:false` or `showInExport:false` and does not delete the record. Interchange is v5; backup schema remains 7.

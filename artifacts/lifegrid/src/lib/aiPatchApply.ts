@@ -4,7 +4,8 @@ import { identityField, validateAddedEntityIdentity } from './aiEntityQuality.js
 export { patchProposalKey, type PatchEntityType, type PatchOperation } from './aiDependencies.js';
 
 export type ValidationSeverity = 'blocking' | 'warning' | 'info';
-export type ValidationFinding = { code: string; severity: ValidationSeverity; section?: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule'|'patch'; operation?: 'add'|'update'; recordId?: string; fieldPath?: string; correction?: string; message: string; dependencyRecordIds?: string[] };
+export type ValidationFinding = { code: string; severity: ValidationSeverity; section?: 'categories'|'people'|'projects'|'tasks'|'events'|'peopleSchedule'|'patch'; operation?: PatchOperation; recordId?: string; fieldPath?: string; correction?: string; message: string; dependencyRecordIds?: string[] };
+export type DeleteImpact = { proposalKey: string; affectedEvents: number; affectedTasks: number; detachedChildren: number; remainingRecurringSiblings: number; behavior: string };
 export type PatchReadiness = { selectedCount: number; blockingCount: number; warningCount: number; infoCount: number; canApply: boolean; disabledReason: string | null };
 const groups = ['categories', 'people', 'projects', 'tasks', 'events', 'peopleSchedule'] as const;
 const collection: Record<string, keyof AppData> = { categories: 'categories', people: 'people', projects: 'projects', tasks: 'tasks', events: 'events', peopleSchedule: 'personEvents' };
@@ -45,18 +46,20 @@ function addDuplicateFindings(current: AppData, active: any[], findings: Validat
 export function preflightPatch(current: AppData, patch: any, selected?: Set<string>) {
   const findings: ValidationFinding[] = [];
   const selectedKeys = selected ?? new Set<string>();
-  const all = groups.flatMap(group => ['add','update'].flatMap(operation => (patch?.[group]?.[operation] ?? []).map((record: any, index: number) => ({ group, operation: operation as 'add'|'update', record, index, key: key(group, operation, String(record?.id ?? '')) }))));
+  const all = groups.flatMap(group => ['add','update','delete'].flatMap(operation => (patch?.[group]?.[operation] ?? []).map((value: any, index: number) => { const recordId = operation === 'delete' ? String(value) : String(value?.id ?? ''); return { group, operation: operation as PatchOperation, record: operation === 'delete' ? (current as any)[collection[group]]?.find((r:any)=>r.id===recordId) : value, recordId, index, key: key(group, operation, recordId) }; })));
   const active = selected ? all.filter(x => selectedKeys.has(x.key)) : all;
   const addIds: Record<string, Set<string>> = Object.fromEntries(groups.map(g => [g, new Set<string>()]));
   addDuplicateFindings(current, active, findings);
   const seen = new Map<string, string>();
   active.forEach(item => {
-    const id = typeof item.record?.id === 'string' ? item.record.id : '';
+    const id = item.recordId;
     if (!id) findings.push({ code:'required-id', severity:'blocking', section:item.group, operation:item.operation, message:`${item.group} ${item.operation} requires an id.` });
     const identity = `${item.group}:${id}`;
     if (id && seen.has(identity)) findings.push({ code:'duplicate-operation', severity:'blocking', section:item.group, operation:item.operation, recordId:id, message:`Conflicting operations target ${item.group} ${id}.` });
     else if (id) seen.set(identity, item.key);
     if (item.operation === 'add' && id) addIds[item.group].add(id);
+    if (item.operation === 'delete' && !item.record) findings.push({ code:'DELETE_TARGET_NOT_FOUND', severity:'blocking', section:item.group, operation:'delete', recordId:id, message:`Cannot delete missing ${item.group} id: ${id}.` });
+    if (item.operation === 'delete' && item.group === 'categories' && id === 'other') findings.push({ code:'DELETE_PROTECTED_OTHER_CATEGORY', severity:'blocking', section:'categories', operation:'delete', recordId:id, message:'The required Other category cannot be deleted.' });
     if (item.operation === 'add') {
       const issue = validateAddedEntityIdentity(item.group, item.record);
       if (issue) findings.push({ code:issue.code, severity:issue.severity, section:item.group, operation:'add', recordId:id, fieldPath:`${item.group}.add[${item.index}].${issue.field}`, correction:issue.correction, message:issue.explanation });
@@ -84,14 +87,25 @@ export function preflightPatch(current: AppData, patch: any, selected?: Set<stri
     records[index] = merged;
     findings.push({ code:'merged-update', severity:'info', section:group, operation:'update', recordId:r.id, message:`Update ${r.id} was merged with the current record.` });
   }
+  const deleting: Record<string, Set<string>> = Object.fromEntries(groups.map(group => [group, new Set(active.filter(x=>x.group===group&&x.operation==='delete').map(x=>x.recordId))]));
+  // Defined repairs occur before removing exactly the selected records.
+  next.events = next.events.map((event:any) => deleting.events.has(event.id) ? event : ({ ...event, linkedTaskIds:(event.linkedTaskIds??[]).filter((id:string)=>!deleting.tasks.has(id)), ...(deleting.categories.has(event.category) ? { category:'other', color:next.categories.find((c:any)=>c.id==='other')?.color } : {}), ...(event.projectId && deleting.projects.has(event.projectId) ? {projectId:null} : {}) }));
+  next.tasks = next.tasks.map((task:any) => deleting.tasks.has(task.id) ? task : ({ ...task, linkedEventIds:(task.linkedEventIds??[]).filter((id:string)=>!deleting.events.has(id)), ...(task.parentTaskId && deleting.tasks.has(task.parentTaskId) ? {parentTaskId:null} : {}), ...(deleting.categories.has(task.category) ? {category:'other'} : {}), ...(task.projectId && deleting.projects.has(task.projectId) ? {projectId:null} : {}) }));
+  for (const group of ['categories','projects','tasks','events'] as const) next[collection[group]] = next[collection[group]].filter((record:any)=>!deleting[group].has(record.id));
   try { validateReferences(next); validateRecords(next); } catch (error: any) { findings.push({ code:'integrity', severity:'blocking', section:'patch', message:error.message }); }
   // A dependency missing from selected additions is a selected transaction error, not a global warning.
   const persisted: Record<string, Set<string>> = { categories:new Set(current.categories.map(x=>x.id)), people:new Set(current.people.map(x=>x.id)), projects:new Set(current.projects.map(x=>x.id)), tasks:new Set(current.tasks.map(x=>x.id)), events:new Set(current.events.map(x=>x.id)), peopleSchedule:new Set(current.personEvents.map(x=>x.id)) };
-  active.forEach(item => references(item.group, item.record).forEach(([target, id]) => { if (!persisted[target].has(id) && !addIds[target].has(id)) findings.push({ code:'unselected-dependency', severity:'blocking', section:item.group, operation:item.operation, recordId:item.record.id, dependencyRecordIds:[id], message:`Selected ${item.group} ${item.record.id} references ${target} ${id}, which does not exist in the selected transaction.` }); }));
+  active.filter(item=>item.operation!=='delete').forEach(item => references(item.group, item.record).forEach(([target, id]) => { if (deleting[target].has(id)) findings.push({ code:'CONFLICTING_OPERATIONS', severity:'blocking', section:item.group, operation:item.operation, recordId:item.record.id, dependencyRecordIds:[id], message:`Selected ${item.group.slice(0,-1)} ${item.record.id} references ${target.slice(0,-1)} ${id}, but that record is selected for deletion.` }); else if (!persisted[target].has(id) && !addIds[target].has(id)) findings.push({ code:'unselected-dependency', severity:'blocking', section:item.group, operation:item.operation, recordId:item.record.id, dependencyRecordIds:[id], message:`Selected ${item.group} ${item.record.id} references ${target} ${id}, which does not exist in the selected transaction.` }); }));
+  active.filter(item=>item.operation==='delete' && item.record).forEach(item => {
+    const recurring = item.record.recurringGroupId ? ((current as any)[collection[item.group]]??[]).filter((r:any)=>r.recurringGroupId===item.record.recurringGroupId&&!deleting[item.group].has(r.id)).length : 0;
+    if (recurring) findings.push({code:'RECURRING_SINGLE_RECORD_DELETE',severity:'warning',section:item.group,operation:'delete',recordId:item.recordId,message:`This deletes one occurrence from recurring group ${item.record.recurringGroupId}. ${recurring} related record${recurring===1?'':'s'} will remain.`});
+    if (item.group==='events' && ['fixed-appointment','shift','travel','protected-time','day-type'].includes(item.record.eventKind) || item.group==='events' && !item.record.eventKind) findings.push({code:'HIGH_IMPACT_EVENT_DELETE',severity:'warning',section:'events',operation:'delete',recordId:item.recordId,message:`High-impact Event deletion: '${item.record.title}' is a ${item.record.eventKind ?? 'unknown kind'}. Review carefully before approving.`});
+  });
   const noopKeys = new Set<string>();
   active.filter(x=>x.operation==='update').forEach(item => { const original = (current as any)[collection[item.group]]?.find((x:any)=>x.id===item.record.id); const final = (next as any)[collection[item.group]]?.find((x:any)=>x.id===item.record.id); if (original && final && JSON.stringify(original) === JSON.stringify(final)) { noopKeys.add(item.key); findings.push({code:'no-op-update',severity:'info',section:item.group,operation:'update',recordId:item.record.id,message:`Update ${item.record.id} makes no change.`}); } });
   return { data: next as AppData, findings, noopKeys, activeKeys: active.map(x=>x.key) };
 }
+export function calculateDeleteImpacts(current: AppData, patch: any): DeleteImpact[] { return groups.flatMap(group => (patch?.[group]?.delete ?? []).map((id:string) => { const record:any=(current as any)[collection[group]]?.find((r:any)=>r.id===id); const affectedEvents=group==='tasks'?current.events.filter(e=>(e.linkedTaskIds??[]).includes(id)).length:group==='categories'?current.events.filter(e=>e.category===id).length:group==='projects'?current.events.filter(e=>e.projectId===id).length:0; const affectedTasks=group==='events'?current.tasks.filter(t=>(t.linkedEventIds??[]).includes(id)).length:group==='categories'?current.tasks.filter(t=>t.category===id).length:group==='projects'?current.tasks.filter(t=>t.projectId===id).length:0; const detachedChildren=group==='tasks'?current.tasks.filter(t=>t.parentTaskId===id).length:0; const remainingRecurringSiblings=record?.recurringGroupId?((current as any)[collection[group]]??[]).filter((r:any)=>r.id!==id&&r.recurringGroupId===record.recurringGroupId).length:0; const behavior=group==='categories'?`${affectedEvents} Events + ${affectedTasks} Tasks will move to Other`:group==='projects'?`${affectedTasks} Tasks detached · ${affectedEvents} Events detached`:group==='tasks'?`${affectedEvents} Event links removed · ${detachedChildren} child Tasks detached`:`${affectedTasks} Task links removed`; return {proposalKey:key(group,'delete',id),affectedEvents,affectedTasks,detachedChildren,remainingRecurringSiblings,behavior}; })); }
 export function getPatchReadiness(current: AppData, patch: any, selected: Set<string>): PatchReadiness & { findings: ValidationFinding[] } {
   const plan = preflightPatch(current, patch, selected); const blockingCount = plan.findings.filter(x=>x.severity==='blocking').length; const warningCount = plan.findings.filter(x=>x.severity==='warning').length + (patch?.warnings?.length ?? 0); const infoCount = plan.findings.filter(x=>x.severity==='info').length; const selectedCount = plan.activeKeys.length;
   const disabledReason = !selectedCount ? 'Select at least one change.' : blockingCount ? `${blockingCount} selected change${blockingCount===1?' contains':'s contain'} blocking errors.` : null;

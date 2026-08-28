@@ -74,8 +74,7 @@ test('AI parser enforces blocked status, preserves combined triage, and merges u
  const combined=parseAIUpdate(JSON.stringify({lifegridPatchVersion:4,tasks:{update:[{id:'t',status:'blocked',triageStatus:'waiting'}]}}),existing.categories,existing);
  assert.equal(combined.tasks.update[0].status,'blocked'); assert.equal(combined.tasks.update[0].triageStatus,'waiting');
  const deletion=parseAIUpdate(JSON.stringify({lifegridPatchVersion:4,tasks:{update:[{id:'t',notes:'retain me'}],delete:['t']}}),existing.categories,existing);
- assert.deepEqual(deletion.tasks.delete,[]); assert.equal(deletion.tasks.update[0].notes,'retain me'); assert.equal(deletion.tasks.update[0].status,'blocked');
- assert.match(deletion.warnings.join(' '),/AI deletion is unavailable/);
+ assert.deepEqual(deletion.tasks.delete,['t']); assert.equal(deletion.tasks.update[0].notes,'retain me');
 });
 test('Project and People ordering helpers persist deterministically through JSON',()=>{
  const legacy=[{id:'a'},{id:'b',order:0},{id:'c'}];
@@ -94,7 +93,7 @@ test('corrected UI contracts and release markers are exposed',()=>{
  assert.ok(eventSheet.indexOf('value="entire-series"') < eventSheet.indexOf('value="this-event"'));
  assert.match(eventSheet,/events\.filter\(event => event\.recurringGroupId === groupId\)/);
  assert.match(context,/people: moveOrderedEntity/); assert.match(context,/projects: moveOrderedEntity/);
- assert.match(readFileSync(new URL('../src/lib/version.ts',import.meta.url),'utf8'),/v0\.5\.25/);
+ assert.match(readFileSync(new URL('../src/lib/version.ts',import.meta.url),'utf8'),/v0.5.26/);
 });
 
 test('v0.5.23 settings shares one UpDownControl and Event-only deletion UI',()=>{const source=readFileSync(new URL('../src/pages/SettingsView.tsx',import.meta.url),'utf8');assert.equal((source.match(/<UpDownControl /g)||[]).length,3);assert.doesNotMatch(source,/>↑<|>↓</);assert.match(source,/totalTasks>0\|\|usage\[deleting.id\]\.relatedEvents>0/);assert.match(source,/Remove Project from Tasks and Events/);assert.match(source,/Reassign Tasks and Events/);});

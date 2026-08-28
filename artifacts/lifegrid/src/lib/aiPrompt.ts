@@ -6,10 +6,10 @@ import { aiExportManifest, sanitizeAIRelationships, selectAIExportData, type AIE
 export const aiPromptContract = () => `LifeGrid Universal AI Interchange v${AI_INTERCHANGE_VERSION}
 
 OUTPUT ENVELOPE (return this exact complete shape, with raw RFC 8259 JSON only):
-{"lifegridPatchVersion":4,"categories":{"add":[],"update":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[]},"tasks":{"add":[],"update":[]},"events":{"add":[],"update":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}
+{"lifegridPatchVersion":5,"categories":{"add":[],"update":[],"delete":[]},"people":{"add":[],"update":[]},"projects":{"add":[],"update":[],"delete":[]},"tasks":{"add":[],"update":[],"delete":[]},"events":{"add":[],"update":[],"delete":[]},"peopleSchedule":{"add":[],"update":[]},"warnings":[]}
 
 OPERATIONS AND IDENTITY
-Only add and update operations are supported. Return no Markdown fences, prose before/after JSON, placeholders, ellipses, or omitted arrays. Use straight ASCII double quotation marks only. Use add only for a record that does not exist. Use update only with an exact stable ID from CURRENT LIFEGRID CONTEXT; never invent an update ID or use a name as an ID. Never place an existing ID under add. Updates contain only changed fields; omitted fields remain unchanged, null clears nullable fields, and empty relationship arrays clear relationships. Every update changes at least one field besides id. Unsupported deletion, removal, merge, archive, standalone rename, Project Operation, and milestone operation requests belong in warnings for human review.
+Add, update, and human-reviewed deletion are supported. Delete arrays contain exact stable existing IDs only: never names, titles, dates, or approximate matches, and never invent a delete ID. People and People Schedule cannot be deleted. Never delete the protected "other" Category. Use deletion only when intent clearly means permanent removal; never infer it because a record looks stale, old, completed, low priority, or duplicate-looking. If intent is ambiguous, prefer a reversible update and add a warning. For Events, “hide from Grid” means showInGrid:false and “exclude from export” means showInExport:false; neither means deletion. Explicit permanent removal means events.delete. Return no Markdown fences, prose before/after JSON, placeholders, ellipses, or omitted arrays. Use add only for a record that does not exist and update only with an exact stable ID. Updates contain only changed fields; omitted fields remain unchanged, null clears nullable fields, and empty relationship arrays clear relationships.
 
 ENTITY GUIDE
 Tasks are actionable work with a completion state. Events are dated occurrences, commitments, shifts, trips, reminders, protected blocks, or Day Types. A Day Type is one all-day Event that summarizes capacity for a date, not a replacement for every Task. People Schedule is another person's availability, not the user's Task or Event. Projects are lightweight Project Tags for Tasks. Categories are shared Task/Event classifications. People are real referenced people. When classification is materially ambiguous, emit a warning instead of guessing.
@@ -110,7 +110,6 @@ AI REVIEW INSTRUCTIONS
 - Do not delete items without stable IDs.
 - Main Task status is authoritative: explicit blocked/in-progress/complete/to-do requests update status (blocked/in-progress/done/todo), never triageStatus alone. Explicit review/waiting/scheduling requests may update only the existing canonical triageStatus. If both are requested, disclose and emit both fields.
 - To clear a Task due date, emit dueDate: null and do not infer a triage state or change unrelated fields.
-- AI Task deletion is unavailable. For a deletion request, propose status: "blocked" and disclose exactly: "AI deletion is unavailable. This change will mark the task Blocked for manual review instead."
 - Create flat, discrete actionable Tasks by default. Prefer "<Workstream> - <Sub-area> - <Concrete action>" (for example, "In-processing - Credentialing - Submit privileges packet"). Keep Project as projectId rather than repeating it in the title. Do not create parentTaskId, linkedEventIds, or linkedTaskIds. Use category for classification, projectId for workstreams, and notes for dependency context.
 - Respect dueDateType: real-deadline tasks are fixed unless I explicitly approve a move; target-date tasks are movable if overloaded; someday-backlog tasks are parkable; needs-clarification tasks require user review; project-subtask tasks belong under their larger workstream.
 - Treat tags/categories as one shared classification system.
@@ -830,7 +829,7 @@ ${schemaReference(data.categories)}`;
 
 // ─── Robust parser ────────────────────────────────────────────────────────────
 export interface ParsedUpdate {
-  categories?: { add: Category[]; update: Array<{ id: string } & Partial<Category>> };
+  categories?: { add: Category[]; update: Array<{ id: string } & Partial<Category>>; delete: string[] };
   people?: { add: Person[]; update: Array<{ id: string } & Partial<Person>> };
   peopleSchedule?: { add: PersonEvent[]; update: Array<{ id: string } & Partial<PersonEvent>> };
   projects?: {
@@ -930,7 +929,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
     .replace(/```\s*/g, '')
     .trim();
 
-  const dataKeyMatch = s.match(/\{\s*["\u201C\u201D](?:lifegridPatchVersion|projects|events|tasks|reviewItems|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)["\u201C\u201D]/);
+  const dataKeyMatch = s.match(/\{\s*["\u201C\u201D](?:lifegridPatchVersion|categories|projects|events|tasks|reviewItems|warnings|new_events|updated_events|deleted_event_ids|new_tasks|updated_tasks|completed_task_ids|deleted_task_ids|notes)["\u201C\u201D]/);
   const start = dataKeyMatch?.index ?? s.indexOf('{');
 
   if (start < 0) {
@@ -1005,7 +1004,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   };
   if (parsed.categories) {
     const add = unique(Array.isArray(parsed.categories.add) ? parsed.categories.add : [], 'category').filter(c => typeof c.label === 'string' && c.label.trim() && validHex(c.color)).map(c => ({ id: String(c.id), label: c.label.trim(), color: c.color }));
-    result.categories = { add, update: (Array.isArray(parsed.categories.update) ? parsed.categories.update : []).filter((c: any) => c?.id && c.id !== 'other').map((c: any) => ({ id: String(c.id), ...(typeof c.label === 'string' ? { label: c.label } : {}), ...(validHex(c.color) ? { color: c.color } : {}) })) };
+    result.categories = { add, update: (Array.isArray(parsed.categories.update) ? parsed.categories.update : []).filter((c: any) => c?.id && c.id !== 'other').map((c: any) => ({ id: String(c.id), ...(typeof c.label === 'string' ? { label: c.label } : {}), ...(validHex(c.color) ? { color: c.color } : {}) })), delete: normalizeIds(parsed.categories.delete ?? []) };
     add.forEach(category => validCats.add(category.id));
   }
   if (parsed.people) {
@@ -1146,14 +1145,10 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
       }
     });
 
-    if (deleteArr.length) warnings.push('AI deletion is unavailable. This change will mark the task Blocked for manual review instead.');
-    const deletionIds = new Set(deleteArr.filter(id => existingTaskIds.has(id)));
-    const mergedTaskUpdates = taskUpdates.map((update: { id: string } & Partial<Task>) => deletionIds.has(update.id) ? { ...update, status: 'blocked' as const } : update);
-    const deletionWorkarounds = [...deletionIds].filter(id => !mergedTaskUpdates.some((update: { id: string }) => update.id === id)).map(id => ({ id, status: 'blocked' as const }));
     result.tasks = {
       add:    taskAdds,
-      update: [...mergedTaskUpdates, ...deletionWorkarounds],
-      delete: [],
+      update: taskUpdates,
+      delete: deleteArr,
     };
   }
 
@@ -1178,6 +1173,7 @@ export const parseAIUpdate = (input: string, categories: Category[], existingDat
   warnings.push(...sanitized.warnings);
 
   const totalChanges =
+    (result.categories?.add.length ?? 0) + (result.categories?.update.length ?? 0) + (result.categories?.delete.length ?? 0) +
     (result.projects?.add.length ?? 0) + (result.projects?.update.length ?? 0) + (result.projects?.delete.length ?? 0) +
     (result.events?.add.length ?? 0) + (result.events?.update.length ?? 0) + (result.events?.delete.length ?? 0) +
     (result.tasks?.add.length ?? 0) + (result.tasks?.update.length ?? 0) + (result.tasks?.delete.length ?? 0);

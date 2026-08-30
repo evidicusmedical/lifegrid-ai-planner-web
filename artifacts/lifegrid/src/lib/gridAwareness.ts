@@ -4,7 +4,9 @@ export type DateTemporalState = {
   isSelected: boolean;
 };
 
-export type GridExportDatePreset = 'current' | 'next7' | 'next14' | 'next30' | 'custom';
+import { countCalendarMonthsInclusive } from './gridWindow.js';
+
+export type GridExportDatePreset = 'currentGrid' | 'calendarYear' | 'q1' | 'q2' | 'q3' | 'q4' | 'next7' | 'next14' | 'next30' | 'custom' | 'current';
 
 const addCalendarDays = (isoDate: string, days: number) => {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -15,13 +17,26 @@ const addCalendarDays = (isoDate: string, days: number) => {
 /** Resolves export dates without consulting selection or scroll state. */
 export const resolveExportDateRange = (
   preset: GridExportDatePreset,
-  gridYear: number,
-  today: string,
-  customStart = '',
+  gridWindow: { start: string; end: string } | number,
+  anchorYearOrToday: number | string,
+  todayOrCustomStart = '',
+  customStartOrEnd = '',
   customEnd = '',
 ) => {
-  if (preset === 'current') return { start: `${gridYear}-01-01`, end: `${gridYear}-12-31` };
-  if (preset === 'custom') return { start: customStart, end: customEnd };
+  // Legacy signature (preset, year, today, customStart, customEnd) remains supported.
+  const legacy = typeof gridWindow === 'number';
+  const anchorYear = legacy ? gridWindow : anchorYearOrToday as number;
+  const today = legacy ? anchorYearOrToday as string : todayOrCustomStart;
+  const customStart = legacy ? todayOrCustomStart : customStartOrEnd;
+  const resolvedCustomEnd = legacy ? customStartOrEnd : customEnd;
+  if (preset === 'currentGrid') return typeof gridWindow === 'number' ? { start: `${gridWindow}-01-01`, end: `${gridWindow}-12-31` } : gridWindow;
+  if (preset === 'current' || preset === 'calendarYear') return { start: `${anchorYear}-01-01`, end: `${anchorYear}-12-31` };
+  if (/^q[1-4]$/.test(preset)) {
+    const quarter = Number(preset.slice(1)), firstMonth = (quarter - 1) * 3 + 1, endMonth = firstMonth + 2;
+    const lastDay = new Date(Date.UTC(anchorYear, endMonth, 0)).getUTCDate();
+    return { start: `${anchorYear}-${String(firstMonth).padStart(2, '0')}-01`, end: `${anchorYear}-${String(endMonth).padStart(2, '0')}-${lastDay}` };
+  }
+  if (preset === 'custom') return { start: customStart, end: resolvedCustomEnd };
   const days = preset === 'next7' ? 7 : preset === 'next14' ? 14 : 30;
   return { start: today, end: addCalendarDays(today, days - 1) };
 };
@@ -59,16 +74,8 @@ export const validateExportRange = (
   const { start, end } = range;
   if (!start || !end) return 'Choose both a start and end date.';
   if (start > end) return 'The export start date must be on or before the end date.';
-  if (!targeted && (!start.startsWith(`${gridYear}-`) || !end.startsWith(`${gridYear}-`))) {
-    return `Choose dates inside the ${gridYear} grid.`;
-  }
   if (targeted) {
-    const startDate = new Date(`${start}T00:00:00Z`);
-    const endDate = new Date(`${end}T00:00:00Z`);
-    const inclusiveDays = Math.floor((endDate.getTime() - startDate.getTime()) / 86_400_000) + 1;
-    if (!Number.isFinite(inclusiveDays) || inclusiveDays > targetedMaxDays) {
-      return `Choose a range of ${targetedMaxDays} days or fewer.`;
-    }
+    if (countCalendarMonthsInclusive(start, end) > 12) return 'Choose a range spanning no more than 12 calendar months.';
   }
   return null;
 };

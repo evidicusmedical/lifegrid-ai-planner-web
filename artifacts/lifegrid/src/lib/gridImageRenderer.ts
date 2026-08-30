@@ -16,9 +16,46 @@ export interface GridPngOptions {
   targeted: boolean;
   firefox: boolean;
   safari: boolean;
+  layout?: "week" | "multiweek" | "month-columns";
 }
 
+export const gridRendererStrategy = (options: Pick<GridPngOptions, "targeted" | "firefox" | "layout">): GridImageRendererName[] => {
+  if (options.targeted && options.firefox) return ["canvas2d"];
+  if (!options.targeted && options.firefox && options.layout === "month-columns") return ["canvas2d", "html-to-image", "html2canvas"];
+  return options.layout === "month-columns"
+    ? ["html-to-image", "html2canvas", "canvas2d"]
+    : ["html-to-image", "html2canvas"];
+};
+
 const RENDER_TIMEOUT_MS = 22_000;
+
+/** Deterministic publication-title wrapping. Date labels intentionally never use this helper. */
+export const wrapCanvasText = (input: { text: string; maxWidth: number; maxLines: number; measureText: (text: string) => number }) => {
+  const { maxWidth, maxLines, measureText } = input;
+  if (maxWidth <= 0 || maxLines <= 0) return [];
+  const tokens = input.text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  const appendToken = (token: string) => {
+    while (measureText(token) > maxWidth && token.length > 1) {
+      let cut = 1;
+      while (cut < token.length && measureText(token.slice(0, cut + 1)) <= maxWidth) cut += 1;
+      if (line) { lines.push(line); line = ''; }
+      lines.push(token.slice(0, cut)); token = token.slice(cut);
+    }
+    const candidate = line ? `${line} ${token}` : token;
+    if (line && measureText(candidate) > maxWidth) { lines.push(line); line = token; }
+    else line = candidate;
+  };
+  tokens.forEach(appendToken);
+  if (line) lines.push(line);
+  if (lines.length <= maxLines) return lines;
+  const result = lines.slice(0, maxLines);
+  let final = result[maxLines - 1];
+  while (final.length && measureText(`${final}…`) > maxWidth) final = final.slice(0, -1);
+  result[maxLines - 1] = `${final.trimEnd()}…`;
+  return result;
+};
 
 export const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string, onTimeout?: () => void) =>
   new Promise<T>((resolve, reject) => {
@@ -152,6 +189,15 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     ctx.fillText(fitText(text, maxWidth), rect.x + insetX, rect.y, maxWidth || undefined);
   };
 
+  const drawWrappedEventText = (element: Element, maxLines = 3) => {
+    const text = element.textContent?.trim(); if (!text) return;
+    const rect = relativeRect(element); if (rect.width <= 0 || rect.height <= 0) return;
+    setElementFont(element);
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 14;
+    wrapCanvasText({ text, maxWidth: rect.width, maxLines, measureText: value => ctx.measureText(value).width })
+      .forEach((line, index) => ctx.fillText(line, rect.x, rect.y + index * lineHeight, rect.width));
+  };
+
   const drawBox = (element: Element, fallbackBackground?: string) => {
     const rect = relativeRect(element);
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -206,20 +252,35 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
 
   node.querySelectorAll("thead th").forEach((cell) => {
     drawBox(cell, options.backgroundColor);
-    drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 12));
+    const labels = Array.from(cell.children).filter(child => child.textContent?.trim());
+    if (labels.length) labels.forEach(label => drawTextElement(label, 0, Math.max(0, relativeRect(cell).width - 12)));
+    else drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 12));
   });
 
   node.querySelectorAll("tbody td").forEach((cell) => {
     drawBox(cell, options.backgroundColor);
     const testId = cell.getAttribute("data-testid") ?? "";
-    if (!testId.startsWith("targeted-export-day-")) return;
-    const headerRow = cell.firstElementChild;
-    if (headerRow) {
-      headerRow.querySelectorAll("span").forEach((span) => drawTextElement(span));
+    const targetedCell = testId.startsWith("targeted-export-day-");
+    const monthCell = options.layout === "month-columns";
+    if (!targetedCell && !monthCell) return;
+    if (targetedCell) {
+      const headerRow = cell.firstElementChild;
+      if (headerRow) headerRow.querySelectorAll("span").forEach((span) => drawTextElement(span));
+    } else if (testId.startsWith("row-day-")) {
+      drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 4));
+    } else {
+      const weekday = Array.from(cell.children).find(child => child.tagName === "DIV" && /^[A-Z][a-z]?$/.test(child.textContent?.trim() ?? ""));
+      if (weekday) drawTextElement(weekday);
     }
-    cell.querySelectorAll<HTMLElement>("[data-source-event-id]").forEach((eventChip) => {
+    cell.querySelectorAll<HTMLElement>(targetedCell ? "[data-source-event-id]" : '[data-publication-event="true"]').forEach((eventChip) => {
       drawBox(eventChip);
-      eventChip.querySelectorAll("span").forEach((span) => drawTextElement(span));
+      eventChip.querySelectorAll("span").forEach((span) => {
+        if ((span as HTMLElement).dataset.publicationEventTitle === "true") {
+          drawWrappedEventText(span, Number(eventChip.dataset.exportTitleLines ?? 3));
+        } else {
+          drawTextElement(span);
+        }
+      });
     });
     Array.from(cell.querySelectorAll<HTMLElement>("div")).forEach((candidate) => {
       const text = candidate.textContent?.trim() ?? "";
@@ -245,13 +306,16 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
 };
 
 export const renderGridPng = async (node: HTMLElement, options: GridPngOptions) => {
-  if (options.targeted && options.firefox) {
-    return withTimeout(renderWithCanvas2d(node, options), RENDER_TIMEOUT_MS, "CANVAS2D");
+  const strategy = gridRendererStrategy(options);
+  let finalError: unknown = new Error("INVALID_PNG_OUTPUT");
+  for (const renderer of strategy) {
+    try {
+      if (renderer === "canvas2d") return await withTimeout(renderWithCanvas2d(node, options), RENDER_TIMEOUT_MS, "CANVAS2D");
+      if (renderer === "html2canvas") return await renderWithHtml2Canvas(node, options);
+      return await withTimeout(renderWithHtmlToImage(node, options), RENDER_TIMEOUT_MS, "HTML_TO_IMAGE");
+    } catch (error) {
+      finalError = error;
+    }
   }
-  try {
-    return await withTimeout(renderWithHtmlToImage(node, options), RENDER_TIMEOUT_MS, "HTML_TO_IMAGE");
-  } catch (error) {
-    if (!options.targeted) throw error;
-    return renderWithHtml2Canvas(node, options);
-  }
+  throw finalError;
 };

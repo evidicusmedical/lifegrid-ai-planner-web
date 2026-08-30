@@ -1,3 +1,14 @@
+# Changelog
+
+## v0.5.27 — Rolling 12-Month Grid + Adaptive Professional Image Export
+
+- Added descriptor-driven rolling twelve-month Grid windows, Start Month controls, calendar-year resets, cross-year event modeling, and leap-year cell generation.
+- Added explicit Current Grid, Calendar Year, quarter, next-day, and twelve-calendar-month Custom publication ranges.
+- Replaced renderer-oriented user choices with deterministic adaptive layouts, automatic safe image quality, complete-event feasibility, multiline titles, and protected date identity.
+- Preserved AI interchange v5, backup schema 7, Category/Project filtering, export visibility independence, and browser-specific PNG reliability paths.
+- Corrected non-January quarter/calendar-year export month lengths and applied adaptive multiline Event sizing to month-column publications; expanded zero-retry v0.5.27 browser qualification around real short and long PNGs.
+- Stabilized publication-ready E2E synchronization, added semantic Canvas2D long-image fallbacks for Firefox/WebKit, split Category and Project qualification, and corrected rolling-window Add Event defaults.
+
 # LifeGrid AI Planner — Changelog
 
 All notable changes to this project are documented here.

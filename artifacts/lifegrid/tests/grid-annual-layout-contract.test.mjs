@@ -1,43 +1,8 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-
-const grid = readFileSync(new URL('../src/pages/GridView.tsx', import.meta.url), 'utf8');
-const model = readFileSync(new URL('../src/lib/gridModel.ts', import.meta.url), 'utf8');
-
-test('Grid uses one stable compact annual table with all twelve chronological month columns', () => {
-  assert.match(grid, /ref=\{publicationRef\}/);
-  assert.match(grid, /<table/);
-  assert.match(grid, /MONTHS\.map\(\(m, mIdx\)/);
-  assert.match(grid, /data-testid=\{`header-month-\$\{mIdx\}`\}/);
-  assert.match(grid, /minWidth: DAY_COL_W \+ MONTHS\.length \* MONTH_COL_W/);
-  assert.doesNotMatch(grid, /<section className="grid-month/);
-  assert.doesNotMatch(grid, /mountedMonthKeys\.map/);
-});
-
-test('canonical annual model creates fixed January-to-December slots regardless of priority', () => {
-  assert.match(model, /Array\.from\(\{ length: 12 \}, \(_, index\) =>/);
-  assert.match(model, /String\(index \+ 1\)\.padStart\(2, '0'\)/);
-  assert.doesNotMatch(grid, /getGridMountOrder|gridMonthKey|GridMonthModel|yieldToBrowser|AbortController/);
-});
-
-test('current and selected dates remain highlights inside their canonical annual cells', () => {
-  assert.match(grid, /const temporal = getDateTemporalState\(\s*dateStr,\s*todayStr,\s*detailDate,?\s*\)/);
-  assert.match(grid, /temporal\.isSelected/);
-  assert.match(grid, /onClick=\{\(\) => openDayDetail\(dateStr\)\}/);
-  assert.match(grid, /data-detail-date=\{detailDate \?\? ""\}/);
-  assert.match(grid, /data-day-detail-open=\{dayDetailOpen \? "true" : "false"\}/);
-});
-
-test('July priority cannot move July before June in DOM or visual slot order', () => {
-  const monthHeaders = Array.from({ length: 12 }, (_, index) => `header-month-${index}`);
-  assert.deepEqual(monthHeaders.slice(5, 7), ['header-month-5', 'header-month-6']);
-  assert.match(grid, /MONTHS\.map\(\(m, mIdx\)/);
-  assert.doesNotMatch(grid, /mountedMonthKeys/);
-});
-
-test('annual export reuses the chronological compact table and never a month stack', () => {
-  assert.match(grid, /ref=\{tableRef\}/);
-  assert.match(grid, /monthVisible =\s*exporting \|\| renderedMonths\.has\(mIdx\)/);
-  assert.doesNotMatch(grid, /data-lifegrid-grid-month/);
-});
+import test from 'node:test'; import assert from 'node:assert/strict'; import {readFileSync} from 'node:fs';
+const grid=readFileSync(new URL('../src/pages/GridView.tsx',import.meta.url),'utf8'); const windowSource=readFileSync(new URL('../src/lib/gridWindow.ts',import.meta.url),'utf8');
+test('Grid retains one stable table with twelve descriptor-driven month columns',()=>{assert.match(grid,/tableMonths\.map\(\(month, mIdx\)/);assert.match(grid,/data-month-key=\{month\.key\}/);assert.match(grid,/header-month-\$\{month\.key\}/);assert.match(grid,/tableMonths\.length \* MONTH_COL_W/);});
+test('canonical rolling model is calendar arithmetic rather than a visual offset',()=>{assert.match(windowSource,/addCalendarMonths/);assert.match(windowSource,/buildMonthWindow/);assert.match(grid,/buildGridWindowViewModel/);assert.doesNotMatch(grid,/horizontal-scroll offset/);});
+test('actual dates drive current selected and interactive cells',()=>{assert.match(grid,/getDateTemporalState\(\s*dateStr,\s*todayStr,\s*detailDate/);assert.match(grid,/new Date\(month\.year, month\.monthIndex, day\)/);assert.match(grid,/openDayDetail\(dateStr\)/);});
+test('semantic month keys drive lazy admission and publication ordering',()=>{assert.match(grid,/renderedMonths\.has\(month\.key\)/);assert.match(grid,/Set<string>/);assert.match(grid,/tableMonths\.map/);});
+test('month publication consumes exported descriptors and adaptive wrapping without changing compact interaction',()=>{assert.match(grid,/tableMonths\.reduce\(\(max, month\)/);assert.match(grid,/month\.daysInMonth/);assert.match(grid,/monthPublication[\s\S]*publicationPlan\.eventBlockHeight/);assert.match(grid,/data-export-title-lines=\{monthPublication \? publicationPlan\.eventTitleLines/);assert.match(grid,/whitespace-normal \[overflow-wrap:anywhere\]/);assert.match(grid,/"min-w-0 font-semibold truncate"/);assert.doesNotMatch(grid,/getDaysForMonth\(mIdx\)/);});
+test('capture readiness and rolling Add Event defaults are explicit contracts',()=>{assert.match(grid,/data-publication-ready=\{monthPublication \? "true" : "false"\}/);assert.match(grid,/resolveAddEventDefaultDate\(todayStr, gridWindowRange\)/);assert.match(grid,/openAdd\(addEventDefaultDate\)/);});

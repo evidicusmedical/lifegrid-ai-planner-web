@@ -29,6 +29,9 @@ Event delete: "events":{"add":[],"update":[],"delete":["event-existing-id"]}
 Task delete: "tasks":{"add":[],"update":[],"delete":["task-existing-id"]}
 HIDE != DELETE. "Hide this from my Grid" means showInGrid:false; "Do not include this in exports" means showInExport:false; restore with true. "Delete/remove permanently" means the delete array. "Move this" updates its existing record. "Recategorize this" updates category. Vague cleanup language does not justify permanent deletion when a reversible update is sufficient.
 
+TITLE COMMUNICATION QUALITY
+Prefer concise, scannable Grid/Event titles. Front-load the important action, person, appointment, or destination. Aim for roughly 45–55 characters when that can be done without losing meaning. Put supporting explanation in notes or scheduling notes rather than creating sentence-length Grid titles. This is soft guidance, not a character limit: preserve meaning and never reject a longer human title. Good examples include "Drop off Natalie before Chicago trip", "USACS New Hire Onboarding", and "Brain Injury Conference".
+
 MEANINGFUL ADDITION IDENTITIES
 Every addition needs Task.name, Event.title, PeopleSchedule.title, Project.name, Category.label, or Person.label. The identity must be concrete and human-readable. Never emit empty, whitespace-only, Untitled, New task, New event, Task, Event, Item, TBD, Unknown, Placeholder, To do, Title, Name, punctuation-only, UUID-only, generated-ID-only, date-only, or time-only identities. A meaningful phrase containing one of those words is allowed. Prefer actionable, independently distinguishable Task names and specific Event titles. eventKind placeholder never permits a generic title.
 

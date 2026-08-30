@@ -15,9 +15,9 @@ test('validation rejects a missing start or end', () => {
   assert.match(validateExportRange({ start: '2026-01-01', end: '' }, 2026, true), /both/);
 });
 test('validation rejects reversed dates', () => assert.match(validateExportRange({ start: '2026-02-02', end: '2026-02-01' }, 2026, true), /on or before/));
-test('validation rejects targeted ranges over 45 inclusive days', () => assert.match(validateExportRange({ start: '2026-01-01', end: '2026-02-15' }, 2026, true), /45/));
+test('validation accepts targeted ranges through twelve months', () => assert.equal(validateExportRange({ start: '2026-01-01', end: '2026-12-31' }, 2026, true), null));
 test('validation accepts a short cross-year targeted range', () => assert.equal(validateExportRange({ start: '2026-12-28', end: '2027-01-06' }, 2026, true), null));
-test('annual validation remains tied to the Grid year', () => assert.match(validateExportRange({ start: '2026-12-28', end: '2027-01-03' }, 2026), /2026 grid/));
+test('rolling validation permits a cross-year window', () => assert.equal(validateExportRange({ start: '2026-12-28', end: '2027-01-03' }, 2026), null));
 
 const events = [
   { id: 'before', date: '2026-08-01', category: 'work' },

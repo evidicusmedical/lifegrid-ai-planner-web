@@ -20,6 +20,34 @@ export interface GridPngOptions {
 
 const RENDER_TIMEOUT_MS = 22_000;
 
+/** Deterministic publication-title wrapping. Date labels intentionally never use this helper. */
+export const wrapCanvasText = (input: { text: string; maxWidth: number; maxLines: number; measureText: (text: string) => number }) => {
+  const { maxWidth, maxLines, measureText } = input;
+  if (maxWidth <= 0 || maxLines <= 0) return [];
+  const tokens = input.text.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  const appendToken = (token: string) => {
+    while (measureText(token) > maxWidth && token.length > 1) {
+      let cut = 1;
+      while (cut < token.length && measureText(token.slice(0, cut + 1)) <= maxWidth) cut += 1;
+      if (line) { lines.push(line); line = ''; }
+      lines.push(token.slice(0, cut)); token = token.slice(cut);
+    }
+    const candidate = line ? `${line} ${token}` : token;
+    if (line && measureText(candidate) > maxWidth) { lines.push(line); line = token; }
+    else line = candidate;
+  };
+  tokens.forEach(appendToken);
+  if (line) lines.push(line);
+  if (lines.length <= maxLines) return lines;
+  const result = lines.slice(0, maxLines);
+  let final = result[maxLines - 1];
+  while (final.length && measureText(`${final}…`) > maxWidth) final = final.slice(0, -1);
+  result[maxLines - 1] = `${final.trimEnd()}…`;
+  return result;
+};
+
 export const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string, onTimeout?: () => void) =>
   new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -152,6 +180,15 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     ctx.fillText(fitText(text, maxWidth), rect.x + insetX, rect.y, maxWidth || undefined);
   };
 
+  const drawWrappedEventText = (element: Element, maxLines = 3) => {
+    const text = element.textContent?.trim(); if (!text) return;
+    const rect = relativeRect(element); if (rect.width <= 0 || rect.height <= 0) return;
+    setElementFont(element);
+    const lineHeight = Number.parseFloat(getComputedStyle(element).lineHeight) || 14;
+    wrapCanvasText({ text, maxWidth: rect.width, maxLines, measureText: value => ctx.measureText(value).width })
+      .forEach((line, index) => ctx.fillText(line, rect.x, rect.y + index * lineHeight, rect.width));
+  };
+
   const drawBox = (element: Element, fallbackBackground?: string) => {
     const rect = relativeRect(element);
     if (rect.width <= 0 || rect.height <= 0) return;
@@ -219,7 +256,7 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     }
     cell.querySelectorAll<HTMLElement>("[data-source-event-id]").forEach((eventChip) => {
       drawBox(eventChip);
-      eventChip.querySelectorAll("span").forEach((span) => drawTextElement(span));
+      eventChip.querySelectorAll("span").forEach((span) => drawWrappedEventText(span, Number(eventChip.dataset.exportTitleLines ?? 3)));
     });
     Array.from(cell.querySelectorAll<HTMLElement>("div")).forEach((candidate) => {
       const text = candidate.textContent?.trim() ?? "";

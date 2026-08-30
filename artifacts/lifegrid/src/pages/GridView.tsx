@@ -40,10 +40,8 @@ import {
   buildExportLegend,
   buildExportMetadata,
   EXPORT_DENSITY,
-  ExportDensity,
   getDenseDay,
   getExportDimensions,
-  estimateExportFeasibility,
 } from "../lib/gridPublication";
 import {
   getDateTemporalState,
@@ -52,7 +50,9 @@ import {
   validateExportRange,
 } from "../lib/gridAwareness";
 import { getLocalTemporalOccurrence } from "../lib/temporal";
-import { buildGridViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
+import { buildGridWindowViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
+import { addCalendarMonths, buildMonthWindow, monthWindowDateRange } from "../lib/gridWindow";
+import { planGridPublication } from "../lib/gridPublicationPlan";
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
 import { renderGridPng, type GridImageRendererName } from "../lib/gridImageRenderer";
@@ -88,7 +88,7 @@ const EXPORT_ROW_BASE_H = 16;
 const TARGETED_EXPORT_MAX_DAYS = 45;
 const TARGETED_EXPORT_COLS = 7;
 
-type ExportDatePreset = "current" | "next7" | "next14" | "next30" | "custom";
+type ExportDatePreset = "currentGrid" | "calendarYear" | "q1" | "q2" | "q3" | "q4" | "next7" | "next14" | "next30" | "custom";
 type ExportProjectFilter = "all" | string;
 
 interface GridExportFilters {
@@ -208,7 +208,10 @@ export const GridView = () => {
   const { theme, toggleTheme } = useTheme();
 
   const today = useMemo(() => new Date(), []);
-  const [year, setYear] = useState(today.getFullYear());
+  const [viewStart, setViewStart] = useState({ year: today.getFullYear(), monthIndex: 0 });
+  const year = viewStart.year;
+  const displayedMonths = useMemo(() => buildMonthWindow(viewStart.year, viewStart.monthIndex), [viewStart]);
+  const gridWindowRange = useMemo(() => monthWindowDateRange(displayedMonths), [displayedMonths]);
   const [detailDate, setDetailDate] = useState<string | null>(null);
   const [dayDetailOpen, setDayDetailOpen] = useState(false);
   const [editEvent, setEditEvent] = useState<Event | null>(null);
@@ -220,11 +223,6 @@ export const GridView = () => {
   const [exportErrorCode, setExportErrorCode] = useState("");
   const [exportUrl, setExportUrl] = useState<string | null>(null);
   const [shareAvailable, setShareAvailable] = useState(false);
-  const [exportPixelRatio, setExportPixelRatio] = useState(1);
-  const [exportMode, setExportMode] = useState<"expanded" | "visible">(
-    "expanded",
-  );
-  const [exportDensity, setExportDensity] = useState<ExportDensity>("compact");
   const [customExportTitle, setCustomExportTitle] = useState("");
   const [customExportSubtitle, setCustomExportSubtitle] = useState("");
   const [includeGeneratedAt, setIncludeGeneratedAt] = useState(false);
@@ -235,7 +233,7 @@ export const GridView = () => {
   } | null>(null);
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
   const [exportFilters, setExportFilters] = useState<GridExportFilters>({
-    datePreset: "current",
+    datePreset: "currentGrid",
     customStart: "",
     customEnd: "",
     categoryMode: "all",
@@ -247,7 +245,7 @@ export const GridView = () => {
   const exportUiActive = exportOptionsOpen || exporting || exportUrl;
   // Yield once after the shell commits so route feedback paints before annual DOM work.
   const [gridReady, setGridReady] = useState(false);
-  const [renderedMonths, setRenderedMonths] = useState<Set<number>>(new Set());
+  const [renderedMonths, setRenderedMonths] = useState<Set<string>>(new Set());
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
@@ -262,7 +260,7 @@ export const GridView = () => {
   const eventPointerActivationResetRef = useRef<number | null>(null);
   const didScrollRef = useRef(false);
   const priorGridModelRef = useRef<
-    ReturnType<typeof buildGridViewModel> | undefined
+    ReturnType<typeof buildGridWindowViewModel> | undefined
   >(undefined);
 
   const cancelPreviewTimers = useCallback(() => {
@@ -317,14 +315,13 @@ export const GridView = () => {
     cancelPreviewTimers();
     setPreviewEvent(null);
     closeDayDetail();
-  }, [activeCalendarId, year, cancelPreviewTimers, closeDayDetail]);
+  }, [activeCalendarId, viewStart, cancelPreviewTimers, closeDayDetail]);
 
   const todayStr = toISODate(today);
   const todayMonth = today.getMonth();
   const todayDay = today.getDate();
 
-  const getDaysForMonth = (m: number) =>
-    m === 1 && isLeapYear(year) ? 29 : DAYS_IN_MONTH[m];
+  const getDaysForMonth = (column: number) => displayedMonths[column]?.daysInMonth ?? 0;
 
   const activeCalendar = calendars.find((c) => c.id === activeCalendarId)!;
   const categoryRank = useMemo(
@@ -355,6 +352,7 @@ export const GridView = () => {
   const getExportDateRange = useCallback(() => {
     return resolveExportDateRange(
       exportFilters.datePreset,
+      gridWindowRange,
       year,
       todayStr,
       exportFilters.customStart,
@@ -366,6 +364,7 @@ export const GridView = () => {
     exportFilters.datePreset,
     todayStr,
     year,
+    gridWindowRange,
   ]);
 
   const selectedCategorySet = useMemo(
@@ -397,9 +396,17 @@ export const GridView = () => {
 
   const exportRange = getExportDateRange();
   const exportGridData = useMemo(() => expandEventsToDateBuckets(exportFilteredEvents, exportRange.start, exportRange.end, categoryRank), [exportFilteredEvents, exportRange.start, exportRange.end, categoryRank]);
+  const exportMonths = useMemo(() => {
+    if (!exportRange.start || !exportRange.end || exportRange.start > exportRange.end) return displayedMonths;
+    const [startYear, startMonth] = exportRange.start.split("-").map(Number);
+    const [endYear, endMonth] = exportRange.end.split("-").map(Number);
+    return buildMonthWindow(startYear, startMonth - 1, (endYear - startYear) * 12 + endMonth - startMonth + 1);
+  }, [displayedMonths, exportRange.start, exportRange.end]);
+  const publicationPlan = useMemo(() => planGridPublication({ start: exportRange.start, end: exportRange.end, recordsByDate: exportGridData, monthCount: exportMonths.length, mobile: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches, legendEntries: categories.length }), [exportRange.start, exportRange.end, exportGridData, exportMonths.length, categories.length]);
+  const tableMonths = exporting && publicationPlan.layout === "month-columns" ? exportMonths : displayedMonths;
 
   const isTargetedDateExport = useMemo(() => {
-    if (exportFilters.datePreset === "current") return false;
+    if (exportFilters.datePreset === "currentGrid" || exportFilters.datePreset === "calendarYear" || /^q[1-4]$/.test(exportFilters.datePreset)) return false;
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) return false;
     return daysBetweenInclusive(start, end) <= TARGETED_EXPORT_MAX_DAYS;
@@ -415,7 +422,7 @@ export const GridView = () => {
       const d = parseISODate(date);
       return {
         date,
-        label: String(d.getDate()),
+        label: `${MONTHS[d.getMonth()]} ${d.getDate()}`,
         weekday: DOW_SHORT[d.getDay()],
         events: exportGridData.get(date) ?? [],
       };
@@ -442,9 +449,9 @@ export const GridView = () => {
   const gridModel = useMemo(() => {
     gridMark("lifegrid:grid-model-start");
     gridMark("lifegrid:grid-index-start");
-    const model = buildGridViewModel(
+    const model = buildGridWindowViewModel(
       events,
-      year,
+      displayedMonths,
       categoryRank,
       priorGridModelRef.current,
     );
@@ -452,7 +459,7 @@ export const GridView = () => {
     gridMark("lifegrid:grid-index-complete");
     gridMark("lifegrid:grid-model-complete");
     return model;
-  }, [events, year, categoryRank]);
+  }, [events, displayedMonths, categoryRank]);
   const gridData = gridModel.byDate;
   useEffect(() => {
     setGridReady(false);
@@ -461,15 +468,15 @@ export const GridView = () => {
       gridMark("lifegrid:grid-dom-start");
       setGridReady(true);
       setRenderedMonths(
-        new Set([year === today.getFullYear() ? todayMonth - 1 : 0, year === today.getFullYear() ? todayMonth : 0, year === today.getFullYear() ? todayMonth + 1 : 1].filter(month => month >= 0 && month < 12)),
+        new Set(displayedMonths.slice(0, 3).map(month => month.key)),
       );
     });
     return () => cancelAnimationFrame(frame);
-  }, [year, activeCalendarId, today, todayMonth]);
+  }, [displayedMonths, activeCalendarId]);
   useEffect(() => {
     if (!gridReady) return;
     let cancelled = false;
-    const preferred = year === today.getFullYear() ? todayMonth : 0;
+    const preferred = Math.max(0, displayedMonths.findIndex(month => month.key === todayStr.slice(0, 7)));
     const order = [
       preferred,
       preferred - 1,
@@ -486,7 +493,7 @@ export const GridView = () => {
         const following = new Set(previous);
         order
           .slice(cursor, cursor + 2)
-          .forEach((month) => following.add(month));
+          .forEach((column) => following.add(displayedMonths[column].key));
         return following;
       });
       cursor += 2;
@@ -500,7 +507,7 @@ export const GridView = () => {
       cancelled = true;
       cancelAnimationFrame(frame);
     };
-  }, [gridReady, year, activeCalendarId, todayMonth]);
+  }, [gridReady, displayedMonths, activeCalendarId, todayStr]);
   // Scroll admission is independent of exports: a month entering the horizontal
   // viewport is made durable immediately, even if idle/rAF callbacks are throttled.
   useEffect(() => {
@@ -509,11 +516,11 @@ export const GridView = () => {
     const admitVisible = () => {
       const first = Math.max(0, Math.floor(viewport.scrollLeft / MONTH_COL_W) - 1);
       const last = Math.min(11, Math.ceil((viewport.scrollLeft + viewport.clientWidth) / MONTH_COL_W) + 1);
-      setRenderedMonths(previous => { const next = new Set(previous); for (let month = first; month <= last; month += 1) next.add(month); return next; });
+      setRenderedMonths(previous => { const next = new Set(previous); for (let month = first; month <= last; month += 1) next.add(displayedMonths[month].key); return next; });
     };
     admitVisible(); viewport.addEventListener("scroll", admitVisible, { passive: true });
     return () => viewport.removeEventListener("scroll", admitVisible);
-  }, [gridReady, year, activeCalendarId]);
+  }, [gridReady, displayedMonths, activeCalendarId]);
   useEffect(() => {
     const available = new Set(categories.map(category => category.id));
     setExportFilters(previous => {
@@ -552,7 +559,7 @@ export const GridView = () => {
   const resetExportRange = () =>
     setExportFilters((prev) => ({
       ...prev,
-      datePreset: "current",
+      datePreset: "currentGrid",
       customStart: "",
       customEnd: "",
     }));
@@ -576,11 +583,11 @@ export const GridView = () => {
   const exportRangeError = validateExportRange(
     exportRange,
     year,
-    exportFilters.datePreset !== "current",
+    exportFilters.datePreset === "custom",
     TARGETED_EXPORT_MAX_DAYS,
   );
   const isDefaultExportFilter =
-    exportFilters.datePreset === "current" &&
+    exportFilters.datePreset === "currentGrid" &&
     exportFilters.categoryMode === "all" &&
     exportFilters.projectId === "all";
   const exportFilterSummary = `${exportRange.start || "Start"} → ${exportRange.end || "End"} · ${exportFilters.categoryMode === "all" ? "All tags" : `${exportFilters.selectedCategoryIds.length} tag${exportFilters.selectedCategoryIds.length === 1 ? "" : "s"}`} · ${exportFilters.projectId === "all" ? "All projects" : (sortedProjects.find((p) => p.id === exportFilters.projectId)?.name ?? "Project")}`;
@@ -697,7 +704,7 @@ export const GridView = () => {
     ],
   );
   const exportDimensions = getExportDimensions(
-    exportDensity,
+    "compact",
     exportLegend.entries.length,
     isTargetedDateExport,
   );
@@ -715,7 +722,7 @@ export const GridView = () => {
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
     const { start, end } = getExportDateRange();
-    const useTargetedLayout = exportFilters.datePreset !== "current";
+    const useTargetedLayout = isTargetedDateExport;
     if (!useTargetedLayout && (!tableRef.current || !container)) {
       toast.error("The Current Grid capture is not ready. Wait for the Grid to load and try again.", { id: "export" });
       return;
@@ -744,17 +751,14 @@ export const GridView = () => {
       });
       return;
     }
-    const maxPerDate = Math.max(0, ...Array.from(exportGridData.values()).map(records => records.length));
-    const estimatedHeight = isTargetedDateExport ? Math.max(300, targetedExportWeeks.length * (exportMode === "expanded" ? 260 : 140)) : Math.max(900, 31 * (exportMode === "expanded" ? EXPORT_ROW_BASE_H + maxPerDate * 11 : ROW_H));
-    const feasibility = estimateExportFeasibility({ width: exportDimensions.width, height: estimatedHeight, pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio, mobile: window.matchMedia("(pointer: coarse)").matches, expanded: exportMode === "expanded", records: exportFilteredEvents.length, maxPerDate });
-    if (feasibility.unsafe) { toast.error(`${feasibility.reason} Use Visible, select fewer categories, choose a shorter range, or use Fast.`, { id: "export" }); return; }
+    if (!publicationPlan.feasible) { toast.error(publicationPlan.reason, { id: "export" }); return; }
     setExporting(true);
     setExportStatus("generating");
     const firefoxTargeted = useTargetedLayout && /firefox/i.test(navigator.userAgent);
     setExportRenderer(firefoxTargeted ? "html2canvas" : "html-to-image");
     setExportErrorCode("");
     toast.loading(
-      `Generating ${exportMode === "expanded" ? "expanded" : "visible"} ${exportPixelRatio === 1 ? "compact" : "sharp"} grid image…`,
+      `Generating automatically optimized ${publicationPlan.layout} image…`,
       { id: "export" },
     );
 
@@ -790,7 +794,7 @@ export const GridView = () => {
     await new Promise(requestAnimationFrame);
 
     const rendererOptions = {
-      pixelRatio: exportPixelRatio * EXPORT_DENSITY[exportDensity].pixelRatio,
+      pixelRatio: publicationPlan.pixelRatio,
       backgroundColor: theme === "dark" ? "#0d1526" : "#ffffff",
       width: captureNode.scrollWidth,
       height: captureNode.scrollHeight,
@@ -831,8 +835,8 @@ export const GridView = () => {
       console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
       toast.error(
         err instanceof Error && err.message === "EMPTY_PNG_BLOB"
-          ? "Grid image renderer returned an empty image. Try Fast quality or a shorter range."
-          : "Grid image could not be generated. Try Fast quality or a shorter range.",
+          ? "Grid image renderer returned an empty image. Try a shorter range or filter Categories/Projects."
+          : "Grid image could not be generated. Try a shorter range or filter Categories/Projects.",
         { id: "export" },
       );
     } finally {
@@ -846,9 +850,6 @@ export const GridView = () => {
   }, [
     theme,
     exportFileName,
-    exportPixelRatio,
-    exportMode,
-    exportDensity,
     exportFilters,
     exportFilteredEvents.length,
     getExportDateRange,
@@ -958,69 +959,25 @@ export const GridView = () => {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Year nav */}
-        <div className="flex shrink-0 items-center gap-0.5 bg-muted rounded-lg p-0.5 sm:ml-3">
-          <button
-            onClick={() => setYear((y) => y - 1)}
-            className="p-1.5 rounded hover:bg-background transition-colors"
-            data-testid="button-year-prev"
-          >
-            <ChevronLeft size={14} />
-          </button>
-          <span className="text-sm font-bold px-1.5 min-w-[3rem] text-center tabular-nums">
-            {year}
-          </span>
-          <button
-            onClick={() => setYear((y) => y + 1)}
-            className="p-1.5 rounded hover:bg-background transition-colors"
-            data-testid="button-year-next"
-          >
-            <ChevronRight size={14} />
-          </button>
+        {/* Calendar-year and rolling start controls */}
+        <div className="flex shrink-0 items-center gap-1 sm:ml-3">
+          <div className="flex items-center rounded-lg bg-muted p-0.5">
+            <button aria-label="Previous calendar year" onClick={() => { setViewStart({ year: viewStart.year - 1, monthIndex: 0 }); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-9 rounded hover:bg-background" data-testid="button-year-prev"><ChevronLeft size={14} className="mx-auto" /></button>
+            <button aria-label={`Show calendar year ${year}`} title={`Show calendar year ${year}`} onClick={() => { setViewStart({ year, monthIndex: 0 }); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-[3rem] px-1 text-sm font-bold tabular-nums" data-testid="button-year-reset">{year}</button>
+            <button aria-label="Next calendar year" onClick={() => { setViewStart({ year: viewStart.year + 1, monthIndex: 0 }); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-9 rounded hover:bg-background" data-testid="button-year-next"><ChevronRight size={14} className="mx-auto" /></button>
+          </div>
+          <div className="flex items-center rounded-lg bg-muted p-0.5" aria-label="Start month">
+            <span className="hidden px-1 text-[9px] font-bold uppercase text-muted-foreground sm:inline">Start</span>
+            <button aria-label="Previous start month" onClick={() => { setViewStart(addCalendarMonths(viewStart, -1)); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-9 rounded hover:bg-background" data-testid="button-month-prev"><ChevronLeft size={14} className="mx-auto" /></button>
+            <button aria-label="Reset/select start month" title={`${displayedMonths[0].label} ${displayedMonths[0].year} start`} className="min-h-9 min-w-10 px-1 text-xs font-bold" data-testid="button-month-current">{displayedMonths[0].label}</button>
+            <button aria-label="Next start month" onClick={() => { setViewStart(addCalendarMonths(viewStart, 1)); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-9 rounded hover:bg-background" data-testid="button-month-next"><ChevronRight size={14} className="mx-auto" /></button>
+          </div>
         </div>
 
         <div className="hidden flex-1 sm:block" />
 
         {/* Compact grid image export controls */}
         <div className="ml-auto flex min-w-0 items-center gap-1">
-          <div className="hidden md:flex items-center rounded-lg bg-muted p-0.5">
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => setExportMode("visible")}
-              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportMode === "visible" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-              title="Export the grid as currently visible, with overflow indicators"
-            >
-              Visible
-            </button>
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => setExportMode("expanded")}
-              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportMode === "expanded" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-              title="Expand rows during export to include all events"
-            >
-              Expanded
-            </button>
-          </div>
-          <div className="hidden sm:flex items-center rounded-lg bg-muted p-0.5">
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => setExportPixelRatio(1)}
-              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 1 ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-            >
-              Fast
-            </button>
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() => setExportPixelRatio(2)}
-              className={`px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50 ${exportPixelRatio === 2 ? "bg-background text-foreground shadow-sm" : "text-muted-foreground"}`}
-            >
-              Sharp
-            </button>
-          </div>
           <button
             onClick={() => setExportOptionsOpen(open => !open)}
             ref={exportButtonRef}
@@ -1090,27 +1047,9 @@ export const GridView = () => {
             <div className="wrap-anywhere whitespace-normal text-[11px] text-muted-foreground" data-testid="export-filter-summary">{exportFilterSummary}</div>
           </div>}
 
-          {compactExportLayout && (
-            <div className="grid grid-cols-2 gap-3 rounded-lg bg-muted/60 p-3 text-xs">
-              <div><div className="mb-1 font-bold">Grid content</div><div className="flex rounded-md bg-muted p-0.5"><button type="button" onClick={() => setExportMode("visible")} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportMode === "visible" ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Visible</button><button type="button" onClick={() => setExportMode("expanded")} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportMode === "expanded" ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Expanded</button></div></div>
-              <div><div className="mb-1 font-bold">Image quality</div><div className="flex rounded-md bg-muted p-0.5"><button type="button" onClick={() => setExportPixelRatio(1)} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportPixelRatio === 1 ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Fast</button><button type="button" onClick={() => setExportPixelRatio(2)} className={`min-h-11 flex-1 rounded px-2 font-bold ${exportPixelRatio === 2 ? "bg-background shadow-sm" : "text-muted-foreground"}`}>Sharp</button></div></div>
-            </div>
-          )}
+
 
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="text-xs font-semibold">
-              Export density
-              <select
-                value={exportDensity}
-                onChange={(e) =>
-                  setExportDensity(e.target.value as ExportDensity)
-                }
-                className="mt-1 block h-8 w-full rounded border border-border bg-background px-2 text-xs"
-              >
-                <option value="compact">Compact</option>
-                <option value="detailed">Detailed</option>
-              </select>
-            </label>
             <label className="text-xs font-semibold">
               Custom title
               <input
@@ -1139,10 +1078,7 @@ export const GridView = () => {
             </label>
           </div>
           <p className="text-[11px] text-muted-foreground" role="status" data-testid="export-publication-summary">
-            Preview: {exportMetadata.title} · {exportLegend.recordCount} records
-            · {exportLegend.entries.length} categories · approximately{" "}
-            {exportDimensions.width} × {exportDimensions.height}px. Detailed
-            exports use larger dimensions.
+            Layout optimized automatically for this range. Preview: {exportMetadata.title} · {exportLegend.recordCount} records · {exportLegend.entries.length} categories.
           </p>
           <div className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr]">
             <div className="space-y-2">
@@ -1151,7 +1087,9 @@ export const GridView = () => {
               </div>
               <div className="flex flex-wrap gap-1">
                 {[
-                  ["current", "Current grid"],
+                  ["currentGrid", "Current Grid"],
+                  ["calendarYear", "Calendar Year"],
+                  ["q1", "Q1"], ["q2", "Q2"], ["q3", "Q3"], ["q4", "Q4"],
                   ["next7", "Next 7"],
                   ["next14", "Next 14"],
                   ["next30", "Next 30"],
@@ -1363,7 +1301,7 @@ export const GridView = () => {
               exporting
                 ? {
                     minWidth: exportDimensions.width,
-                    padding: EXPORT_DENSITY[exportDensity].padding,
+                    padding: EXPORT_DENSITY.compact.padding,
                   }
                 : undefined
             }
@@ -1380,7 +1318,7 @@ export const GridView = () => {
             <table
               ref={tableRef}
               className="border-collapse bg-background"
-              style={{ minWidth: DAY_COL_W + MONTHS.length * MONTH_COL_W }}
+              style={{ minWidth: DAY_COL_W + tableMonths.length * MONTH_COL_W }}
             >
               <thead className="sticky top-0 z-20">
                 <tr style={{ height: HEADER_H }}>
@@ -1388,29 +1326,29 @@ export const GridView = () => {
                     className="sticky left-0 z-30 border-b-2 border-r border-border bg-card"
                     style={{ width: DAY_COL_W, minWidth: DAY_COL_W }}
                   />
-                  {MONTHS.map((m, mIdx) => {
+                  {tableMonths.map((month, mIdx) => {
                     const isCurrent =
-                      mIdx === todayMonth && year === today.getFullYear();
+                      month.key === todayStr.slice(0, 7);
                     return (
                       <th
-                        key={m}
+                        key={month.key}
                         className={`border-b-2 border-r border-border text-left align-bottom bg-card ${isCurrent ? "bg-primary/5" : ""}`}
                         style={{
                           width: MONTH_COL_W,
                           minWidth: MONTH_COL_W,
                           padding: "4px 6px",
                         }}
-                        data-testid={`header-month-${mIdx}`}
+                        data-testid={`header-month-${month.key}`} data-month-key={month.key}
                       >
                         <div
                           className={`text-[11px] font-extrabold uppercase tracking-widest leading-none ${isCurrent ? "text-primary" : "text-muted-foreground"}`}
                         >
-                          {m}
+                          {month.label}
                         </div>
                         <div
                           className={`text-[9px] mt-0.5 font-medium ${isCurrent ? "text-primary/60" : "text-muted-foreground/40"}`}
                         >
-                          {year}
+                          {month.year}
                         </div>
                       </th>
                     );
@@ -1421,11 +1359,11 @@ export const GridView = () => {
               <tbody>
                 {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
                   const isExpandedExport =
-                    exporting && exportMode === "expanded";
-                  const rowEventMax = MONTHS.reduce((max, _, mIdx) => {
+                    exporting;
+                  const rowEventMax = tableMonths.reduce((max, month, mIdx) => {
                     const maxDay = getDaysForMonth(mIdx);
                     if (day > maxDay) return max;
-                    const dateStr = `${year}-${String(mIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                    const dateStr = `${month.key}-${String(day).padStart(2, "0")}`;
                     return Math.max(max, (exporting ? exportGridData : focusedGridData).get(dateStr)?.length ?? 0);
                   }, 0);
                   const rowHeight = isExpandedExport
@@ -1448,9 +1386,9 @@ export const GridView = () => {
                         {day}
                       </td>
 
-                      {MONTHS.map((_, mIdx) => {
+                      {tableMonths.map((month, mIdx) => {
                         const maxDay = getDaysForMonth(mIdx);
-                        const dateStr = `${year}-${String(mIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+                        const dateStr = `${month.key}-${String(day).padStart(2, "0")}`;
                         const temporal = getDateTemporalState(
                           dateStr,
                           todayStr,
@@ -1458,10 +1396,10 @@ export const GridView = () => {
                         );
                         const isToday = temporal.isToday;
 
-                        if (day > maxDay) {
+                        if (day > maxDay || (exporting && (dateStr < exportRange.start || dateStr > exportRange.end))) {
                           return (
                             <td
-                              key={`${mIdx}-${day}`}
+                              key={`${month.key}-${day}`}
                               className="border-b border-r border-border"
                               style={{
                                 width: MONTH_COL_W,
@@ -1474,21 +1412,21 @@ export const GridView = () => {
                           );
                         }
 
-                        const dateObj = new Date(year, mIdx, day);
+                        const dateObj = new Date(month.year, month.monthIndex, day);
                         const dow = DOW_SHORT[dateObj.getDay()];
                         const isWeekend =
                           dateObj.getDay() === 0 || dateObj.getDay() === 6;
                         // Noncritical month cells stay structurally present for table/scroll safety,
                         // but defer event-pill DOM until their deterministic batch is admitted.
                         const monthVisible =
-                          exporting || renderedMonths.has(mIdx);
+                          exporting || renderedMonths.has(month.key);
                         const dayEvents = monthVisible
                           ? ((exporting ? exportGridData : focusedGridData).get(dateStr) ?? [])
                           : [];
                         const denseDay = getDenseDay(
                           dayEvents,
                           exporting
-                            ? EXPORT_DENSITY[exportDensity].cellLimit
+                            ? EXPORT_DENSITY.compact.cellLimit
                             : MAX_VISIBLE_EVENTS,
                         );
                         const visEvents = isExpandedExport
@@ -1515,7 +1453,7 @@ export const GridView = () => {
 
                         return (
                           <td
-                            key={`${mIdx}-${day}`}
+                            key={`${month.key}-${day}`}
                             className={`border-b border-r border-border cursor-pointer select-none relative align-top ${temporal.isPast ? "opacity-70" : ""} ${temporal.isSelected ? "ring-2 ring-inset ring-foreground/70" : ""} ${isToday ? "ring-2 ring-inset ring-primary" : ""} focus-within:ring-2 focus-within:ring-inset focus-within:ring-foreground`}
                             style={{
                               width: MONTH_COL_W,
@@ -1696,7 +1634,7 @@ export const GridView = () => {
           className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"
           style={{
             width: exportDimensions.width,
-            padding: EXPORT_DENSITY[exportDensity].padding,
+            padding: EXPORT_DENSITY.compact.padding,
             zIndex: 40,
             opacity: exporting ? 1 : 0,
           }}
@@ -1733,9 +1671,7 @@ export const GridView = () => {
                   0,
                   ...week.map((day) => day?.events.length ?? 0),
                 );
-                const expandedCellHeight = Math.max(112, 48 + weekMax * 18);
-                const cellHeight =
-                  exportMode === "expanded" ? expandedCellHeight : 116;
+                const cellHeight = Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight);
                 return (
                   <tr key={weekIdx}>
                     {week.map((day, dayIdx) => {
@@ -1748,14 +1684,8 @@ export const GridView = () => {
                           />
                         );
                       }
-                      const visibleEvents =
-                        exportMode === "expanded"
-                          ? day.events
-                          : day.events.slice(0, MAX_VISIBLE_EVENTS);
-                      const overflow =
-                        exportMode === "expanded"
-                          ? 0
-                          : Math.max(0, day.events.length - MAX_VISIBLE_EVENTS);
+                      const visibleEvents = day.events;
+                      const overflow = 0;
                       return (
                         <td
                           key={day.date}
@@ -1777,7 +1707,8 @@ export const GridView = () => {
                                 key={evt.id}
                                 data-testid={`targeted-export-event-${day.date}-${evt.id}`}
                                 data-source-event-id={evt.id}
-                                className="flex items-center gap-1 overflow-hidden rounded-md px-1.5 py-1"
+                                data-export-title-lines={publicationPlan.eventTitleLines}
+                                className="flex items-start gap-1 rounded-md px-1.5 py-1"
                                 style={{ backgroundColor: evt.color ?? undefined, color: getReadableTextColor(evt.color) }}
                               >
                                 {evt.startTime && (
@@ -1789,8 +1720,8 @@ export const GridView = () => {
                                   </span>
                                 )}
                                 <span
-                                  className="truncate font-bold"
-                                  style={{ fontSize: 10, lineHeight: 1.1 }}
+                                  className="font-bold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]"
+                                  style={{ fontSize: publicationPlan.eventFontSize, lineHeight: `${publicationPlan.eventLineHeight}px`, display: "-webkit-box", WebkitLineClamp: publicationPlan.eventTitleLines, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                                 >
                                   {evt.title}
                                 </span>

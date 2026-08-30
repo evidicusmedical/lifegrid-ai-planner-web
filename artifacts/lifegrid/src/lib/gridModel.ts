@@ -1,4 +1,5 @@
 import type { Event, TimeStatus } from '../types';
+import { resolveCalendarYearWindow, type GridMonthDescriptor } from './gridWindow.js';
 
 /** The deliberately small, immutable record the annual grid is allowed to retain. */
 export interface GridEventSummary {
@@ -109,19 +110,23 @@ export const buildGridViewModel = (events: readonly Event[], year: number, legac
   const legacyCall = typeof legacyOrRank === 'string';
   const categoryRank = (legacyCall ? rankOrPrevious : legacyOrRank) as ReadonlyMap<string, number>;
   const prior = (legacyCall ? previous : rankOrPrevious) as GridViewModel | undefined;
-  const summaries = selectEventsIntersectingYear(events.filter(isEventVisibleOnGrid), year).flatMap(event => expandGridEventRange(toGridEventSummary(event), year));
-  const byDate = new Map<string, GridEventSummary[]>();
-  for (const summary of summaries) { const bucket = byDate.get(summary.date) ?? []; bucket.push(summary); byDate.set(summary.date, bucket); }
-  byDate.forEach(bucket => bucket.sort(compareGridEvents(categoryRank)));
-  const months = Array.from({ length: 12 }, (_, index) => {
-    const month = `${year}-${String(index + 1).padStart(2, '0')}`;
+  return buildGridWindowViewModel(events, resolveCalendarYearWindow(year), categoryRank, prior);
+};
+
+/** Builds the interactive model over the exact canonical month window. */
+export const buildGridWindowViewModel = (events: readonly Event[], displayedMonths: readonly GridMonthDescriptor[], categoryRank: ReadonlyMap<string, number> = new Map(), prior?: GridViewModel): GridViewModel => {
+  const start = displayedMonths[0]?.startDate ?? '', end = displayedMonths.at(-1)?.endDate ?? '';
+  const byDate = expandEventsToDateBuckets(events.filter(isEventVisibleOnGrid), start, end, categoryRank);
+  const summaries = events.filter(isEventVisibleOnGrid).flatMap(event => { const eventEnd = event.endDate && event.endDate >= event.date ? event.endDate : event.date; const clippedStart = event.date < start ? start : event.date, clippedEnd = eventEnd > end ? end : eventEnd; const result: GridEventSummary[] = []; for (let date = clippedStart; date <= clippedEnd; date = shiftDate(date, 1)) result.push(Object.freeze({ ...toGridEventSummary(event), date })); return result; });
+  const months = displayedMonths.map((descriptor, index) => {
+    const month = descriptor.key;
     const entries = [...byDate.entries()].filter(([date]) => date.startsWith(month));
     const signature = entries.map(([date, values]) => `${date}:${values.map(value => [value.id,value.title,value.category,value.color,value.startTime,value.endTime,value.displayPriority].join('~')).join(',')}`).join(';');
     const old = prior?.months[index];
     if (old?.monthKey === month && old.signature === signature) return old;
     return Object.freeze({ monthKey: month, eventsByDate: new Map(entries.map(([date, values]) => [date, Object.freeze([...values])])), eventCount: entries.reduce((n, [, values]) => n + values.length, 0), signature });
   });
-  return Object.freeze({ year, summaries: Object.freeze(summaries), months: Object.freeze(months), byDate });
+  return Object.freeze({ year: displayedMonths[0]?.year ?? 0, summaries: Object.freeze(summaries), months: Object.freeze(months), byDate });
 };
 
 export const resolveEventById = (events: readonly Event[], id: string | null) => id ? events.find(event => event.id === id) ?? null : null;

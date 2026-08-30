@@ -22,7 +22,13 @@ export const planGridPublication = (input: { start: string; end: string; records
   const maxPerDate = Math.max(0, ...[...(input.recordsByDate?.values() ?? [])].map(records => records.length));
   const cssWidth = layout === 'month-columns' ? 58 + columns * 128 : 1120;
   const rows = layout === 'month-columns' ? 31 : Math.ceil(days / 7);
-  const estimatedHeight = 150 + rows * Math.max(layout === 'month-columns' ? 38 : 120, maxPerDate * eventBlockHeight + 38) + Math.ceil((input.legendEntries ?? 0) / 6) * 28;
+  // Month publication renders a structural 52px minimum row and otherwise uses
+  // a 16px base plus one planned block and gap per record. Keep feasibility at
+  // least as conservative as the DOM that GridView captures.
+  const rowHeight = layout === 'month-columns'
+    ? Math.max(52, 16 + maxPerDate * (eventBlockHeight + 1))
+    : Math.max(120, maxPerDate * eventBlockHeight + 38);
+  const estimatedHeight = 150 + rows * rowHeight + Math.ceil((input.legendEntries ?? 0) / 6) * 28;
   const limits = input.mobile ? { area: EXPORT_FEASIBILITY_LIMITS.mobileArea, edge: EXPORT_FEASIBILITY_LIMITS.mobileEdge } : { area: EXPORT_FEASIBILITY_LIMITS.desktopArea, edge: EXPORT_FEASIBILITY_LIMITS.desktopEdge };
   const pixelRatio = [2, 1.5, 1].find(ratio => cssWidth * ratio <= limits.edge && estimatedHeight * ratio <= limits.edge && cssWidth * estimatedHeight * ratio * ratio <= limits.area) ?? 0;
   const feasible = pixelRatio > 0;

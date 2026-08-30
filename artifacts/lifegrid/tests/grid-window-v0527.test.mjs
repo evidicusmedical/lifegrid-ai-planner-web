@@ -54,3 +54,30 @@ test('publication event text wraps words and long tokens with final-line ellipsi
  assert.deepEqual(wrapCanvasText({text:'abcdefghijklmnop',maxWidth:5,maxLines:4,measureText}),['abcde','fghij','klmno','p']);
  const overflow=wrapCanvasText({text:'one two three four five',maxWidth:7,maxLines:2,measureText}); assert.equal(overflow.length,2); assert.equal(overflow[0].includes('…'),false); assert.equal(overflow[1].endsWith('…'),true);
 });
+
+test('Q1 export descriptors stay authoritative from a February interactive anchor',()=>{
+ const interactive=buildMonthWindow(2026,1);
+ const q1Range=resolveExportDateRange('q1',monthWindowDateRange(interactive),2026,'2026-08-30');
+ const exportMonths=buildMonthWindow(2026,0,3);
+ assert.deepEqual(exportMonths.map(month=>[month.key,month.daysInMonth]),[['2026-01',31],['2026-02',28],['2026-03',31]]);
+ const records=[{id:'jan31',date:'2026-01-31',endDate:'2026-01-31',title:'Jan 31',category:'a',color:null,displayPriority:4,timeStatus:'all-day',startTime:null,endTime:null,eventKind:null,showInGrid:true},{id:'mar31',date:'2026-03-31',endDate:'2026-03-31',title:'Mar 31',category:'a',color:null,displayPriority:4,timeStatus:'all-day',startTime:null,endTime:null,eventKind:null,showInGrid:true}];
+ const model=buildGridWindowViewModel(records,exportMonths,new Map([['a',0]]));
+ assert.deepEqual(q1Range,{start:'2026-01-01',end:'2026-03-31'});
+ assert.equal(model.byDate.get('2026-01-31')[0].id,'jan31');
+ assert.equal(model.byDate.get('2026-03-31')[0].id,'mar31');
+});
+
+test('calendar-year export descriptors ignore non-January interactive positions',()=>{
+ const interactive=buildMonthWindow(2026,8);
+ assert.equal(interactive[0].key,'2026-09');
+ const calendarYear=buildMonthWindow(2026,0,12);
+ assert.deepEqual(calendarYear.map(month=>month.daysInMonth),[31,28,31,30,31,30,31,31,30,31,30,31]);
+});
+
+test('2028 calendar-year export owns leap-day month length from its descriptor',()=>{
+ const interactive=buildMonthWindow(2027,8);
+ assert.equal(interactive[0].key,'2027-09');
+ const calendarYear=buildMonthWindow(2028,0,12);
+ assert.equal(calendarYear[1].key,'2028-02');
+ assert.equal(calendarYear[1].daysInMonth,29);
+});

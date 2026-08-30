@@ -8,5 +8,8 @@
 - [x] Highest safe 2/1.5/1 raster ratio is automatic; infeasibility is explicit and never drops records silently.
 - [x] Visible/Expanded, Fast/Sharp, and Compact/Detailed are absent from the user-facing export panel.
 - [x] Publication event titles wrap; structural dates are not passed through title overflow logic.
+- [x] Exported month descriptors—not interactive column positions—own month lengths for quarter, calendar-year, rolling, and leap-year publication.
+- [x] Month-column Event blocks and day-row heights consume the adaptive plan while the interactive Grid remains compact.
+- [x] The v0.5.27 zero-retry browser suite performs real short and long image generation and inspects the staged month publication.
 - [x] Category, Project, `showInGrid`, and `showInExport` independence is preserved.
 - [ ] Hosted GitHub Actions, Vercel, and physical-device checks require external infrastructure.

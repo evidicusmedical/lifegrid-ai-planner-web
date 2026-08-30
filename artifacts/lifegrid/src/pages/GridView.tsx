@@ -321,8 +321,6 @@ export const GridView = () => {
   const todayMonth = today.getMonth();
   const todayDay = today.getDate();
 
-  const getDaysForMonth = (column: number) => displayedMonths[column]?.daysInMonth ?? 0;
-
   const activeCalendar = calendars.find((c) => c.id === activeCalendarId)!;
   const categoryRank = useMemo(
     () => new Map(categories.map((c, idx) => [c.id, idx])),
@@ -403,7 +401,12 @@ export const GridView = () => {
     return buildMonthWindow(startYear, startMonth - 1, (endYear - startYear) * 12 + endMonth - startMonth + 1);
   }, [displayedMonths, exportRange.start, exportRange.end]);
   const publicationPlan = useMemo(() => planGridPublication({ start: exportRange.start, end: exportRange.end, recordsByDate: exportGridData, monthCount: exportMonths.length, mobile: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches, legendEntries: categories.length }), [exportRange.start, exportRange.end, exportGridData, exportMonths.length, categories.length]);
-  const tableMonths = exporting && publicationPlan.layout === "month-columns" ? exportMonths : displayedMonths;
+  // Keep the staged publication mounted behind its preview so browser tests and
+  // assistive diagnostics can inspect exactly what was captured. Closing the
+  // preview immediately restores the compact interactive table.
+  const publicationActive = exporting || Boolean(exportUrl);
+  const tableMonths = publicationActive && publicationPlan.layout === "month-columns" ? exportMonths : displayedMonths;
+  const monthPublication = publicationActive && publicationPlan.layout === "month-columns";
 
   const isTargetedDateExport = useMemo(() => {
     if (exportFilters.datePreset === "currentGrid" || exportFilters.datePreset === "calendarYear" || /^q[1-4]$/.test(exportFilters.datePreset)) return false;
@@ -744,13 +747,6 @@ export const GridView = () => {
       );
       return;
     }
-    if (!useTargetedLayout && exportFilteredEvents.length === 0) {
-      const selected = exportFilters.categoryMode === "selected" ? categories.filter(c => selectedCategorySet.has(c.id)).map(c => c.label).join(", ") : "selected";
-      toast.error(`No ${selected} events overlap ${start} through ${end}. Choose another range or use Custom.`, {
-        id: "export",
-      });
-      return;
-    }
     if (!publicationPlan.feasible) { toast.error(publicationPlan.reason, { id: "export" }); return; }
     setExporting(true);
     setExportStatus("generating");
@@ -856,6 +852,7 @@ export const GridView = () => {
     getExportCaptureNode,
     isDefaultExportFilter,
     isTargetedDateExport,
+    publicationPlan,
     year,
   ]);
 
@@ -969,7 +966,7 @@ export const GridView = () => {
           <div className="flex items-center rounded-lg bg-muted p-0.5" aria-label="Start month">
             <span className="hidden px-1 text-[9px] font-bold uppercase text-muted-foreground sm:inline">Start</span>
             <button aria-label="Previous start month" onClick={() => { setViewStart(addCalendarMonths(viewStart, -1)); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-9 rounded hover:bg-background" data-testid="button-month-prev"><ChevronLeft size={14} className="mx-auto" /></button>
-            <button aria-label="Reset/select start month" title={`${displayedMonths[0].label} ${displayedMonths[0].year} start`} className="min-h-9 min-w-10 px-1 text-xs font-bold" data-testid="button-month-current">{displayedMonths[0].label}</button>
+            <span aria-label={`Current start month ${displayedMonths[0].label} ${displayedMonths[0].year}`} className="inline-flex min-h-9 min-w-10 items-center justify-center px-1 text-xs font-bold" data-testid="button-month-current">{displayedMonths[0].label}</span>
             <button aria-label="Next start month" onClick={() => { setViewStart(addCalendarMonths(viewStart, 1)); scrollRef.current?.scrollTo({ left: 0 }); }} className="min-h-9 min-w-9 rounded hover:bg-background" data-testid="button-month-next"><ChevronRight size={14} className="mx-auto" /></button>
           </div>
         </div>
@@ -1317,6 +1314,7 @@ export const GridView = () => {
             )}
             <table
               ref={tableRef}
+              data-publication-layout={monthPublication ? "month-columns" : "interactive"}
               className="border-collapse bg-background"
               style={{ minWidth: DAY_COL_W + tableMonths.length * MONTH_COL_W }}
             >
@@ -1339,6 +1337,7 @@ export const GridView = () => {
                           padding: "4px 6px",
                         }}
                         data-testid={`header-month-${month.key}`} data-month-key={month.key}
+                        aria-label={`${month.label} ${month.year}`}
                       >
                         <div
                           className={`text-[11px] font-extrabold uppercase tracking-widest leading-none ${isCurrent ? "text-primary" : "text-muted-foreground"}`}
@@ -1358,18 +1357,16 @@ export const GridView = () => {
 
               <tbody>
                 {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => {
-                  const isExpandedExport =
-                    exporting;
-                  const rowEventMax = tableMonths.reduce((max, month, mIdx) => {
-                    const maxDay = getDaysForMonth(mIdx);
-                    if (day > maxDay) return max;
+                  const isExpandedExport = publicationActive;
+                  const rowEventMax = tableMonths.reduce((max, month) => {
+                    if (day > month.daysInMonth) return max;
                     const dateStr = `${month.key}-${String(day).padStart(2, "0")}`;
-                    return Math.max(max, (exporting ? exportGridData : focusedGridData).get(dateStr)?.length ?? 0);
+                    return Math.max(max, (publicationActive ? exportGridData : focusedGridData).get(dateStr)?.length ?? 0);
                   }, 0);
-                  const rowHeight = isExpandedExport
+                  const rowHeight = monthPublication
                     ? Math.max(
                         ROW_H,
-                        EXPORT_ROW_BASE_H + rowEventMax * (EVENT_PILL_H + 1),
+                        EXPORT_ROW_BASE_H + rowEventMax * (publicationPlan.eventBlockHeight + 1),
                       )
                     : ROW_H;
                   return (
@@ -1386,8 +1383,8 @@ export const GridView = () => {
                         {day}
                       </td>
 
-                      {tableMonths.map((month, mIdx) => {
-                        const maxDay = getDaysForMonth(mIdx);
+                      {tableMonths.map((month) => {
+                        const maxDay = month.daysInMonth;
                         const dateStr = `${month.key}-${String(day).padStart(2, "0")}`;
                         const temporal = getDateTemporalState(
                           dateStr,
@@ -1396,10 +1393,12 @@ export const GridView = () => {
                         );
                         const isToday = temporal.isToday;
 
-                        if (day > maxDay || (exporting && (dateStr < exportRange.start || dateStr > exportRange.end))) {
+                        if (day > maxDay || (publicationActive && (dateStr < exportRange.start || dateStr > exportRange.end))) {
                           return (
                             <td
                               key={`${month.key}-${day}`}
+                              data-testid={`cell-${dateStr}`}
+                              data-outside-range={publicationActive && dateStr >= month.startDate && dateStr <= month.endDate ? "true" : undefined}
                               className="border-b border-r border-border"
                               style={{
                                 width: MONTH_COL_W,
@@ -1419,9 +1418,9 @@ export const GridView = () => {
                         // Noncritical month cells stay structurally present for table/scroll safety,
                         // but defer event-pill DOM until their deterministic batch is admitted.
                         const monthVisible =
-                          exporting || renderedMonths.has(month.key);
+                          publicationActive || renderedMonths.has(month.key);
                         const dayEvents = monthVisible
-                          ? ((exporting ? exportGridData : focusedGridData).get(dateStr) ?? [])
+                          ? ((publicationActive ? exportGridData : focusedGridData).get(dateStr) ?? [])
                           : [];
                         const denseDay = getDenseDay(
                           dayEvents,
@@ -1508,7 +1507,7 @@ export const GridView = () => {
                                 <button
                                   type="button"
                                   key={evt.id}
-                                  className="w-full rounded-sm border-0 px-1 flex items-center gap-0.5 overflow-hidden text-left transition-opacity focus:outline-none focus:ring-1 focus:ring-white"
+                                  className={`w-full rounded-sm border-0 px-1 flex gap-0.5 overflow-hidden text-left transition-opacity focus:outline-none focus:ring-1 focus:ring-white ${monthPublication ? "items-start py-1" : "items-center"}`}
                                   title={`${evt.title}${evt.eventKind ? ` · ${evt.eventKind}` : ""}${evt.startTime ? ` · ${evt.startTime}${evt.endTime ? `–${evt.endTime}` : ""}` : ""}`}
                                   aria-label={`${evt.title}. Press Enter to open date details.`}
                                   onClick={(e) => {
@@ -1567,13 +1566,15 @@ export const GridView = () => {
                                   style={{
                                     backgroundColor: evt.color ?? undefined,
                                     color: getReadableTextColor(evt.color),
-                                    height: isExpandedExport
-                                      ? EVENT_PILL_H
-                                      : 10,
+                                    height: monthPublication
+                                      ? publicationPlan.eventBlockHeight
+                                      : EVENT_PILL_H,
                                     opacity: dim(evt.category) ? 0.18 : 1,
                                   }}
                                   data-testid={`event-pill-${evt.id}`}
                                   data-occurrence-date={dateStr}
+                                  data-publication-event={monthPublication ? "true" : "false"}
+                                  data-export-title-lines={monthPublication ? publicationPlan.eventTitleLines : undefined}
                                 >
                                   {evt.startTime && (
                                     <span
@@ -1584,8 +1585,18 @@ export const GridView = () => {
                                     </span>
                                   )}
                                   <span
-                                    className="font-semibold truncate"
-                                    style={{ fontSize: 8, lineHeight: 1 }}
+                                    data-publication-event-title={monthPublication ? "true" : "false"}
+                                    className={monthPublication
+                                      ? "min-w-0 font-semibold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]"
+                                      : "min-w-0 font-semibold truncate"}
+                                    style={monthPublication ? {
+                                      fontSize: publicationPlan.eventFontSize,
+                                      lineHeight: `${publicationPlan.eventLineHeight}px`,
+                                      display: "-webkit-box",
+                                      WebkitLineClamp: publicationPlan.eventTitleLines,
+                                      WebkitBoxOrient: "vertical",
+                                      overflow: "hidden",
+                                    } : { fontSize: 8, lineHeight: 1 }}
                                   >
                                     {evt.title}
                                   </span>
@@ -1720,6 +1731,7 @@ export const GridView = () => {
                                   </span>
                                 )}
                                 <span
+                                  data-publication-event-title="true"
                                   className="font-bold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]"
                                   style={{ fontSize: publicationPlan.eventFontSize, lineHeight: `${publicationPlan.eventLineHeight}px`, display: "-webkit-box", WebkitLineClamp: publicationPlan.eventTitleLines, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                                 >

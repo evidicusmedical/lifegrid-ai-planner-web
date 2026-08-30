@@ -6,6 +6,7 @@
 - Added explicit Current Grid, Calendar Year, quarter, next-day, and twelve-calendar-month Custom publication ranges.
 - Replaced renderer-oriented user choices with deterministic adaptive layouts, automatic safe image quality, complete-event feasibility, multiline titles, and protected date identity.
 - Preserved AI interchange v5, backup schema 7, Category/Project filtering, export visibility independence, and browser-specific PNG reliability paths.
+- Corrected non-January quarter/calendar-year export month lengths and applied adaptive multiline Event sizing to month-column publications; expanded zero-retry v0.5.27 browser qualification around real short and long PNGs.
 
 # LifeGrid AI Planner — Changelog
 

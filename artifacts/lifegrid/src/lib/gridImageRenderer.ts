@@ -256,7 +256,13 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     }
     cell.querySelectorAll<HTMLElement>("[data-source-event-id]").forEach((eventChip) => {
       drawBox(eventChip);
-      eventChip.querySelectorAll("span").forEach((span) => drawWrappedEventText(span, Number(eventChip.dataset.exportTitleLines ?? 3)));
+      eventChip.querySelectorAll("span").forEach((span) => {
+        if ((span as HTMLElement).dataset.publicationEventTitle === "true") {
+          drawWrappedEventText(span, Number(eventChip.dataset.exportTitleLines ?? 3));
+        } else {
+          drawTextElement(span);
+        }
+      });
     });
     Array.from(cell.querySelectorAll<HTMLElement>("div")).forEach((candidate) => {
       const text = candidate.textContent?.trim() ?? "";

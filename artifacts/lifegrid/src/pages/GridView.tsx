@@ -53,6 +53,7 @@ import { getLocalTemporalOccurrence } from "../lib/temporal";
 import { buildGridWindowViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
 import { addCalendarMonths, buildMonthWindow, monthWindowDateRange, resolveAddEventDefaultDate } from "../lib/gridWindow";
 import { planGridPublication } from "../lib/gridPublicationPlan";
+import { getPublicationCaptureBounds } from "../lib/gridPublicationText";
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
 import { renderGridPng, type GridImageRendererName } from "../lib/gridImageRenderer";
@@ -180,7 +181,8 @@ const ExportPublicationHeader = ({
         {legend.map((entry) => (
           <span
             key={entry.id}
-            className="inline-flex items-center gap-1.5 text-xs font-medium"
+            className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap text-xs font-medium"
+            data-publication-legend-entry="true"
           >
             <span
               className="h-3 w-3 rounded-sm border border-black/10"
@@ -401,7 +403,7 @@ export const GridView = () => {
     const [endYear, endMonth] = exportRange.end.split("-").map(Number);
     return buildMonthWindow(startYear, startMonth - 1, (endYear - startYear) * 12 + endMonth - startMonth + 1);
   }, [displayedMonths, exportRange.start, exportRange.end]);
-  const publicationPlan = useMemo(() => planGridPublication({ start: exportRange.start, end: exportRange.end, recordsByDate: exportGridData, monthCount: exportMonths.length, mobile: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches, legendEntries: categories.length }), [exportRange.start, exportRange.end, exportGridData, exportMonths.length, categories.length]);
+  const publicationPlan = useMemo(() => planGridPublication({ start: exportRange.start, end: exportRange.end, recordsByDate: exportGridData, monthCount: exportMonths.length, mobile: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches, legendEntries: categories.length, legendLabels: categories.filter(category => exportFilters.categoryMode !== "selected" || selectedCategorySet.has(category.id)).map(category => category.label) }), [exportRange.start, exportRange.end, exportGridData, exportMonths.length, categories, exportFilters.categoryMode, selectedCategorySet]);
   // Keep the staged publication mounted behind its preview so browser tests and
   // assistive diagnostics can inspect exactly what was captured. Closing the
   // preview immediately restores the compact interactive table.
@@ -797,11 +799,12 @@ export const GridView = () => {
 
     await new Promise(requestAnimationFrame);
 
+    const captureBounds = getPublicationCaptureBounds(captureNode);
     const rendererOptions = {
       pixelRatio: publicationPlan.pixelRatio,
       backgroundColor: theme === "dark" ? "#0d1526" : "#ffffff",
-      width: captureNode.scrollWidth,
-      height: captureNode.scrollHeight,
+      width: captureBounds.width,
+      height: captureBounds.height,
       targeted: useTargetedLayout,
       firefox: firefoxTargeted,
       safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
@@ -1308,7 +1311,8 @@ export const GridView = () => {
             style={
               exporting
                 ? {
-                    minWidth: exportDimensions.width,
+                    width: publicationPlan.cssWidth,
+                    minWidth: publicationPlan.cssWidth,
                     padding: EXPORT_DENSITY.compact.padding,
                   }
                 : undefined
@@ -1662,6 +1666,11 @@ export const GridView = () => {
           }}
           data-testid="targeted-export-grid"
           data-publication-ready={exporting ? "true" : "false"}
+          data-publication-text-profile={publicationPlan.textProfile}
+          data-publication-title-lines={publicationPlan.eventTitleLines}
+          data-publication-font-size={publicationPlan.eventFontSize}
+          data-publication-line-height={publicationPlan.eventLineHeight}
+          data-publication-card-height={publicationPlan.eventBlockHeight}
           aria-hidden="true"
         >
           <ExportPublicationHeader
@@ -1716,13 +1725,9 @@ export const GridView = () => {
                           className="border-b border-r border-border align-top last:border-r-0"
                           style={{ height: cellHeight, padding: 6 }}
                         >
-                          <div className="mb-2 flex items-baseline justify-between gap-2">
-                            <span className="text-sm font-extrabold text-foreground">
-                              {day.label}
-                            </span>
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                              {day.weekday}
-                            </span>
+                          <div data-publication-date="true" aria-label={day.label} className="mb-2 flex items-baseline gap-1 overflow-visible whitespace-nowrap [text-overflow:clip]">
+                            <span data-publication-month="true" className="text-[11px] font-bold uppercase text-muted-foreground">{MONTHS[parseISODate(day.date).getMonth()]}</span>
+                            <span data-publication-day="true" className="text-sm font-extrabold text-foreground">{parseISODate(day.date).getDate()}</span>
                           </div>
                           <div className="flex flex-col gap-1">
                             {visibleEvents.map((evt) => (
@@ -1731,8 +1736,9 @@ export const GridView = () => {
                                 data-testid={`targeted-export-event-${day.date}-${evt.id}`}
                                 data-source-event-id={evt.id}
                                 data-export-title-lines={publicationPlan.eventTitleLines}
+                                data-publication-event="true"
+                                style={{ backgroundColor: evt.color ?? undefined, color: getReadableTextColor(evt.color), minHeight: publicationPlan.eventBlockHeight }}
                                 className="flex items-start gap-1 rounded-md px-1.5 py-1"
-                                style={{ backgroundColor: evt.color ?? undefined, color: getReadableTextColor(evt.color) }}
                               >
                                 {evt.startTime && (
                                   <span

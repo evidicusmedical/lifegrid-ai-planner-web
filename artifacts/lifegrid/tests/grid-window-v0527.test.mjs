@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addCalendarMonths, buildMonthWindow, countCalendarMonthsInclusive, monthWindowDateRange } from '../.test-build/lib/gridWindow.js';
+import { addCalendarMonths, buildMonthWindow, countCalendarMonthsInclusive, monthWindowDateRange, resolveAddEventDefaultDate } from '../.test-build/lib/gridWindow.js';
 import { resolveExportDateRange, validateExportRange } from '../.test-build/lib/gridAwareness.js';
 import { planGridPublication } from '../.test-build/lib/gridPublicationPlan.js';
 import { buildGridWindowViewModel } from '../.test-build/lib/gridModel.js';
@@ -80,4 +80,9 @@ test('2028 calendar-year export owns leap-day month length from its descriptor',
  const calendarYear=buildMonthWindow(2028,0,12);
  assert.equal(calendarYear[1].key,'2028-02');
  assert.equal(calendarYear[1].daysInMonth,29);
+});
+
+test('Add Event defaults to today only when today is inside the rolling window',()=>{
+ assert.equal(resolveAddEventDefaultDate('2026-08-30',monthWindowDateRange(buildMonthWindow(2026,8))),'2026-09-01');
+ assert.equal(resolveAddEventDefaultDate('2026-08-30',monthWindowDateRange(buildMonthWindow(2026,7))),'2026-08-30');
 });

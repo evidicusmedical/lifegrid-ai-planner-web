@@ -50,3 +50,6 @@ export const countCalendarMonthsInclusive = (start: string, end: string): number
 };
 
 export const resolveCalendarYearWindow = (year: number) => buildMonthWindow(year, 0);
+
+export const resolveAddEventDefaultDate = (today: string, range: { start: string; end: string }) =>
+  today >= range.start && today <= range.end ? today : range.start;

@@ -7,11 +7,13 @@
 
 The convergence correction makes the descriptors in the staged export window authoritative: Q1 and Calendar Year publications from non-January interactive windows use each exported month's own `daysInMonth`, including February 29, 2028. Month-column publication now consumes the planner's line count, font metrics, Event block height, and row height while the ordinary Grid returns to compact one-line pills as soon as the image preview closes.
 
+Release stabilization adds explicit capture-readiness synchronization and a bounded long-publication renderer ladder. Targeted Firefox keeps its deterministic Canvas2D path. Firefox month columns prefer the extended semantic Canvas2D renderer; Chromium/WebKit retain html-to-image first, then html2canvas and Canvas2D fallbacks for month columns. Canvas2D paints structural day/month cells and only wraps elements marked as publication Event titles. Add Event now defaults to Today only when Today is inside the rolling window, otherwise to the first displayed date.
+
 ## Export and renderer behavior
 Current Grid is the exact rolling range. Calendar Year and quarters resolve from the anchor year. Next presets remain today-based. Custom validation counts inclusive year/month components, so full 2028 is valid while any range touching thirteen months is blocked. HTML publication uses multiline wrapping; Firefox targeted Canvas2D uses the shared deterministic word/character wrapper and final-line-only ellipsis. Existing browser-specific renderer selection, Download, native Share, filename sanitation, Category/Project filtering, and `showInExport` authority remain.
 
 ## Qualification state
-Local unit suite: 157 tests, 0 failures, 0 skips. Typecheck and build pass. The expanded v0.5.27 Playwright suite contains nine zero-retry scenarios and performs real short and long PNG generation in every configured browser, including export-month boundary, leap-day, wrapping, filtering, partial-range, and PNG-signature assertions. Final hosted run and Vercel state are recorded in the PR after the correction is pushed.
+Local unit suite: 161 tests, 0 failures, 0 skips. Typecheck and build pass. The expanded v0.5.27 Playwright suite contains eleven zero-retry scenarios and performs real short and long PNG generation in every configured browser, including export-month boundary, leap-day, wrapping, independently seeded Category/Project filters, Add Event defaults, partial-range, and PNG-signature assertions. Final hosted run and Vercel state are recorded in the PR after the correction is pushed.
 
 ## Known limitations and manual acceptance
 Hosted CI and Vercel cannot be initiated without GitHub connectivity. Physical-device checks remain recommended:

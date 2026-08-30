@@ -51,7 +51,7 @@ import {
 } from "../lib/gridAwareness";
 import { getLocalTemporalOccurrence } from "../lib/temporal";
 import { buildGridWindowViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
-import { addCalendarMonths, buildMonthWindow, monthWindowDateRange } from "../lib/gridWindow";
+import { addCalendarMonths, buildMonthWindow, monthWindowDateRange, resolveAddEventDefaultDate } from "../lib/gridWindow";
 import { planGridPublication } from "../lib/gridPublicationPlan";
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
@@ -320,6 +320,7 @@ export const GridView = () => {
   const todayStr = toISODate(today);
   const todayMonth = today.getMonth();
   const todayDay = today.getDate();
+  const addEventDefaultDate = resolveAddEventDefaultDate(todayStr, gridWindowRange);
 
   const activeCalendar = calendars.find((c) => c.id === activeCalendarId)!;
   const categoryRank = useMemo(
@@ -781,6 +782,13 @@ export const GridView = () => {
       setExporting(false);
       return;
     }
+    if (!useTargetedLayout && captureNode.dataset.publicationReady !== "true") {
+      toast.error("The publication is still preparing. Try again.", { id: "export" });
+      setExportStatus("error");
+      setExportErrorCode("CAPTURE_NODE_NOT_READY");
+      setExporting(false);
+      return;
+    }
 
     if (!useTargetedLayout && container) {
       container.style.width = captureNode.scrollWidth + "px";
@@ -797,6 +805,7 @@ export const GridView = () => {
       targeted: useTargetedLayout,
       firefox: firefoxTargeted,
       safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
+      layout: publicationPlan.layout,
     };
 
     try {
@@ -826,6 +835,7 @@ export const GridView = () => {
       const safeErrorCodes = new Set([
         "HTML2CANVAS_TIMEOUT", "HTML2CANVAS_RENDER_ERROR", "INVALID_PNG_OUTPUT",
         "EMPTY_PNG_BLOB", "INVALID_PNG_MIME", "CAPTURE_NODE_UNAVAILABLE", "CAPTURE_NODE_ZERO_SIZE",
+        "CAPTURE_NODE_NOT_READY", "HTML_TO_IMAGE_TIMEOUT", "HTML2CANVAS_TIMEOUT", "CANVAS2D_TIMEOUT",
       ]);
       setExportErrorCode(safeErrorCodes.has(rendererErrorCode) ? rendererErrorCode : "INVALID_PNG_OUTPUT");
       console.error("Grid image renderer failed", err instanceof Error ? err.message : "unknown error");
@@ -1289,6 +1299,7 @@ export const GridView = () => {
         {gridReady && (
           <div
             ref={publicationRef}
+            data-publication-ready={monthPublication ? "true" : "false"}
             className={
               exporting
                 ? "lifegrid-export-publication bg-background p-6"
@@ -1650,6 +1661,7 @@ export const GridView = () => {
             opacity: exporting ? 1 : 0,
           }}
           data-testid="targeted-export-grid"
+          data-publication-ready={exporting ? "true" : "false"}
           aria-hidden="true"
         >
           <ExportPublicationHeader
@@ -1773,9 +1785,7 @@ export const GridView = () => {
 
       {/* Add-event FAB */}
       <button
-        onClick={() =>
-          openAdd(year === today.getFullYear() ? todayStr : `${year}-01-01`)
-        }
+        onClick={() => openAdd(addEventDefaultDate)}
         className="absolute bottom-20 right-5 w-14 h-14 bg-primary text-primary-foreground rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
         data-testid="button-add-event"
         title="Add event"

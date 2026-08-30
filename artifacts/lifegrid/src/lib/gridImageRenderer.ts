@@ -16,7 +16,16 @@ export interface GridPngOptions {
   targeted: boolean;
   firefox: boolean;
   safari: boolean;
+  layout?: "week" | "multiweek" | "month-columns";
 }
+
+export const gridRendererStrategy = (options: Pick<GridPngOptions, "targeted" | "firefox" | "layout">): GridImageRendererName[] => {
+  if (options.targeted && options.firefox) return ["canvas2d"];
+  if (!options.targeted && options.firefox && options.layout === "month-columns") return ["canvas2d", "html-to-image", "html2canvas"];
+  return options.layout === "month-columns"
+    ? ["html-to-image", "html2canvas", "canvas2d"]
+    : ["html-to-image", "html2canvas"];
+};
 
 const RENDER_TIMEOUT_MS = 22_000;
 
@@ -243,18 +252,27 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
 
   node.querySelectorAll("thead th").forEach((cell) => {
     drawBox(cell, options.backgroundColor);
-    drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 12));
+    const labels = Array.from(cell.children).filter(child => child.textContent?.trim());
+    if (labels.length) labels.forEach(label => drawTextElement(label, 0, Math.max(0, relativeRect(cell).width - 12)));
+    else drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 12));
   });
 
   node.querySelectorAll("tbody td").forEach((cell) => {
     drawBox(cell, options.backgroundColor);
     const testId = cell.getAttribute("data-testid") ?? "";
-    if (!testId.startsWith("targeted-export-day-")) return;
-    const headerRow = cell.firstElementChild;
-    if (headerRow) {
-      headerRow.querySelectorAll("span").forEach((span) => drawTextElement(span));
+    const targetedCell = testId.startsWith("targeted-export-day-");
+    const monthCell = options.layout === "month-columns";
+    if (!targetedCell && !monthCell) return;
+    if (targetedCell) {
+      const headerRow = cell.firstElementChild;
+      if (headerRow) headerRow.querySelectorAll("span").forEach((span) => drawTextElement(span));
+    } else if (testId.startsWith("row-day-")) {
+      drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 4));
+    } else {
+      const weekday = Array.from(cell.children).find(child => child.tagName === "DIV" && /^[A-Z][a-z]?$/.test(child.textContent?.trim() ?? ""));
+      if (weekday) drawTextElement(weekday);
     }
-    cell.querySelectorAll<HTMLElement>("[data-source-event-id]").forEach((eventChip) => {
+    cell.querySelectorAll<HTMLElement>(targetedCell ? "[data-source-event-id]" : '[data-publication-event="true"]').forEach((eventChip) => {
       drawBox(eventChip);
       eventChip.querySelectorAll("span").forEach((span) => {
         if ((span as HTMLElement).dataset.publicationEventTitle === "true") {
@@ -288,13 +306,16 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
 };
 
 export const renderGridPng = async (node: HTMLElement, options: GridPngOptions) => {
-  if (options.targeted && options.firefox) {
-    return withTimeout(renderWithCanvas2d(node, options), RENDER_TIMEOUT_MS, "CANVAS2D");
+  const strategy = gridRendererStrategy(options);
+  let finalError: unknown = new Error("INVALID_PNG_OUTPUT");
+  for (const renderer of strategy) {
+    try {
+      if (renderer === "canvas2d") return await withTimeout(renderWithCanvas2d(node, options), RENDER_TIMEOUT_MS, "CANVAS2D");
+      if (renderer === "html2canvas") return await renderWithHtml2Canvas(node, options);
+      return await withTimeout(renderWithHtmlToImage(node, options), RENDER_TIMEOUT_MS, "HTML_TO_IMAGE");
+    } catch (error) {
+      finalError = error;
+    }
   }
-  try {
-    return await withTimeout(renderWithHtmlToImage(node, options), RENDER_TIMEOUT_MS, "HTML_TO_IMAGE");
-  } catch (error) {
-    if (!options.targeted) throw error;
-    return renderWithHtml2Canvas(node, options);
-  }
+  throw finalError;
 };

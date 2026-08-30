@@ -11,5 +11,8 @@
 - [x] Exported month descriptors—not interactive column positions—own month lengths for quarter, calendar-year, rolling, and leap-year publication.
 - [x] Month-column Event blocks and day-row heights consume the adaptive plan while the interactive Grid remains compact.
 - [x] The v0.5.27 zero-retry browser suite performs real short and long image generation and inspects the staged month publication.
+- [x] Publication readiness uses deterministic DOM state rather than timing, and Category/Project image tests use independent fixtures.
+- [x] Long Firefox month publication prefers semantic Canvas2D; WebKit/Chromium retain html-to-image with bounded html2canvas/Canvas2D fallback.
+- [x] Add Event uses Today only when visible in the rolling window and otherwise uses the first displayed date.
 - [x] Category, Project, `showInGrid`, and `showInExport` independence is preserved.
 - [ ] Hosted GitHub Actions, Vercel, and physical-device checks require external infrastructure.

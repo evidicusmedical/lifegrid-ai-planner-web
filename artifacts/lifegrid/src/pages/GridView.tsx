@@ -1305,13 +1305,18 @@ export const GridView = () => {
             ref={publicationRef}
             data-testid="export-month-publication"
             data-publication-ready={monthPublication ? "true" : "false"}
+            data-publication-text-profile={monthPublication ? publicationPlan.textProfile : undefined}
+            data-publication-title-lines={monthPublication ? publicationPlan.eventTitleLines : undefined}
+            data-publication-font-size={monthPublication ? publicationPlan.eventFontSize : undefined}
+            data-publication-line-height={monthPublication ? publicationPlan.eventLineHeight : undefined}
+            data-publication-card-height={monthPublication ? publicationPlan.eventBlockHeight : undefined}
             className={
-              exporting
+              monthPublication
                 ? "lifegrid-export-publication bg-background p-6"
                 : undefined
             }
             style={
-              exporting
+              monthPublication
                 ? {
                     width: getMonthPublicationWidth(tableMonths.length),
                     minWidth: getMonthPublicationWidth(tableMonths.length),
@@ -1324,7 +1329,7 @@ export const GridView = () => {
             <span className="sr-only" role="status" aria-live="polite">
               {exporting ? "Generating grid image" : ""}
             </span>
-            {exporting && (
+            {monthPublication && (
               <ExportPublicationHeader
                 metadata={exportMetadata}
                 legend={exportLegend.entries}
@@ -1657,7 +1662,7 @@ export const GridView = () => {
         {gridReady ? "Grid ready" : "Loading grid"}
       </p>
 
-      {(exporting || exportOptionsOpen) && isTargetedDateExport && createPortal(
+      {exportUiActive && isTargetedDateExport && createPortal(
         <div
           ref={targetedExportRef}
           className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"

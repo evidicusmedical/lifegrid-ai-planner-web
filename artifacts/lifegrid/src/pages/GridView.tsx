@@ -54,6 +54,7 @@ import { buildGridWindowViewModel, expandEventsToDateBuckets, filterGridEventsBy
 import { addCalendarMonths, buildMonthWindow, monthWindowDateRange, resolveAddEventDefaultDate } from "../lib/gridWindow";
 import { planGridPublication } from "../lib/gridPublicationPlan";
 import { getPublicationCaptureBounds } from "../lib/gridPublicationText";
+import { GRID_DAY_COLUMN_WIDTH, GRID_MONTH_COLUMN_WIDTH, PUBLICATION_HORIZONTAL_PADDING, getMonthPublicationWidth, getMonthTableWidth } from "../lib/gridPublicationGeometry";
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
 import { renderGridPng, type GridImageRendererName } from "../lib/gridImageRenderer";
@@ -79,8 +80,8 @@ const DOW_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const isLeapYear = (y: number) =>
   (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
 
-const DAY_COL_W = 32;
-const MONTH_COL_W = 110;
+const DAY_COL_W = GRID_DAY_COLUMN_WIDTH;
+const MONTH_COL_W = GRID_MONTH_COLUMN_WIDTH;
 const ROW_H = 52;
 const HEADER_H = 44;
 const MAX_VISIBLE_EVENTS = 5;
@@ -1302,6 +1303,7 @@ export const GridView = () => {
         {gridReady && (
           <div
             ref={publicationRef}
+            data-testid="export-month-publication"
             data-publication-ready={monthPublication ? "true" : "false"}
             className={
               exporting
@@ -1311,9 +1313,10 @@ export const GridView = () => {
             style={
               exporting
                 ? {
-                    width: publicationPlan.cssWidth,
-                    minWidth: publicationPlan.cssWidth,
-                    padding: EXPORT_DENSITY.compact.padding,
+                    width: getMonthPublicationWidth(tableMonths.length),
+                    minWidth: getMonthPublicationWidth(tableMonths.length),
+                    boxSizing: "border-box",
+                    padding: PUBLICATION_HORIZONTAL_PADDING,
                   }
                 : undefined
             }
@@ -1331,7 +1334,7 @@ export const GridView = () => {
               ref={tableRef}
               data-publication-layout={monthPublication ? "month-columns" : "interactive"}
               className="border-collapse bg-background"
-              style={{ minWidth: DAY_COL_W + tableMonths.length * MONTH_COL_W }}
+              style={{ width: getMonthTableWidth(tableMonths.length), minWidth: getMonthTableWidth(tableMonths.length) }}
             >
               <thead className="sticky top-0 z-20">
                 <tr style={{ height: HEADER_H }}>
@@ -1665,7 +1668,7 @@ export const GridView = () => {
             opacity: exporting ? 1 : 0,
           }}
           data-testid="targeted-export-grid"
-          data-publication-ready={exporting ? "true" : "false"}
+          data-publication-ready={publicationActive ? "true" : "false"}
           data-publication-text-profile={publicationPlan.textProfile}
           data-publication-title-lines={publicationPlan.eventTitleLines}
           data-publication-font-size={publicationPlan.eventFontSize}

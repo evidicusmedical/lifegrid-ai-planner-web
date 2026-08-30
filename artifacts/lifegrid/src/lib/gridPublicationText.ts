@@ -75,9 +75,10 @@ export const estimateLegendRows = (labels: readonly string[], availableWidth: nu
 };
 
 export const getPublicationContentWidth = (layout: PublicationDensity['layout'], monthCount: number) =>
-  layout === 'month-columns' ? 64 + Math.max(1, monthCount) * 128 + 64 : 1120;
+  layout === 'month-columns' ? getMonthPublicationWidth(monthCount) : 1120;
 
 export const getPublicationCaptureBounds = (node: HTMLElement) => ({
   width: Math.ceil(Math.max(node.getBoundingClientRect().width, node.scrollWidth)),
   height: Math.ceil(Math.max(node.getBoundingClientRect().height, node.scrollHeight)),
 });
+import { getMonthPublicationWidth } from './gridPublicationGeometry.js';

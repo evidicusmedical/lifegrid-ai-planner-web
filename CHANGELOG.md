@@ -3,6 +3,7 @@
 - Added deterministic sparse-to-dense publication typography shared across DOM and Canvas2D.
 - Made short-range dates structural and non-ellipsizing, improved bounded title fitting, and wrapped Category legends.
 - Bound PNG capture to actual publication content and added soft AI title communication guidance without changing interchange or backup schemas.
+- Final convergence shares 32/110 px Grid geometry with the planner, bounds annual margins to 24 px, and keeps staged publication readiness committed through preview.
 
 # Changelog
 

@@ -20,10 +20,10 @@ test('validation accepts targeted ranges through twelve months', () => assert.eq
 test('validation accepts a short cross-year targeted range', () => assert.equal(validateExportRange({ start: '2026-12-28', end: '2027-01-06' }, 2026, true), null));
 test('rolling validation permits a cross-year window', () => assert.equal(validateExportRange({ start: '2026-12-28', end: '2027-01-03' }, 2026), null));
 test('renderer strategy preserves targeted Firefox and adds bounded month fallbacks',()=>{
- assert.deepEqual(gridRendererStrategy({targeted:true,firefox:true,layout:'week'}),['canvas2d']);
+ assert.deepEqual(gridRendererStrategy({targeted:true,firefox:true,layout:'rolling-day-grid'}),['canvas2d']);
  assert.deepEqual(gridRendererStrategy({targeted:false,firefox:true,layout:'month-columns'}),['canvas2d','html-to-image','html2canvas']);
  assert.deepEqual(gridRendererStrategy({targeted:false,firefox:false,layout:'month-columns'}),['html-to-image','html2canvas','canvas2d']);
- assert.deepEqual(gridRendererStrategy({targeted:true,firefox:false,layout:'week'}),['html-to-image','html2canvas']);
+ assert.deepEqual(gridRendererStrategy({targeted:true,firefox:false,layout:'rolling-day-grid'}),['html-to-image','html2canvas']);
 });
 
 const events = [

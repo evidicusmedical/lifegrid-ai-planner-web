@@ -77,6 +77,7 @@ const MONTHS = [
 ];
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const DOW_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const DOW_HEADINGS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const isLeapYear = (y: number) =>
   (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
@@ -810,7 +811,7 @@ export const GridView = () => {
       targeted: useTargetedLayout,
       firefox: firefoxTargeted,
       safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
-      layout: publicationPlan.layout === 'month-columns' ? 'month-columns' as const : publicationPlan.dayCount <= 14 ? 'week' as const : 'multiweek' as const,
+      layout: publicationPlan.layout,
     };
 
     try {
@@ -1667,7 +1668,7 @@ export const GridView = () => {
       {exportUiActive && isTargetedDateExport && createPortal(
         <div
           ref={targetedExportRef}
-          className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"
+          className="lifegrid-export-publication fixed left-0 top-0 flex flex-col bg-background text-foreground pointer-events-none"
           style={{
             width: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.width : LETTER_FRAME.landscape.width,
             minHeight: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height,
@@ -1702,22 +1703,20 @@ export const GridView = () => {
           )}
 
           {publicationPlan.layout === 'day-agenda' ? (
-            <section data-testid="day-agenda" className="rounded-xl border border-border p-5">
+            <section data-testid="day-agenda" className="rounded-xl border border-border bg-card p-5">
               <h2 className="mb-1 text-xl font-extrabold">{parseISODate(exportRange.start).toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</h2>
               <p className="mb-4 text-sm text-muted-foreground">{exportLegend.recordCount} event{exportLegend.recordCount === 1 ? '' : 's'}</p>
-              <div className={exportLegend.recordCount > 16 ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'} data-publication-agenda-columns={exportLegend.recordCount > 16 ? '2' : '1'}>
-                {(exportGridData.get(exportRange.start) ?? []).map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" className="break-inside-avoid rounded-lg p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color)}}><div className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div className="font-bold [overflow-wrap:anywhere]">{evt.title}</div></article>)}
-              </div>
+              {(() => { const agendaEvents = exportGridData.get(exportRange.start) ?? []; const split = Math.ceil(agendaEvents.length / 2); const columns = agendaEvents.length > 16 ? [agendaEvents.slice(0, split), agendaEvents.slice(split)] : [agendaEvents]; return <div className={`grid gap-3 ${columns.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} data-publication-agenda-columns={columns.length}>{columns.map((column, columnIndex) => <div key={columnIndex} className="flex flex-col gap-3" data-publication-agenda-column={columnIndex + 1}>{column.map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" data-export-title-lines={publicationPlan.eventTitleLines} className="break-inside-avoid rounded-lg border border-black/10 p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color)}}><div data-publication-agenda-time="true" className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div data-publication-event-title="true" className="font-bold [overflow-wrap:anywhere]">{evt.title}</div></article>)}</div>)}</div>; })()}
             </section>
-          ) : <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
+          ) : <table className="min-h-0 flex-1 w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
               <tr>
-                {getDatesInRange(exportRange.start, exportRange.end).slice(0,7).map((date) => (
+                {(publicationPlan.layout === 'month-matrix' ? DOW_HEADINGS : getDatesInRange(exportRange.start, exportRange.end).slice(0,7).map(date => parseISODate(date).toLocaleDateString(undefined, { weekday: 'short' }))).map((heading) => (
                   <th
-                    key={date}
+                    key={heading}
                     className="border-b border-r border-border bg-card px-2 py-2 text-left text-xs font-extrabold uppercase tracking-widest text-muted-foreground last:border-r-0"
                   >
-                    {parseISODate(date).toLocaleDateString(undefined, { weekday: 'short' })}
+                    {heading}
                   </th>
                 ))}
               </tr>

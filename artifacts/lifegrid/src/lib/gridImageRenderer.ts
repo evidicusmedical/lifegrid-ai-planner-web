@@ -8,6 +8,7 @@ export interface GridPngResult {
   renderer: GridImageRendererName;
 }
 
+export type GridPublicationRendererLayout = "day-agenda" | "rolling-day-grid" | "month-matrix" | "month-columns";
 export interface GridPngOptions {
   pixelRatio: number;
   backgroundColor: string;
@@ -16,7 +17,7 @@ export interface GridPngOptions {
   targeted: boolean;
   firefox: boolean;
   safari: boolean;
-  layout?: "week" | "multiweek" | "month-columns";
+  layout?: GridPublicationRendererLayout;
 }
 
 export const gridRendererStrategy = (options: Pick<GridPngOptions, "targeted" | "firefox" | "layout">): GridImageRendererName[] => {
@@ -240,7 +241,10 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
       setElementFont(entry);
       const label = entry.textContent?.trim() ?? "";
       const x = swatch ? relativeRect(swatch).x + relativeRect(swatch).width + 6 : entryRect.x;
-      ctx.fillText(fitText(label, Math.max(0, entryRect.x + entryRect.width - x)), x, entryRect.y);
+      const maxWidth = Math.max(0, entryRect.x + entryRect.width - x);
+      const lineHeight = Number.parseFloat(getComputedStyle(entry).lineHeight) || 16;
+      wrapCanvasText({ text: label, maxWidth, maxLines: 3, measureText: value => ctx.measureText(value).width })
+        .forEach((line, index) => ctx.fillText(line, x, entryRect.y + index * lineHeight, maxWidth));
     });
   }
 
@@ -248,6 +252,22 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
   if (empty) {
     drawBox(empty, options.backgroundColor);
     drawTextElement(empty, 0, Math.max(0, relativeRect(empty).width - 12));
+  }
+
+  if (options.layout === "day-agenda") {
+    const agenda = node.querySelector<HTMLElement>('[data-testid="day-agenda"]');
+    if (agenda) {
+      drawBox(agenda, options.backgroundColor);
+      const date = agenda.querySelector("h2"); if (date) drawTextElement(date);
+      const count = agenda.querySelector(":scope > p"); if (count) drawTextElement(count);
+      agenda.querySelectorAll<HTMLElement>('article[data-publication-event="true"]').forEach(card => {
+        drawBox(card);
+        const time = card.querySelector<HTMLElement>('[data-publication-agenda-time="true"]');
+        const title = card.querySelector<HTMLElement>('[data-publication-event-title="true"]');
+        if (time) drawTextElement(time);
+        if (title) drawWrappedEventText(title, Number(card.dataset.exportTitleLines ?? 3));
+      });
+    }
   }
 
   node.querySelectorAll("thead th").forEach((cell) => {

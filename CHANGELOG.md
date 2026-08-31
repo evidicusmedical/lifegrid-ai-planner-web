@@ -1,5 +1,7 @@
 ## v0.5.29
 
+- Final convergence: Canvas2D agenda parity, multiline Canvas legends, Sunday-first month headings, scoped publication themes, expanded zero-retry PNG acceptance, and stable WebKit lazy-grid admission.
+
 - Added deterministic operational agenda, rolling-day grid, current-month matrix, independent Light/Dark publication themes, fresh-session defaults, wrapped legends, and automatic US Letter framing.
 - Preserved AI interchange v5 and backup schema v7.
 

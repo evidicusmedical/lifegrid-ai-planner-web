@@ -8,3 +8,11 @@
 - US Letter framing is automatic: ordinary agendas portrait, dense agendas and grids landscape.
 
 Qualification results are recorded in `HANDOFF-v0.5.29.md` only after execution.
+
+## Final convergence coverage
+
+- Canvas2D has explicit `day-agenda` drawing and multiline legend contracts.
+- September 2026 month-matrix headings are Sun–Sat, with leading cells before Tuesday September 1.
+- Export Light/Dark tokens are scoped to both targeted and month-column publication roots.
+- The focused zero-retry browser suite exercises clean defaults, rolling 7/14/30 ranges, dense and future agendas, Sunday-first full-month output, independent themes, valid PNG signatures, and Firefox renderer identity.
+- Historical CY-quarter assertions and WebKit cross-year lazy-admission steps were updated without sleeps or retries.

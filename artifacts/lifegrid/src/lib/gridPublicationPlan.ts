@@ -14,7 +14,8 @@ export type GridPublicationPlan = {
 
 export const planRollingGridRows = (input: { rowCount: number; maxEventsPerDay: number; eventBlockHeight: number }) => {
   const rowCount = Math.max(1, input.rowCount);
-  const rowHeight = Math.min(240, Math.max(112, 48 + input.maxEventsPerDay * input.eventBlockHeight));
+  const cardGaps = Math.max(0, input.maxEventsPerDay - 1) * 4;
+  const rowHeight = Math.min(240, Math.max(112, 48 + input.maxEventsPerDay * input.eventBlockHeight + cardGaps));
   return { rowCount, rowHeight, tableBodyHeight: rowCount * rowHeight };
 };
 

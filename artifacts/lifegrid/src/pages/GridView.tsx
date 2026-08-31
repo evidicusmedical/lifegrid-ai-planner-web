@@ -51,7 +51,7 @@ import {
 import { getLocalTemporalOccurrence } from "../lib/temporal";
 import { buildGridWindowViewModel, expandEventsToDateBuckets, filterGridEventsByCategories, resolveEventById, type GridEventSummary } from "../lib/gridModel";
 import { addCalendarMonths, buildMonthWindow, monthWindowDateRange, resolveAddEventDefaultDate } from "../lib/gridWindow";
-import { planGridPublication } from "../lib/gridPublicationPlan";
+import { planGridPublication, planRollingGridRows } from "../lib/gridPublicationPlan";
 import { getPublicationCaptureBounds } from "../lib/gridPublicationText";
 import { GRID_DAY_COLUMN_WIDTH, GRID_MONTH_COLUMN_WIDTH, PUBLICATION_HORIZONTAL_PADDING, getMonthPublicationWidth, getMonthTableWidth } from "../lib/gridPublicationGeometry";
 import { gridMark } from "../lib/gridDiagnostics";
@@ -438,6 +438,11 @@ export const GridView = () => {
     : Array.from({ length: 7 }, (_, offset) => addDays(parseISODate(exportRange.start), offset)
         .toLocaleDateString(undefined, { weekday: 'short' })),
   [publicationPlan.layout, exportRange.start]);
+  const rollingRowHeight = useMemo(() => planRollingGridRows({
+    rowCount: targetedExportWeeks.length,
+    maxEventsPerDay: Math.max(0, ...targetedExportWeeks.flatMap(week => week.map(day => day?.events.length ?? 0))),
+    eventBlockHeight: publicationPlan.eventBlockHeight,
+  }).rowHeight, [publicationPlan.eventBlockHeight, targetedExportWeeks]);
   const agendaCardHeight = Math.max(publicationPlan.eventBlockHeight, publicationPlan.eventLineHeight * publicationPlan.eventTitleLines + 32);
 
   // The interactive grid deliberately receives summaries only. Export retains full records
@@ -1726,7 +1731,7 @@ export const GridView = () => {
                   0,
                   ...week.map((day) => day?.events.length ?? 0),
                 );
-                const cellHeight = publicationPlan.layout === 'rolling-day-grid' ? Math.min(240, Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight)) : Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight);
+                const cellHeight = publicationPlan.layout === 'rolling-day-grid' ? rollingRowHeight : Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight);
                 return (
                   <tr key={weekIdx}>
                     {week.map((day, dayIdx) => {

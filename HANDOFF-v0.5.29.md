@@ -1,16 +1,30 @@
 # LifeGrid v0.5.29 handoff
 
+## Current convergence state
+
+- Existing PR: #53 — LifeGrid v0.5.29 — Operational export layouts and print-friendly framing
 - Branch: `codex/implement-lifegrid-v0.5.29-updates`
-- Pull request: #53 — LifeGrid v0.5.29 — Operational export layouts and print-friendly framing
-- Base correction input: hosted head `5863a20f0a9872b86c7cebaba7b63e83a30a9548` (the supplied workspace represented the PR as snapshot commit `8105a507847fcb7982647a6b936f6527c48db519`)
-- Final production-correction SHA: `4c9026b8710984f3590168d602b2f085b1426014`
-- PR head: cannot update from this container; GitHub push is blocked by HTTP 403
-- Architecture: one deterministic planner emits semantic layouts; DOM and Canvas2D consume those names directly. Canvas2D follows staged DOM rectangles/computed styles for agendas, cards, and multiline legends. Scoped publication tokens isolate Light/Dark output from app theme.
-- Intentional trade-offs: extreme agenda content may grow beyond an exact Letter ratio; only exceptional titles receive bounded final-line ellipsis.
-- Local unit result: 175 passed, 0 failed, 0 skipped.
-- Local typecheck: passed.
-- Local build: passed (existing Vite chunk-size advisory only).
-- Local focused Chromium/Firefox/WebKit: browser binaries could not be downloaded in this container because the Playwright CDN returned HTTP 403; no local browser pass is claimed.
-- Hosted workflow/Vercel/review threads: update after successor qualification.
-- Manual checks still recommended: physical iPhone/iPad export and US Letter print preview.
-- Codex did not merge PR #53.
+- Requested reviewed head: `a2582b66296e804de5fd9ef0d5182aa60881a9ed`
+- Failed hosted qualification: `33428725029`
+- Supplied workspace snapshot: `fad95d7` on base `9169dda53a787badfc8a3dfa84ec022cb2c2a0ad`; GitHub fetch/API inspection was blocked, so the requested reviewed head could not be independently fetched.
+- Final correction/head: record after commit and successful push.
+
+## Architecture and corrections
+
+The deterministic planner is the sole publication-family authority. Its semantic layout controls mounting, capture-node selection, renderer targeting, diagnostics, and validation mode. Orientation is selected before non-month frame width, typography, legend estimation, feasibility, and pixel-ratio planning. Rolling publications always provide seven range-relative headings; month matrices remain Sunday-first. Off-screen agenda dates use stable diagnostic attributes while retaining `aria-hidden`. DOM agenda cards and Canvas2D consume the same planned line count, font size, line height, and card geometry. Publication Light/Dark scopes include the background, foreground, border, card, muted, primary, primary-foreground, and ring tokens used by captured content.
+
+Intentional trade-offs remain unchanged: unusually dense content may grow beyond exact Letter ratio, and only genuinely exceptional titles receive bounded final-line truncation. No storage or AI interchange migration was introduced.
+
+## Verified local results
+
+- Unit suite: 180 passed, 0 failed, 0 skipped.
+- Typecheck: passed.
+- Production build: passed; only the existing Vite chunk-size advisory was emitted.
+- `git diff --check`: passed.
+- Playwright browser installation blocker:
+  - `pnpm --filter @workspace/lifegrid exec playwright install --with-deps chromium firefox webkit` failed because the environment proxy returned HTTP 403 for Ubuntu package repositories.
+  - `pnpm --filter @workspace/lifegrid exec playwright install chromium firefox webkit` failed with HTTP 403 for `https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1187/chromium-linux.zip`, its Microsoft mirror, and `https://cdn.playwright.dev/builds/chromium/1187/chromium-linux.zip`.
+- No local Chromium, Firefox, or WebKit pass is claimed.
+- Hosted successor run, Vercel successor result, and review-thread dispositions remain pending a successful push and hosted qualification.
+
+Manual physical-device checks remain recommended for iPhone/iPad saving and US Letter print preview. Codex did not merge PR #53.

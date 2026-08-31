@@ -23,7 +23,8 @@ export const planGridPublication = (input: { preset?: string; start: string; end
   const titles = [...(input.recordsByDate?.values() ?? [])].flatMap(records => records.map(record => record.title ?? '')).filter(Boolean);
   const percentile = (values: number[], fraction: number) => values.length ? values[Math.min(values.length - 1, Math.floor(values.length * fraction))] : 0;
   const maxPerDate = Math.max(0, ...counts);
-  const cssWidth = layout === 'month-columns' ? getPublicationContentWidth(layout, columns) : LETTER_FRAME.landscape.width;
+  const orientation = choosePublicationOrientation(layout, titles.length);
+  const cssWidth = layout === 'month-columns' ? getPublicationContentWidth(layout, columns) : LETTER_FRAME[orientation].width;
   const densityLayout = layout === 'month-columns' ? 'month-columns' : days <= 14 ? 'week' : 'multiweek';
   const profile = selectPublicationTextProfile({ layout: densityLayout, dayCount: days, monthCount: months, totalEventCount: titles.length, occupiedCellCount: counts.length, maxEventsPerCell: maxPerDate, medianEventsPerOccupiedCell: percentile(counts,.5), p90EventsPerOccupiedCell: percentile(counts,.9), longestTitleLength: Math.max(0,...titles.map(t=>t.length)), medianTitleLength: percentile(titles.map(t=>t.length).sort((a,b)=>a-b),.5), estimatedWidth: cssWidth });
   const lines = profile.maxLines, eventLineHeight = profile.lineHeight, eventPadding = profile.paddingY;
@@ -40,5 +41,5 @@ export const planGridPublication = (input: { preset?: string; start: string; end
   const limits = input.mobile ? { area: EXPORT_FEASIBILITY_LIMITS.mobileArea, edge: EXPORT_FEASIBILITY_LIMITS.mobileEdge } : { area: EXPORT_FEASIBILITY_LIMITS.desktopArea, edge: EXPORT_FEASIBILITY_LIMITS.desktopEdge };
   const pixelRatio = [2, 1.5, 1].find(ratio => cssWidth * ratio <= limits.edge && estimatedHeight * ratio <= limits.edge && cssWidth * estimatedHeight * ratio * ratio <= limits.area) ?? 0;
   const feasible = pixelRatio > 0;
-  return { feasible, layout, orientation: choosePublicationOrientation(layout, titles.length), monthCount: months, dayCount: days, columnCount: columns, cssWidth, estimatedHeight, eventTitleLines: lines, eventLineHeight, eventPadding, eventBlockHeight, eventFontSize: profile.fontSize, dateFontSize: layout === 'month-columns' ? 10 : 14, pixelRatio, includeAllEvents: feasible, textProfile: profile.name, legendEstimatedRows, reason: feasible ? `${layout === 'month-columns' ? `${months}-month` : layout} layout optimized automatically` : 'This publication contains too much information for one reliable image on this device. Try a shorter range or filter Categories/Projects.' };
+  return { feasible, layout, orientation, monthCount: months, dayCount: days, columnCount: columns, cssWidth, estimatedHeight, eventTitleLines: lines, eventLineHeight, eventPadding, eventBlockHeight, eventFontSize: profile.fontSize, dateFontSize: layout === 'month-columns' ? 10 : 14, pixelRatio, includeAllEvents: feasible, textProfile: profile.name, legendEstimatedRows, reason: feasible ? `${layout === 'month-columns' ? `${months}-month` : layout} layout optimized automatically` : 'This publication contains too much information for one reliable image on this device. Try a shorter range or filter Categories/Projects.' };
 };

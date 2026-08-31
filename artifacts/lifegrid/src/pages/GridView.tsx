@@ -41,7 +41,6 @@ import {
   buildExportMetadata,
   EXPORT_DENSITY,
   getDenseDay,
-  getExportDimensions,
 } from "../lib/gridPublication";
 import {
   getDateTemporalState,
@@ -113,12 +112,6 @@ const addDays = (date: Date, days: number) => {
 const parseISODate = (value: string) => {
   const [yearPart, monthPart, dayPart] = value.split("-").map(Number);
   return new Date(yearPart, monthPart - 1, dayPart);
-};
-
-const daysBetweenInclusive = (start: string, end: string) => {
-  const startTime = parseISODate(start).getTime();
-  const endTime = parseISODate(end).getTime();
-  return Math.floor((endTime - startTime) / 86_400_000) + 1;
 };
 
 const getDatesInRange = (start: string, end: string) => {
@@ -409,12 +402,7 @@ export const GridView = () => {
   const monthPublication = publicationActive && publicationPlan.layout === "month-columns";
   const effectivePublicationTheme = monthPublication ? exportTheme : theme;
 
-  const isTargetedDateExport = useMemo(() => {
-    if (exportFilters.datePreset === "currentGrid" || exportFilters.datePreset === "calendarYear" || /^q[1-4]$/.test(exportFilters.datePreset)) return false;
-    const { start, end } = getExportDateRange();
-    if (!start || !end || start > end) return false;
-    return daysBetweenInclusive(start, end) <= TARGETED_EXPORT_MAX_DAYS;
-  }, [exportFilters.datePreset, getExportDateRange]);
+  const usesTargetedPublication = publicationPlan.layout !== 'month-columns';
 
   const targetedExportWeeks = useMemo(() => {
     if (!exportUiActive) return [];
@@ -445,6 +433,12 @@ export const GridView = () => {
     exportUiActive,
     getExportDateRange, publicationPlan.layout,
   ]);
+  const targetedWeekdayHeadings = useMemo(() => publicationPlan.layout === 'month-matrix'
+    ? DOW_HEADINGS
+    : Array.from({ length: 7 }, (_, offset) => addDays(parseISODate(exportRange.start), offset)
+        .toLocaleDateString(undefined, { weekday: 'short' })),
+  [publicationPlan.layout, exportRange.start]);
+  const agendaCardHeight = Math.max(publicationPlan.eventBlockHeight, publicationPlan.eventLineHeight * publicationPlan.eventTitleLines + 32);
 
   // The interactive grid deliberately receives summaries only. Export retains full records
   // and has its own complete range model, so staged UI never changes export semantics.
@@ -713,16 +707,11 @@ export const GridView = () => {
       includeGeneratedAt,
     ],
   );
-  const exportDimensions = getExportDimensions(
-    "compact",
-    exportLegend.entries.length,
-    isTargetedDateExport,
-  );
   const focusedGridData = useMemo(() => { const map = new Map<string, readonly GridEventSummary[]>(); gridData.forEach((records, date) => map.set(date, filterGridEventsByCategories(records, focusedCats))); return map; }, [gridData, focusedCats]);
 
   const getExportCaptureNode = useCallback(
-    () => isTargetedDateExport ? targetedExportRef.current : publicationRef.current,
-    [isTargetedDateExport],
+    () => usesTargetedPublication ? targetedExportRef.current : publicationRef.current,
+    [usesTargetedPublication],
   );
 
   // ── Image export (html-to-image renders modern CSS correctly) ──
@@ -732,7 +721,7 @@ export const GridView = () => {
   const handleExport = useCallback(async () => {
     const container = scrollRef.current;
     const { start, end } = getExportDateRange();
-    const useTargetedLayout = isTargetedDateExport;
+    const useTargetedLayout = usesTargetedPublication;
     if (!useTargetedLayout && (!tableRef.current || !container)) {
       toast.error("The Current Grid capture is not ready. Wait for the Grid to load and try again.", { id: "export" });
       return;
@@ -868,7 +857,7 @@ export const GridView = () => {
     getExportDateRange,
     getExportCaptureNode,
     isDefaultExportFilter,
-    isTargetedDateExport,
+    usesTargetedPublication,
     publicationPlan,
     year,
   ]);
@@ -1670,7 +1659,7 @@ export const GridView = () => {
         {gridReady ? "Grid ready" : "Loading grid"}
       </p>
 
-      {exportUiActive && isTargetedDateExport && createPortal(
+      {exportUiActive && usesTargetedPublication && createPortal(
         <div
           ref={targetedExportRef}
           className="lifegrid-export-publication fixed left-0 top-0 flex flex-col bg-background text-foreground pointer-events-none"
@@ -1709,14 +1698,14 @@ export const GridView = () => {
 
           {publicationPlan.layout === 'day-agenda' ? (
             <section data-testid="day-agenda" className="rounded-xl border border-border bg-card p-5">
-              <h2 className="mb-1 text-xl font-extrabold">{parseISODate(exportRange.start).toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</h2>
+              <h2 data-testid="day-agenda-heading" data-publication-date={exportRange.start} className="mb-1 text-xl font-extrabold">{parseISODate(exportRange.start).toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</h2>
               <p className="mb-4 text-sm text-muted-foreground">{exportLegend.recordCount} event{exportLegend.recordCount === 1 ? '' : 's'}</p>
-              {(() => { const agendaEvents = exportGridData.get(exportRange.start) ?? []; const split = Math.ceil(agendaEvents.length / 2); const columns = agendaEvents.length > 16 ? [agendaEvents.slice(0, split), agendaEvents.slice(split)] : [agendaEvents]; return <div className={`grid gap-3 ${columns.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} data-publication-agenda-columns={columns.length}>{columns.map((column, columnIndex) => <div key={columnIndex} className="flex flex-col gap-3" data-publication-agenda-column={columnIndex + 1}>{column.map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" data-export-title-lines={publicationPlan.eventTitleLines} className="break-inside-avoid rounded-lg border border-black/10 p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color)}}><div data-publication-agenda-time="true" className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div data-publication-event-title="true" className="font-bold [overflow-wrap:anywhere]">{evt.title}</div></article>)}</div>)}</div>; })()}
+              {(() => { const agendaEvents = exportGridData.get(exportRange.start) ?? []; const split = Math.ceil(agendaEvents.length / 2); const columns = agendaEvents.length > 16 ? [agendaEvents.slice(0, split), agendaEvents.slice(split)] : [agendaEvents]; return <div className={`grid gap-3 ${columns.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} data-publication-agenda-columns={columns.length}>{columns.map((column, columnIndex) => <div key={columnIndex} className="flex flex-col gap-3" data-publication-agenda-column={columnIndex + 1}>{column.map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" data-export-title-lines={publicationPlan.eventTitleLines} className="break-inside-avoid rounded-lg border border-black/10 p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color), height:agendaCardHeight}}><div data-publication-agenda-time="true" className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div data-publication-event-title="true" className="font-bold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]" style={{fontSize:publicationPlan.eventFontSize,lineHeight:`${publicationPlan.eventLineHeight}px`,display:'-webkit-box',WebkitLineClamp:publicationPlan.eventTitleLines,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{evt.title}</div></article>)}</div>)}</div>; })()}
             </section>
           ) : <table className="min-h-0 flex-1 w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
               <tr>
-                {(publicationPlan.layout === 'month-matrix' ? DOW_HEADINGS : getDatesInRange(exportRange.start, exportRange.end).slice(0,7).map(date => parseISODate(date).toLocaleDateString(undefined, { weekday: 'short' }))).map((heading) => (
+                {targetedWeekdayHeadings.map((heading) => (
                   <th
                     key={heading}
                     className="border-b border-r border-border bg-card px-2 py-2 text-left text-xs font-extrabold uppercase tracking-widest text-muted-foreground last:border-r-0"
@@ -1803,7 +1792,7 @@ export const GridView = () => {
         </div>,
         document.body,
       )}
-      {exporting && isTargetedDateExport && createPortal(
+      {exporting && usesTargetedPublication && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background" data-testid="export-generation-mask">
           <span className="rounded-lg bg-card px-4 py-3 text-sm font-semibold shadow-lg">Generating grid image…</span>
         </div>,

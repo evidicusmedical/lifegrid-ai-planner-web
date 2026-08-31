@@ -7,3 +7,5 @@ Each newly opened workflow resets to Current Grid, all Categories, all projects,
 ## Convergence corrections
 
 Firefox's qualified Canvas2D renderer now consumes the same semantic layout names as the planner and draws agenda dates, counts, ordered Event cards, times, wrapped titles, and multiline Category legend labels from staged DOM geometry and computed styles. Month matrices use explicit Sunday-first headings while rolling grids retain range-relative headings. Scoped Light/Dark publication variables theme the complete staged publication independently from the application theme.
+
+Final convergence makes `publicationPlan.layout` authoritative for both staging and capture, gives every rolling grid seven range-relative headings, selects planner width from automatic orientation, completes scoped primary/ring export tokens, and applies the Canvas2D title-fitting contract to DOM agenda cards.

@@ -58,6 +58,7 @@ import { GRID_DAY_COLUMN_WIDTH, GRID_MONTH_COLUMN_WIDTH, PUBLICATION_HORIZONTAL_
 import { gridMark } from "../lib/gridDiagnostics";
 import { getReadableTextColor } from "../lib/palette";
 import { renderGridPng, type GridImageRendererName } from "../lib/gridImageRenderer";
+import { createDefaultExportDraft, EXPORT_PRESETS, LETTER_FRAME, type ExportTheme } from "../lib/operationalExport";
 // gridMark is gated by import.meta.env.DEV in gridDiagnostics.
 
 const MONTHS = [
@@ -90,7 +91,7 @@ const EXPORT_ROW_BASE_H = 16;
 const TARGETED_EXPORT_MAX_DAYS = 45;
 const TARGETED_EXPORT_COLS = 7;
 
-type ExportDatePreset = "currentGrid" | "calendarYear" | "q1" | "q2" | "q3" | "q4" | "next7" | "next14" | "next30" | "custom";
+type ExportDatePreset = "currentGrid" | "calendarYear" | "q1" | "q2" | "q3" | "q4" | "currentMonth" | "next7" | "next14" | "next30" | "today" | "custom";
 type ExportProjectFilter = "all" | string;
 
 interface GridExportFilters {
@@ -182,11 +183,11 @@ const ExportPublicationHeader = ({
         {legend.map((entry) => (
           <span
             key={entry.id}
-            className="inline-flex max-w-full items-center gap-1.5 whitespace-nowrap text-xs font-medium"
+            className="inline-flex max-w-[16rem] items-start gap-1.5 whitespace-normal text-xs font-medium leading-4"
             data-publication-legend-entry="true"
           >
             <span
-              className="h-3 w-3 rounded-sm border border-black/10"
+              className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-black/10"
               style={{ backgroundColor: entry.color }}
             />
             {entry.label}
@@ -228,21 +229,15 @@ export const GridView = () => {
   const [shareAvailable, setShareAvailable] = useState(false);
   const [customExportTitle, setCustomExportTitle] = useState("");
   const [customExportSubtitle, setCustomExportSubtitle] = useState("");
-  const [includeGeneratedAt, setIncludeGeneratedAt] = useState(false);
+  const [includeGeneratedAt, setIncludeGeneratedAt] = useState(true);
+  const [exportTheme, setExportTheme] = useState<ExportTheme>('light');
   const [previewEvent, setPreviewEvent] = useState<{
     event: Event;
     date: string;
     anchor: DOMRect;
   } | null>(null);
   const [focusedCats, setFocusedCats] = useState<Set<string>>(new Set());
-  const [exportFilters, setExportFilters] = useState<GridExportFilters>({
-    datePreset: "currentGrid",
-    customStart: "",
-    customEnd: "",
-    categoryMode: "all",
-    selectedCategoryIds: [],
-    projectId: "all",
-  });
+  const [exportFilters, setExportFilters] = useState<GridExportFilters>(createDefaultExportDraft());
   const [exportOptionsOpen, setExportOptionsOpen] = useState(false);
   const [compactExportLayout, setCompactExportLayout] = useState(false);
   const exportUiActive = exportOptionsOpen || exporting || exportUrl;
@@ -404,7 +399,7 @@ export const GridView = () => {
     const [endYear, endMonth] = exportRange.end.split("-").map(Number);
     return buildMonthWindow(startYear, startMonth - 1, (endYear - startYear) * 12 + endMonth - startMonth + 1);
   }, [displayedMonths, exportRange.start, exportRange.end]);
-  const publicationPlan = useMemo(() => planGridPublication({ start: exportRange.start, end: exportRange.end, recordsByDate: exportGridData, monthCount: exportMonths.length, mobile: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches, legendEntries: categories.length, legendLabels: categories.filter(category => exportFilters.categoryMode !== "selected" || selectedCategorySet.has(category.id)).map(category => category.label) }), [exportRange.start, exportRange.end, exportGridData, exportMonths.length, categories, exportFilters.categoryMode, selectedCategorySet]);
+  const publicationPlan = useMemo(() => planGridPublication({ preset: exportFilters.datePreset, start: exportRange.start, end: exportRange.end, recordsByDate: exportGridData, monthCount: exportMonths.length, mobile: typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches, legendEntries: categories.length, legendLabels: categories.filter(category => exportFilters.categoryMode !== "selected" || selectedCategorySet.has(category.id)).map(category => category.label) }), [exportRange.start, exportRange.end, exportGridData, exportMonths.length, categories, exportFilters.categoryMode, exportFilters.datePreset, selectedCategorySet]);
   // Keep the staged publication mounted behind its preview so browser tests and
   // assistive diagnostics can inspect exactly what was captured. Closing the
   // preview immediately restores the compact interactive table.
@@ -424,7 +419,6 @@ export const GridView = () => {
     const { start, end } = getExportDateRange();
     if (!start || !end || start > end) return [];
     const dates = getDatesInRange(start, end);
-    const startDow = parseISODate(start).getDay();
     const days = dates.map((date) => {
       const d = parseISODate(date);
       return {
@@ -434,10 +428,9 @@ export const GridView = () => {
         events: exportGridData.get(date) ?? [],
       };
     });
-    const padded: ((typeof days)[0] | null)[] = [
-      ...Array(startDow).fill(null),
-      ...days,
-    ];
+    const padded: ((typeof days)[0] | null)[] = publicationPlan.layout === 'month-matrix'
+      ? [...Array(parseISODate(start).getDay()).fill(null), ...days]
+      : [...days];
     const weeks: ((typeof days)[0] | null)[][] = [];
     for (let i = 0; i < padded.length; i += 7) {
       const week = padded.slice(i, i + 7);
@@ -448,7 +441,7 @@ export const GridView = () => {
   }, [
     exportGridData,
     exportUiActive,
-    getExportDateRange,
+    getExportDateRange, publicationPlan.layout,
   ]);
 
   // The interactive grid deliberately receives summaries only. Export retains full records
@@ -644,6 +637,14 @@ export const GridView = () => {
     if (!exporting) setExportOptionsOpen(false);
   };
 
+  const openExportWithDefaults = () => {
+    const draft = createDefaultExportDraft();
+    setExportFilters(draft); setExportTheme(draft.theme); setIncludeGeneratedAt(draft.includeGeneratedAt);
+    setCustomExportTitle(draft.customTitle); setCustomExportSubtitle(draft.customSubtitle);
+    setExportUrl(null); setExportStatus('idle'); setExportErrorCode(''); setExportRenderer(null);
+    setExportOptionsOpen(true);
+  };
+
   useEffect(() => {
     if (!exportOptionsOpen) return;
     const pointerDown = (event: PointerEvent) => {
@@ -803,13 +804,13 @@ export const GridView = () => {
     const captureBounds = getPublicationCaptureBounds(captureNode);
     const rendererOptions = {
       pixelRatio: publicationPlan.pixelRatio,
-      backgroundColor: theme === "dark" ? "#0d1526" : "#ffffff",
+      backgroundColor: exportTheme === "dark" ? "#0d1526" : "#ffffff",
       width: captureBounds.width,
       height: captureBounds.height,
       targeted: useTargetedLayout,
       firefox: firefoxTargeted,
       safari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent),
-      layout: publicationPlan.layout,
+      layout: publicationPlan.layout === 'month-columns' ? 'month-columns' as const : publicationPlan.dayCount <= 14 ? 'week' as const : 'multiweek' as const,
     };
 
     try {
@@ -858,7 +859,7 @@ export const GridView = () => {
       setExporting(false);
     }
   }, [
-    theme,
+    exportTheme,
     exportFileName,
     exportFilters,
     exportFilteredEvents.length,
@@ -990,7 +991,7 @@ export const GridView = () => {
         {/* Compact grid image export controls */}
         <div className="ml-auto flex min-w-0 items-center gap-1">
           <button
-            onClick={() => setExportOptionsOpen(open => !open)}
+            onClick={() => exportOptionsOpen ? closeExportOptions() : openExportWithDefaults()}
             ref={exportButtonRef}
             disabled={exporting}
             aria-describedby={
@@ -1087,6 +1088,9 @@ export const GridView = () => {
               />{" "}
               Include generated timestamp
             </label>
+            <fieldset className="text-xs font-semibold"><legend>Export theme</legend><div className="mt-1 flex gap-1" data-testid="export-theme-control">
+              {(['light','dark'] as const).map(value => <button key={value} type="button" aria-pressed={exportTheme === value} onClick={() => setExportTheme(value)} className={`rounded-md px-3 py-1.5 capitalize ${exportTheme === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{value}</button>)}
+            </div></fieldset>
           </div>
           <p className="text-[11px] text-muted-foreground" role="status" data-testid="export-publication-summary">
             Layout optimized automatically for this range. Preview: {exportMetadata.title} · {exportLegend.recordCount} records · {exportLegend.entries.length} categories.
@@ -1097,15 +1101,7 @@ export const GridView = () => {
                 Date range
               </div>
               <div className="flex flex-wrap gap-1">
-                {[
-                  ["currentGrid", "Current Grid"],
-                  ["calendarYear", "Calendar Year"],
-                  ["q1", "Q1"], ["q2", "Q2"], ["q3", "Q3"], ["q4", "Q4"],
-                  ["next7", "Next 7"],
-                  ["next14", "Next 14"],
-                  ["next30", "Next 30"],
-                  ["custom", "Custom"],
-                ].map(([id, label]) => (
+                {EXPORT_PRESETS.map(([id, label]) => (
                   <button
                     key={id}
                     type="button"
@@ -1310,6 +1306,12 @@ export const GridView = () => {
             data-publication-font-size={monthPublication ? publicationPlan.eventFontSize : undefined}
             data-publication-line-height={monthPublication ? publicationPlan.eventLineHeight : undefined}
             data-publication-card-height={monthPublication ? publicationPlan.eventBlockHeight : undefined}
+            data-publication-layout={monthPublication ? publicationPlan.layout : undefined}
+            data-publication-theme={monthPublication ? exportTheme : undefined}
+            data-publication-orientation={monthPublication ? publicationPlan.orientation : undefined}
+            data-publication-event-count={monthPublication ? exportLegend.recordCount : undefined}
+            data-publication-start={monthPublication ? exportRange.start : undefined}
+            data-publication-end={monthPublication ? exportRange.end : undefined}
             className={
               monthPublication
                 ? "lifegrid-export-publication bg-background p-6"
@@ -1667,7 +1669,8 @@ export const GridView = () => {
           ref={targetedExportRef}
           className="fixed left-0 top-0 bg-background text-foreground pointer-events-none"
           style={{
-            width: exportDimensions.width,
+            width: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.width : LETTER_FRAME.landscape.width,
+            minHeight: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height,
             padding: EXPORT_DENSITY.compact.padding,
             zIndex: 40,
             opacity: exporting ? 1 : 0,
@@ -1679,6 +1682,12 @@ export const GridView = () => {
           data-publication-font-size={publicationPlan.eventFontSize}
           data-publication-line-height={publicationPlan.eventLineHeight}
           data-publication-card-height={publicationPlan.eventBlockHeight}
+          data-publication-layout={publicationPlan.layout}
+          data-publication-theme={exportTheme}
+          data-publication-orientation={publicationPlan.orientation}
+          data-publication-event-count={exportLegend.recordCount}
+          data-publication-start={exportRange.start}
+          data-publication-end={exportRange.end}
           aria-hidden="true"
         >
           <ExportPublicationHeader
@@ -1692,15 +1701,23 @@ export const GridView = () => {
             </p>
           )}
 
-          <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
+          {publicationPlan.layout === 'day-agenda' ? (
+            <section data-testid="day-agenda" className="rounded-xl border border-border p-5">
+              <h2 className="mb-1 text-xl font-extrabold">{parseISODate(exportRange.start).toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</h2>
+              <p className="mb-4 text-sm text-muted-foreground">{exportLegend.recordCount} event{exportLegend.recordCount === 1 ? '' : 's'}</p>
+              <div className={exportLegend.recordCount > 16 ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-1 gap-3'} data-publication-agenda-columns={exportLegend.recordCount > 16 ? '2' : '1'}>
+                {(exportGridData.get(exportRange.start) ?? []).map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" className="break-inside-avoid rounded-lg p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color)}}><div className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div className="font-bold [overflow-wrap:anywhere]">{evt.title}</div></article>)}
+              </div>
+            </section>
+          ) : <table className="w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
               <tr>
-                {DOW_SHORT.map((day) => (
+                {getDatesInRange(exportRange.start, exportRange.end).slice(0,7).map((date) => (
                   <th
-                    key={day}
+                    key={date}
                     className="border-b border-r border-border bg-card px-2 py-2 text-left text-xs font-extrabold uppercase tracking-widest text-muted-foreground last:border-r-0"
                   >
-                    {day}
+                    {parseISODate(date).toLocaleDateString(undefined, { weekday: 'short' })}
                   </th>
                 ))}
               </tr>
@@ -1778,7 +1795,7 @@ export const GridView = () => {
                 );
               })}
             </tbody>
-          </table>
+          </table>}
         </div>,
         document.body,
       )}

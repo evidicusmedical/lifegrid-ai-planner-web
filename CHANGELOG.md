@@ -1,3 +1,8 @@
+## v0.5.29
+
+- Added deterministic operational agenda, rolling-day grid, current-month matrix, independent Light/Dark publication themes, fresh-session defaults, wrapped legends, and automatic US Letter framing.
+- Preserved AI interchange v5 and backup schema v7.
+
 # v0.5.28
 
 - Added deterministic sparse-to-dense publication typography shared across DOM and Canvas2D.

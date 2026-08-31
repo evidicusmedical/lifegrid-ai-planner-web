@@ -42,7 +42,7 @@ test('rolling grid model includes cross-year ranges and preserves canonical IDs'
 
 test('adaptive planner selects layouts, month columns, highest safe ratio, and explicit infeasibility',()=>{
  const p=(start,end,extra={})=>planGridPublication({start,end,...extra});
- assert.equal(p('2026-01-01','2026-01-07').layout,'week'); assert.equal(p('2026-01-01','2026-01-14').layout,'week'); assert.equal(p('2026-01-01','2026-01-30').layout,'multiweek'); assert.equal(p('2026-01-01','2026-02-14').layout,'multiweek'); assert.equal(p('2026-01-01','2026-02-15').layout,'month-columns');
+ assert.equal(p('2026-01-01','2026-01-07').layout,'rolling-day-grid'); assert.equal(p('2026-01-01','2026-01-14').layout,'rolling-day-grid'); assert.equal(p('2026-01-01','2026-01-30').layout,'rolling-day-grid'); assert.equal(p('2026-01-01','2026-02-14').layout,'rolling-day-grid'); assert.equal(p('2026-01-01','2026-02-15').layout,'month-columns');
  assert.equal(p('2026-01-01','2026-03-31').columnCount,3); assert.equal(p('2026-01-01','2026-06-30').columnCount,6); assert.equal(p('2026-01-01','2026-12-31').columnCount,12); assert.equal(p('2026-01-01','2026-01-07').pixelRatio,2);
  const dense=new Map([['2026-01-01',Array(500).fill({})]]); const unsafe=p('2026-01-01','2026-12-31',{recordsByDate:dense,mobile:true}); assert.equal(unsafe.feasible,false); assert.equal(unsafe.includeAllEvents,false); assert.match(unsafe.reason,/too much information/);
 });

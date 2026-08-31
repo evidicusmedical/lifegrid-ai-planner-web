@@ -6,7 +6,7 @@ export type DateTemporalState = {
 
 import { countCalendarMonthsInclusive } from './gridWindow.js';
 
-export type GridExportDatePreset = 'currentGrid' | 'calendarYear' | 'q1' | 'q2' | 'q3' | 'q4' | 'next7' | 'next14' | 'next30' | 'custom' | 'current';
+export type GridExportDatePreset = 'currentGrid' | 'calendarYear' | 'q1' | 'q2' | 'q3' | 'q4' | 'currentMonth' | 'next7' | 'next14' | 'next30' | 'today' | 'custom' | 'current';
 
 const addCalendarDays = (isoDate: string, days: number) => {
   const [year, month, day] = isoDate.split('-').map(Number);
@@ -31,6 +31,12 @@ export const resolveExportDateRange = (
   const resolvedCustomEnd = legacy ? customStartOrEnd : customEnd;
   if (preset === 'currentGrid') return typeof gridWindow === 'number' ? { start: `${gridWindow}-01-01`, end: `${gridWindow}-12-31` } : gridWindow;
   if (preset === 'current' || preset === 'calendarYear') return { start: `${anchorYear}-01-01`, end: `${anchorYear}-12-31` };
+  if (preset === 'today') return { start: today, end: today };
+  if (preset === 'currentMonth') {
+    const [localYear, localMonth] = today.split('-').map(Number);
+    const lastDay = new Date(localYear, localMonth, 0).getDate();
+    return { start: `${localYear}-${String(localMonth).padStart(2, '0')}-01`, end: `${localYear}-${String(localMonth).padStart(2, '0')}-${lastDay}` };
+  }
   if (/^q[1-4]$/.test(preset)) {
     const quarter = Number(preset.slice(1)), firstMonth = (quarter - 1) * 3 + 1, endMonth = firstMonth + 2;
     const lastDay = new Date(Date.UTC(anchorYear, endMonth, 0)).getUTCDate();

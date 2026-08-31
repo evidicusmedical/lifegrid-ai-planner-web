@@ -571,3 +571,19 @@ body {
 
 /* Global dialog layer contract: modal z-[100] obscures nav z-50; hide background navigation while it is open. */
 .lifegrid-export-modal-open .mobile-bottom-nav { visibility: hidden; pointer-events: none; }
+
+/* Publication colors are intentionally scoped and independent from app theme. */
+[data-publication-theme="light"] {
+  --background: 0 0% 100%; --foreground: 220 30% 10%; --border: 220 15% 84%;
+  --card: 220 20% 98%; --card-foreground: 220 30% 10%;
+  --muted: 220 15% 93%; --muted-foreground: 220 15% 35%;
+  --primary: 215 85% 50%; --primary-foreground: 0 0% 100%; --ring: 215 85% 50%;
+  color-scheme: light;
+}
+[data-publication-theme="dark"] {
+  --background: 220 48% 10%; --foreground: 210 25% 96%; --border: 218 25% 28%;
+  --card: 220 38% 14%; --card-foreground: 210 25% 96%;
+  --muted: 220 28% 20%; --muted-foreground: 215 18% 72%;
+  --primary: 213 94% 68%; --primary-foreground: 220 48% 10%; --ring: 213 94% 68%;
+  color-scheme: dark;
+}

@@ -12,6 +12,12 @@ export type GridPublicationPlan = {
   textProfile: PublicationTextProfileName; legendEstimatedRows: number;
 };
 
+export const planRollingGridRows = (input: { rowCount: number; maxEventsPerDay: number; eventBlockHeight: number }) => {
+  const rowCount = Math.max(1, input.rowCount);
+  const rowHeight = Math.min(240, Math.max(112, 48 + input.maxEventsPerDay * input.eventBlockHeight));
+  return { rowCount, rowHeight, tableBodyHeight: rowCount * rowHeight };
+};
+
 const dayCount = (start: string, end: string) => Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
 
 export const planGridPublication = (input: { preset?: string; start: string; end: string; recordsByDate?: ReadonlyMap<string, readonly { title?: string }[]>; monthCount?: number; mobile?: boolean; legendEntries?: number; legendLabels?: readonly string[] }): GridPublicationPlan & { orientation: 'portrait'|'landscape' } => {

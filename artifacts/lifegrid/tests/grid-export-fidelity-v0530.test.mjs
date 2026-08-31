@@ -1,0 +1,15 @@
+import test from 'node:test'; import assert from 'node:assert/strict';
+import { fitExactStructuralText, EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE } from '../.test-build/lib/gridImageRenderer.js';
+import { planRollingGridRows } from '../.test-build/lib/gridPublicationPlan.js';
+import { LETTER_FRAME } from '../.test-build/lib/operationalExport.js';
+import { APP_VERSION, AI_INTERCHANGE_VERSION } from '../.test-build/lib/version.js';
+import { BACKUP_SCHEMA_VERSION } from '../.test-build/lib/backup.js';
+import { readFile } from 'node:fs/promises';
+const read=async p=>readFile(new URL(p,import.meta.url),'utf8');
+test('structural dates use the exact renderer rather than generic fitText',async()=>{const source=await read('../src/lib/gridImageRenderer.ts');const block=source.slice(source.indexOf('if (targetedCell)'),source.indexOf('} else if',source.indexOf('if (targetedCell)')));assert.match(block,/drawExactTextElement/);assert.doesNotMatch(block,/drawTextElement|fitText/);});
+test('exact date fitting preserves all characters, never ellipsizes, and respects its readable floor',()=>{for(const text of ['Aug','31','Sep','1','2','3','4','5','6']){const fitted=fitExactStructuralText({text,fontSize:14,maxWidth:8,measureAt:(value,size)=>value.length*size});assert.equal(fitted.text,text);assert.ok(!/[.…]/.test(fitted.text));assert.ok(fitted.fontSize>=EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE);}});
+test('Letter logical frame ratios remain exact',()=>{assert.ok(Math.abs(LETTER_FRAME.landscape.width/LETTER_FRAME.landscape.height-11/8.5)<.001);assert.ok(Math.abs(LETTER_FRAME.portrait.width/LETTER_FRAME.portrait.height-8.5/11)<.001);});
+test('rolling grids use bounded natural equal rows instead of filling the page',()=>{const one=planRollingGridRows({rowCount:1,maxEventsPerDay:1,eventBlockHeight:26});const two=planRollingGridRows({rowCount:2,maxEventsPerDay:2,eventBlockHeight:26});assert.ok(one.tableBodyHeight<LETTER_FRAME.landscape.height/2);assert.equal(two.tableBodyHeight,two.rowHeight*2);assert.ok(two.rowHeight<=240);});
+test('legend entries cannot shrink and labels wrap only at normal word boundaries',async()=>{const grid=await read('../src/pages/GridView.tsx');assert.match(grid,/inline-flex flex-none items-start/);assert.match(grid,/data-publication-legend-label="true"[^>]*\[word-break:normal\][^>]*\[overflow-wrap:break-word\]/);for(const label of ['USAF','Fun','Family','Langley ED Shifts','Certification, Credentials and Continuing Education'])assert.ok(label.length);});
+test('publication themes apply explicit foreground and background tokens',async()=>{const css=await read('../src/index.css');assert.match(css,/\.lifegrid-export-publication\[data-publication-theme\][\s\S]*color: hsl\(var\(--foreground\)\);[\s\S]*background-color: hsl\(var\(--background\)\);/);for(const theme of ['light','dark'])assert.match(css,new RegExp(`\\[data-publication-theme="${theme}"\\][\\s\\S]*--background:[^;]+; --foreground:`));});
+test('v0.5.30 keeps interchange and backup schemas stable',()=>{assert.equal(APP_VERSION,'v0.5.30');assert.equal(AI_INTERCHANGE_VERSION,5);assert.equal(BACKUP_SCHEMA_VERSION,7);});

@@ -200,3 +200,12 @@ Settings and exports
 - Documented and qualified v5 add/update/move/reschedule/recategorize/hide/restore/detach authority while retaining LifeGrid as the validation and approval boundary.
 - Enforced `showInGrid` at interactive Grid model/day-detail boundaries without changing `showInExport` publication semantics.
 - Replaced per-row singleton preflights with one intrinsic validation pass and made the v0.5.26 persistence harness navigation-safe.
+
+## v0.5.30 — Export fidelity and Letter-frame utilization
+
+- Corrected Light/Dark foreground inheritance for Current Grid, Calendar Year, quarter, and Custom month-column publications using scoped publication tokens.
+- Added exact Firefox Canvas2D structural-date drawing that never uses prose ellipsis and retains a readable font-size floor.
+- Preserved Letter outer dimensions while making rolling tables content-bound, equal-row, and top-aligned with residual space below the table.
+- Made Category legend entries non-shrinking with bounded word-boundary label wrapping.
+- Added renderer-level, computed-style, real-PNG, Canvas `fillText`, frame utilization, and cross-browser qualification coverage.
+- Kept AI interchange version 5 and backup schema 7; no storage or interchange migration was introduced.

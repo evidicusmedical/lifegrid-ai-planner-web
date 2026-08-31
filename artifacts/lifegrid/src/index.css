@@ -573,6 +573,10 @@ body {
 .lifegrid-export-modal-open .mobile-bottom-nav { visibility: hidden; pointer-events: none; }
 
 /* Publication colors are intentionally scoped and independent from app theme. */
+.lifegrid-export-publication[data-publication-theme] {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+}
 [data-publication-theme="light"] {
   --background: 0 0% 100%; --foreground: 220 30% 10%; --border: 220 15% 84%;
   --card: 220 20% 98%; --card-foreground: 220 30% 10%;

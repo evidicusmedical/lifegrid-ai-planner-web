@@ -159,7 +159,7 @@ const ExportPublicationHeader = ({
     className="mb-5 border-b border-border pb-4"
     data-testid="export-publication-header"
   >
-    <h1 className="text-2xl font-extrabold tracking-tight">{metadata.title}</h1>
+    <h1 data-publication-title="true" className="text-2xl font-extrabold tracking-tight text-foreground">{metadata.title}</h1>
     {metadata.subtitle && (
       <p className="mt-1 text-sm text-muted-foreground">{metadata.subtitle}</p>
     )}
@@ -172,19 +172,19 @@ const ExportPublicationHeader = ({
       className="mt-4 border-t border-border pt-3"
       aria-label="Categories"
     >
-      <p className="text-xs font-bold">Categories</p>
+      <p data-publication-categories-label="true" className="text-xs font-bold text-foreground">Categories</p>
       <div className="mt-2 flex flex-wrap gap-x-3 gap-y-2">
         {legend.map((entry) => (
           <span
             key={entry.id}
-            className="inline-flex max-w-[16rem] items-start gap-1.5 whitespace-normal text-xs font-medium leading-4"
+            className="inline-flex flex-none items-start gap-1.5 text-xs font-medium leading-4"
             data-publication-legend-entry="true"
           >
             <span
               className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-black/10"
               style={{ backgroundColor: entry.color }}
             />
-            {entry.label}
+            <span data-publication-legend-label="true" className="max-w-[16rem] whitespace-normal text-foreground [word-break:normal] [overflow-wrap:break-word]">{entry.label}</span>
           </span>
         ))}
       </div>
@@ -1309,7 +1309,7 @@ export const GridView = () => {
             data-publication-end={monthPublication ? exportRange.end : undefined}
             className={
               monthPublication
-                ? "lifegrid-export-publication bg-background p-6"
+                ? "lifegrid-export-publication bg-background text-foreground p-6"
                 : undefined
             }
             style={
@@ -1665,7 +1665,8 @@ export const GridView = () => {
           className="lifegrid-export-publication fixed left-0 top-0 flex flex-col bg-background text-foreground pointer-events-none"
           style={{
             width: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.width : LETTER_FRAME.landscape.width,
-            minHeight: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height,
+            height: publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height,
+            minHeight: publicationPlan.estimatedHeight > (publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height) ? publicationPlan.estimatedHeight : undefined,
             padding: EXPORT_DENSITY.compact.padding,
             zIndex: 40,
             opacity: exporting ? 1 : 0,
@@ -1681,6 +1682,10 @@ export const GridView = () => {
           data-publication-theme={exportTheme}
           data-publication-orientation={publicationPlan.orientation}
           data-publication-event-count={exportLegend.recordCount}
+          data-publication-frame-width={publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.width : LETTER_FRAME.landscape.width}
+          data-publication-frame-height={publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height}
+          data-publication-content-height={publicationPlan.estimatedHeight}
+          data-publication-overflowed-frame={publicationPlan.estimatedHeight > (publicationPlan.orientation === 'portrait' ? LETTER_FRAME.portrait.height : LETTER_FRAME.landscape.height) ? 'true' : 'false'}
           data-publication-start={exportRange.start}
           data-publication-end={exportRange.end}
           aria-hidden="true"
@@ -1702,7 +1707,7 @@ export const GridView = () => {
               <p className="mb-4 text-sm text-muted-foreground">{exportLegend.recordCount} event{exportLegend.recordCount === 1 ? '' : 's'}</p>
               {(() => { const agendaEvents = exportGridData.get(exportRange.start) ?? []; const split = Math.ceil(agendaEvents.length / 2); const columns = agendaEvents.length > 16 ? [agendaEvents.slice(0, split), agendaEvents.slice(split)] : [agendaEvents]; return <div className={`grid gap-3 ${columns.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} data-publication-agenda-columns={columns.length}>{columns.map((column, columnIndex) => <div key={columnIndex} className="flex flex-col gap-3" data-publication-agenda-column={columnIndex + 1}>{column.map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" data-export-title-lines={publicationPlan.eventTitleLines} className="break-inside-avoid rounded-lg border border-black/10 p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color), height:agendaCardHeight}}><div data-publication-agenda-time="true" className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div data-publication-event-title="true" className="font-bold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]" style={{fontSize:publicationPlan.eventFontSize,lineHeight:`${publicationPlan.eventLineHeight}px`,display:'-webkit-box',WebkitLineClamp:publicationPlan.eventTitleLines,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{evt.title}</div></article>)}</div>)}</div>; })()}
             </section>
-          ) : <table className="min-h-0 flex-1 w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
+          ) : <table className={`min-h-0 w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background ${publicationPlan.layout === 'month-matrix' ? 'flex-1' : ''}`}>
             <thead>
               <tr>
                 {targetedWeekdayHeadings.map((heading) => (
@@ -1721,7 +1726,7 @@ export const GridView = () => {
                   0,
                   ...week.map((day) => day?.events.length ?? 0),
                 );
-                const cellHeight = Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight);
+                const cellHeight = publicationPlan.layout === 'rolling-day-grid' ? Math.min(240, Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight)) : Math.max(112, 48 + weekMax * publicationPlan.eventBlockHeight);
                 return (
                   <tr key={weekIdx}>
                     {week.map((day, dayIdx) => {
@@ -1744,8 +1749,8 @@ export const GridView = () => {
                           style={{ height: cellHeight, padding: 6 }}
                         >
                           <div data-publication-date="true" aria-label={day.label} className="mb-2 flex items-baseline gap-1 overflow-visible whitespace-nowrap [text-overflow:clip]">
-                            <span data-publication-month="true" className="text-[11px] font-bold uppercase text-muted-foreground">{MONTHS[parseISODate(day.date).getMonth()]}</span>
-                            <span data-publication-day="true" className="text-sm font-extrabold text-foreground">{parseISODate(day.date).getDate()}</span>
+                            <span data-publication-month="true" data-publication-exact-text="true" className="text-[11px] font-bold uppercase text-muted-foreground">{MONTHS[parseISODate(day.date).getMonth()]}</span>
+                            <span data-publication-day="true" data-publication-exact-text="true" className="text-sm font-extrabold text-foreground">{parseISODate(day.date).getDate()}</span>
                           </div>
                           <div className="flex flex-col gap-1">
                             {visibleEvents.map((evt) => (

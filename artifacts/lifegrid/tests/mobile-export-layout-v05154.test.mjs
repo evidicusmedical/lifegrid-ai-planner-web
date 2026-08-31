@@ -22,10 +22,10 @@ test('mobile export sheet owns scrolling, viewport bounds, safe footer, and back
 test('mobile sheet retains publication choices and shared generation handler', () => { for (const text of ['Custom title','Custom subtitle','Current Grid','Calendar Year','Next 7','Next 14','Next 30','Tags / categories','Project']) assert.match(source + presets,new RegExp(text)); assert.match(source,/onClick=\{handleExport\}/); assert.match(source,/button-export-share/); assert.match(source,/button-export-download/); });
 
 test('release identity and compatibility contracts are v0.5.18', () => {
-  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.29["']/);
-  assert.match(read('../package.json'), /"version": "0.5.29"/);
-  assert.match(read('../public/version.json'), /"appVersion": "v0\.5\.29"/);
-  assert.match(read('../index.html'), /lifegrid-app-version" content="v0\.5\.29"/);
+  assert.match(read('../src/lib/version.ts'), /APP_VERSION = ["']v0\.5\.30["']/);
+  assert.match(read('../package.json'), /"version": "0.5.30"/);
+  assert.match(read('../public/version.json'), /"appVersion": "v0\.5\.30"/);
+  assert.match(read('../index.html'), /lifegrid-app-version" content="v0\.5\.30"/);
   assert.match(read('../src/lib/version.ts'), /AI_INTERCHANGE_VERSION = 5/);
   assert.match(read('../src/lib/backup.ts'), /BACKUP_SCHEMA_VERSION = 7/);
 });

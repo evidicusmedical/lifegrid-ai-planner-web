@@ -407,6 +407,7 @@ export const GridView = () => {
   const publicationActive = exporting || Boolean(exportUrl);
   const tableMonths = publicationActive && publicationPlan.layout === "month-columns" ? exportMonths : displayedMonths;
   const monthPublication = publicationActive && publicationPlan.layout === "month-columns";
+  const effectivePublicationTheme = monthPublication ? exportTheme : theme;
 
   const isTargetedDateExport = useMemo(() => {
     if (exportFilters.datePreset === "currentGrid" || exportFilters.datePreset === "calendarYear" || /^q[1-4]$/.test(exportFilters.datePreset)) return false;
@@ -1066,6 +1067,8 @@ export const GridView = () => {
             <label className="text-xs font-semibold">
               Custom title
               <input
+                type="text"
+                data-testid="input-export-title"
                 value={customExportTitle}
                 maxLength={120}
                 onChange={(e) => setCustomExportTitle(e.target.value)}
@@ -1075,6 +1078,8 @@ export const GridView = () => {
             <label className="text-xs font-semibold">
               Custom subtitle
               <input
+                type="text"
+                data-testid="input-export-subtitle"
                 value={customExportSubtitle}
                 maxLength={180}
                 onChange={(e) => setCustomExportSubtitle(e.target.value)}
@@ -1429,7 +1434,7 @@ export const GridView = () => {
                               style={{
                                 width: MONTH_COL_W,
                                 background:
-                                  theme === "dark"
+                                  effectivePublicationTheme === "dark"
                                     ? "rgba(148,163,184,0.08)"
                                     : "#f5f5f5",
                               }}
@@ -1464,12 +1469,12 @@ export const GridView = () => {
                         let cellBg: string;
                         if (isToday) {
                           cellBg =
-                            theme === "dark"
+                            effectivePublicationTheme === "dark"
                               ? "rgba(59,130,246,0.15)"
                               : "#eff6ff";
                         } else if (isWeekend) {
                           cellBg =
-                            theme === "dark"
+                            effectivePublicationTheme === "dark"
                               ? "rgba(148,163,184,0.10)"
                               : "#fafafa";
                         } else {
@@ -1485,7 +1490,7 @@ export const GridView = () => {
                               minWidth: MONTH_COL_W,
                               height: rowHeight,
                               background: temporal.isPast
-                                ? theme === "dark"
+                                ? effectivePublicationTheme === "dark"
                                   ? "rgba(71,85,105,0.18)"
                                   : "rgba(148,163,184,0.13)"
                                 : cellBg,
@@ -1511,10 +1516,10 @@ export const GridView = () => {
                                 color: isToday
                                   ? "hsl(var(--primary))"
                                   : isWeekend
-                                    ? theme === "dark"
+                                    ? effectivePublicationTheme === "dark"
                                       ? "rgba(255,255,255,0.3)"
                                       : "rgba(0,0,0,0.3)"
-                                    : theme === "dark"
+                                    : effectivePublicationTheme === "dark"
                                       ? "rgba(255,255,255,0.2)"
                                       : "rgba(0,0,0,0.2)",
                               }}
@@ -1640,7 +1645,7 @@ export const GridView = () => {
                                   className="text-[7px] font-bold px-1 text-left"
                                   style={{
                                     color:
-                                      theme === "dark"
+                                      effectivePublicationTheme === "dark"
                                         ? "rgba(255,255,255,0.4)"
                                         : "rgba(0,0,0,0.4)",
                                     lineHeight: 1,

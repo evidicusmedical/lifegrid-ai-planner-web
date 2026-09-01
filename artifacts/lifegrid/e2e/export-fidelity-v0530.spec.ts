@@ -51,10 +51,13 @@ test.beforeEach(async ({ page }) => {
       (window as Window & { __fillTexts?: string[] }).__fillTexts?.push(String(text));
       return original.call(this, text, ...args as [number, number, number?]);
     };
-    localStorage.setItem('lifegrid_store_v5', JSON.stringify({
-      activeCalendarId: 'v0530',
-      calendars: [{ id: 'v0530', name: 'Fidelity Calendar', createdAt: '2026-08-31T12:00:00.000Z', data }],
-    }));
+    const key = 'lifegrid_store_v5';
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(key, JSON.stringify({
+        activeCalendarId: 'v0530',
+        calendars: [{ id: 'v0530', name: 'Fidelity Calendar', createdAt: '2026-08-31T12:00:00.000Z', data }],
+      }));
+    }
   }, seed);
   await page.goto('/#grid');
   await expect(page.getByTestId('grid-content')).toHaveAttribute('aria-busy', 'false');
@@ -81,6 +84,16 @@ const useSparseNext30Fixture = async (page: Page) => {
     localStorage.setItem('lifegrid_store_v5', JSON.stringify(store));
   });
   await page.reload();
+  await expect.poll(() => page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('lifegrid_store_v5')!);
+    const ids = store.calendars[0].data.events.map((item: { id: string }) => item.id);
+    return {
+      count: ids.length,
+      allRolling: ids.every((id: string) => id.startsWith('rolling-')),
+      hasDenseA: ids.includes('dense-week-2-a'),
+      hasDenseB: ids.includes('dense-week-2-b'),
+    };
+  })).toEqual({ count: 30, allRolling: true, hasDenseA: false, hasDenseB: false });
   await expect(page.getByTestId('grid-content')).toHaveAttribute('aria-busy', 'false');
 };
 const contrast = (a: string, b: string) => {
@@ -222,6 +235,7 @@ test('sparse Next 30 fits Letter with five shared rows and exact dates', async (
   await useSparseNext30Fixture(page);
   await open(page, 'next30');
   const root = page.getByTestId('targeted-export-grid');
+  await expect(root).toHaveAttribute('data-publication-event-count', '30');
   await expectEqualTopAlignedRows(root, 5);
   await expectExactStructuralRange(root, 30, ['Aug', '31'], ['Sep', '29']);
   await expect(root).toHaveAttribute('data-publication-overflowed-frame', 'false');

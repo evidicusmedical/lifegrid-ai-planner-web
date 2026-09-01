@@ -10,6 +10,7 @@ export type GridPublicationPlan = {
   eventPadding: number; eventBlockHeight: number; eventFontSize: number; dateFontSize: number;
   pixelRatio: number; includeAllEvents: boolean; reason: string;
   textProfile: PublicationTextProfileName; legendEstimatedRows: number;
+  rollingRowHeight: number; rollingTableBodyHeight: number;
 };
 
 export const planRollingGridRows = (input: { rowCount: number; maxEventsPerDay: number; eventBlockHeight: number }) => {
@@ -18,6 +19,11 @@ export const planRollingGridRows = (input: { rowCount: number; maxEventsPerDay: 
   const rowHeight = Math.min(240, Math.max(112, 48 + input.maxEventsPerDay * input.eventBlockHeight + cardGaps));
   return { rowCount, rowHeight, tableBodyHeight: rowCount * rowHeight };
 };
+
+const ROLLING_PUBLICATION_VERTICAL_PADDING = 48;
+const ROLLING_PUBLICATION_HEADER_FIXED_HEIGHT = 112;
+const ROLLING_PUBLICATION_LEGEND_ROW_HEIGHT = 24;
+const ROLLING_PUBLICATION_WEEKDAY_HEADER_HEIGHT = 33;
 
 const dayCount = (start: string, end: string) => Math.floor((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
 
@@ -44,9 +50,14 @@ export const planGridPublication = (input: { preset?: string; start: string; end
     ? Math.max(52, 16 + maxPerDate * (eventBlockHeight + 1))
     : Math.max(120, maxPerDate * eventBlockHeight + 38);
   const legendEstimatedRows = input.legendLabels ? estimateLegendRows(input.legendLabels, cssWidth - 64) : Math.ceil((input.legendEntries ?? 0) / 6);
-  const estimatedHeight = 132 + rows * rowHeight + legendEstimatedRows * 28;
+  const rollingRows = planRollingGridRows({ rowCount: rows, maxEventsPerDay: maxPerDate, eventBlockHeight });
+  const estimatedHeight = layout === 'rolling-day-grid'
+    ? ROLLING_PUBLICATION_VERTICAL_PADDING + ROLLING_PUBLICATION_HEADER_FIXED_HEIGHT
+      + legendEstimatedRows * ROLLING_PUBLICATION_LEGEND_ROW_HEIGHT
+      + ROLLING_PUBLICATION_WEEKDAY_HEADER_HEIGHT + rollingRows.tableBodyHeight
+    : 132 + rows * rowHeight + legendEstimatedRows * 28;
   const limits = input.mobile ? { area: EXPORT_FEASIBILITY_LIMITS.mobileArea, edge: EXPORT_FEASIBILITY_LIMITS.mobileEdge } : { area: EXPORT_FEASIBILITY_LIMITS.desktopArea, edge: EXPORT_FEASIBILITY_LIMITS.desktopEdge };
   const pixelRatio = [2, 1.5, 1].find(ratio => cssWidth * ratio <= limits.edge && estimatedHeight * ratio <= limits.edge && cssWidth * estimatedHeight * ratio * ratio <= limits.area) ?? 0;
   const feasible = pixelRatio > 0;
-  return { feasible, layout, orientation, monthCount: months, dayCount: days, columnCount: columns, cssWidth, estimatedHeight, eventTitleLines: lines, eventLineHeight, eventPadding, eventBlockHeight, eventFontSize: profile.fontSize, dateFontSize: layout === 'month-columns' ? 10 : 14, pixelRatio, includeAllEvents: feasible, textProfile: profile.name, legendEstimatedRows, reason: feasible ? `${layout === 'month-columns' ? `${months}-month` : layout} layout optimized automatically` : 'This publication contains too much information for one reliable image on this device. Try a shorter range or filter Categories/Projects.' };
+  return { feasible, layout, orientation, monthCount: months, dayCount: days, columnCount: columns, cssWidth, estimatedHeight, eventTitleLines: lines, eventLineHeight, eventPadding, eventBlockHeight, eventFontSize: profile.fontSize, dateFontSize: layout === 'month-columns' ? 10 : 14, pixelRatio, includeAllEvents: feasible, textProfile: profile.name, legendEstimatedRows, rollingRowHeight: rollingRows.rowHeight, rollingTableBodyHeight: rollingRows.tableBodyHeight, reason: feasible ? `${layout === 'month-columns' ? `${months}-month` : layout} layout optimized automatically` : 'This publication contains too much information for one reliable image on this device. Try a shorter range or filter Categories/Projects.' };
 };

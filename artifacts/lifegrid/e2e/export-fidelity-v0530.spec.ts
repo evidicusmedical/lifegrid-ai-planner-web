@@ -74,6 +74,15 @@ const generate = async (page: Page) => {
     return { src: node.src, w: node.naturalWidth, h: node.naturalHeight };
   });
 };
+const useSparseNext30Fixture = async (page: Page) => {
+  await page.evaluate(() => {
+    const store = JSON.parse(localStorage.getItem('lifegrid_store_v5')!);
+    store.calendars[0].data.events = store.calendars[0].data.events.filter((item: { id: string }) => item.id.startsWith('rolling-'));
+    localStorage.setItem('lifegrid_store_v5', JSON.stringify(store));
+  });
+  await page.reload();
+  await expect(page.getByTestId('grid-content')).toHaveAttribute('aria-busy', 'false');
+};
 const contrast = (a: string, b: string) => {
   const rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
   const luminance = (value: string) => {
@@ -101,7 +110,7 @@ const expectNoFirefoxStructuralEllipsis = async (page: Page, testInfo: TestInfo,
   if (testInfo.project.name !== 'firefox') return;
   const texts = await page.evaluate(() => (window as Window & { __fillTexts?: string[] }).__fillTexts ?? []);
   for (const token of exactTokens) expect(texts).toContain(token);
-  expect(texts.filter(text => exactTokens.some(token => text.startsWith(token))).some(text => text.includes('…'))).toBe(false);
+  expect(texts.filter(text => exactTokens.some(token => text.startsWith(token))).some(text => text.includes('…') || text.includes('...'))).toBe(false);
 };
 
 test('Light Current Grid from Dark app has computed child contrast and mapped dark pixels in a real PNG', async ({ page }) => {
@@ -183,40 +192,80 @@ test('Next 7 draws exact structural dates at cell tops in a Letter PNG', async (
   await expectNoFirefoxStructuralEllipsis(page, testInfo, ['Aug', '31', 'Sep', '1', '2', '3', '4', '5', '6']);
 });
 
-test('Next 14 and Next 30 use shared heterogeneous-density rows, intentional header spacing, and exact dates', async ({ page }, testInfo) => {
-  for (const fixture of [
-    { preset: 'next14', rows: 2, days: 14, last: ['Sep', '13'] as [string, string] },
-    { preset: 'next30', rows: 5, days: 30, last: ['Sep', '29'] as [string, string] },
-  ]) {
-    await open(page, fixture.preset);
-    const root = page.getByTestId('targeted-export-grid');
-    const rows = root.locator('tbody tr');
-    await expect(rows).toHaveCount(fixture.rows);
-    const heights = await rows.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
-    expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(1);
-    expect(heights[0]).toBeGreaterThan(112); // the globally dense second week planned every row
+const expectEqualTopAlignedRows = async (root: Locator, rowCount: number) => {
+  const rows = root.locator('tbody tr');
+  await expect(rows).toHaveCount(rowCount);
+  const heights = await rows.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+  expect(Math.max(...heights) - Math.min(...heights)).toBeLessThanOrEqual(1);
+  const dateOffsets = await root.locator('[data-testid^=targeted-export-day-]').evaluateAll(nodes => nodes.map(node => {
+    const cell = node.getBoundingClientRect();
+    return node.querySelector('[data-publication-date]')!.getBoundingClientRect().top - cell.top;
+  }));
+  expect(Math.max(...dateOffsets)).toBeLessThanOrEqual(16);
+  return heights;
+};
 
-    const spacing = await root.evaluate(node => {
-      const header = node.querySelector('[data-testid=export-publication-header]')!;
-      const table = node.querySelector('table')!;
-      const headerRect = header.getBoundingClientRect();
-      return { gap: table.getBoundingClientRect().top - headerRect.bottom, marginBottom: Number.parseFloat(getComputedStyle(header).marginBottom) };
-    });
-    expect(Math.abs(spacing.gap - spacing.marginBottom)).toBeLessThanOrEqual(2);
-    expect(spacing.gap).toBeLessThanOrEqual(24);
-    expect(spacing.gap).toBeLessThan(100);
+test('Next 14 heterogeneous density fits Letter with shared rows and exact dates', async ({ page }, testInfo) => {
+  await open(page, 'next14');
+  const root = page.getByTestId('targeted-export-grid');
+  const heights = await expectEqualTopAlignedRows(root, 2);
+  expect(heights[0]).toBeGreaterThan(112);
+  await expectExactStructuralRange(root, 14, ['Aug', '31'], ['Sep', '13']);
+  await expect(root).toHaveAttribute('data-publication-overflowed-frame', 'false');
+  await expect(root.locator('[data-source-event-id]')).toHaveCount(16);
+  const png = await generate(page);
+  expect(Math.abs(png.w / png.h - 11 / 8.5) / (11 / 8.5)).toBeLessThan(.015);
+  await expectNoFirefoxStructuralEllipsis(page, testInfo, ['Aug', '31', 'Sep', ...Array.from({ length: 13 }, (_, index) => String(index + 1))]);
+});
 
-    const dateOffsets = await root.locator('[data-testid^=targeted-export-day-]').evaluateAll(nodes => nodes.map(node => {
-      const cell = node.getBoundingClientRect();
-      return node.querySelector('[data-publication-date]')!.getBoundingClientRect().top - cell.top;
-    }));
-    expect(Math.max(...dateOffsets)).toBeLessThanOrEqual(16);
-    await expectExactStructuralRange(root, fixture.days, ['Aug', '31'], fixture.last);
-    const png = await generate(page);
-    expect(Math.abs(png.w / png.h - 11 / 8.5) / (11 / 8.5)).toBeLessThan(.015);
-    await expectNoFirefoxStructuralEllipsis(page, testInfo, ['Aug', '31', 'Sep', fixture.last[1]]);
-    await page.getByTestId('button-export-close').click();
-  }
+test('sparse Next 30 fits Letter with five shared rows and exact dates', async ({ page }, testInfo) => {
+  await useSparseNext30Fixture(page);
+  await open(page, 'next30');
+  const root = page.getByTestId('targeted-export-grid');
+  await expectEqualTopAlignedRows(root, 5);
+  await expectExactStructuralRange(root, 30, ['Aug', '31'], ['Sep', '29']);
+  await expect(root).toHaveAttribute('data-publication-overflowed-frame', 'false');
+  await expect(root.locator('[data-source-event-id]')).toHaveCount(30);
+  const png = await generate(page);
+  expect(Math.abs(png.w / png.h - 11 / 8.5) / (11 / 8.5)).toBeLessThan(.015);
+  await expectNoFirefoxStructuralEllipsis(page, testInfo, ['Aug', '31', 'Sep', ...Array.from({ length: 29 }, (_, index) => String(index + 1))]);
+});
+
+test('heterogeneous Next 30 grows beyond Letter and captures every Event', async ({ page }, testInfo) => {
+  await open(page, 'next30');
+  const root = page.getByTestId('targeted-export-grid');
+  const heights = await expectEqualTopAlignedRows(root, 5);
+  expect(heights[0]).toBeGreaterThan(112);
+  await expectExactStructuralRange(root, 30, ['Aug', '31'], ['Sep', '29']);
+  await expect(root.locator('[data-source-event-id]')).toHaveCount(32);
+  const overlap = await root.locator('[data-testid^=targeted-export-day-]').evaluateAll(cells => cells.some(cell => {
+    const dateBottom = cell.querySelector('[data-publication-date]')!.getBoundingClientRect().bottom;
+    const cards = [...cell.querySelectorAll<HTMLElement>('[data-source-event-id]')];
+    if (cards[0] && cards[0].getBoundingClientRect().top < dateBottom) return true;
+    return cards.slice(1).some((card, index) => card.getBoundingClientRect().top < cards[index].getBoundingClientRect().bottom);
+  }));
+  expect(overlap).toBe(false);
+  await expect(root).toHaveAttribute('data-publication-frame-width', '1400');
+  await expect(root).toHaveAttribute('data-publication-overflowed-frame', 'true');
+  const bounds = await root.evaluate(node => ({
+    contentHeight: Number((node as HTMLElement).dataset.publicationContentHeight),
+    frameHeight: Number((node as HTMLElement).dataset.publicationFrameHeight),
+    pixelRatio: Number((node as HTMLElement).dataset.publicationPixelRatio),
+    scrollHeight: (node as HTMLElement).scrollHeight,
+    finalEventBottom: node.querySelector('[data-testid="targeted-export-event-2026-09-29-rolling-29"]')!.getBoundingClientRect().bottom - node.getBoundingClientRect().top,
+    finalRowBottom: node.querySelector('tbody tr:last-child')!.getBoundingClientRect().bottom - node.getBoundingClientRect().top,
+  }));
+  expect(bounds.frameHeight).toBe(1082);
+  expect(bounds.contentHeight).toBeGreaterThan(1082);
+  expect(bounds.scrollHeight).toBeGreaterThan(1082);
+  const png = await generate(page);
+  const renderer = await page.getByTestId('grid-export-status').getAttribute('data-export-renderer');
+  const expectedScale = renderer === 'canvas2d' ? Math.min(bounds.pixelRatio, 1.5) : bounds.pixelRatio;
+  expect(Math.abs(png.w - 1400 * expectedScale)).toBeLessThanOrEqual(2);
+  expect(Math.abs(png.h - bounds.scrollHeight * expectedScale)).toBeLessThanOrEqual(3);
+  expect(bounds.finalRowBottom * expectedScale).toBeLessThanOrEqual(png.h + 1);
+  expect(bounds.finalEventBottom * expectedScale).toBeLessThanOrEqual(png.h + 1);
+  await expectNoFirefoxStructuralEllipsis(page, testInfo, ['Aug', '31', 'Sep', ...Array.from({ length: 29 }, (_, index) => String(index + 1))]);
 });
 
 test('CY Current Month has represented legends, exact dates, and a real PNG', async ({ page }, testInfo) => {

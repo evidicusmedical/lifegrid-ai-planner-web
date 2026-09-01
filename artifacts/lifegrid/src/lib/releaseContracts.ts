@@ -29,7 +29,7 @@ export const selectAIExportData = (data: AppData, scope: AIExportScope = { mode:
 
 export const aiExportManifest = (data: AppData, scope: AIExportScope = { mode: 'all' }) => ({
   scope: scope.mode, inclusionRules: scope.mode === 'all' ? 'Complete LifeGrid, including completed and undated Tasks.' : 'Full catalogs and undated Tasks; dated records intersect the inclusive range.',
-  versions: { app: 'v0.5.29', interchange: 5, backup: 7 },
+  versions: { app: 'v0.5.30', interchange: 5, backup: 7 },
   counts: Object.fromEntries((['categories','projects','people','events','personEvents','tasks','milestones'] as const).map(key => [key, data[key].length])),
 });
 

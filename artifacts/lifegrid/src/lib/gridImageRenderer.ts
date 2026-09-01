@@ -58,6 +58,14 @@ export const wrapCanvasText = (input: { text: string; maxWidth: number; maxLines
   return result;
 };
 
+export const EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE = 9;
+/** Structural calendar text is reduced, if necessary, but is never prose-fitted or ellipsized. */
+export const fitExactStructuralText = (input: { text: string; fontSize: number; maxWidth: number; measureAt: (text: string, fontSize: number) => number }) => {
+  let fontSize = Math.max(EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE, input.fontSize);
+  while (fontSize > EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE && input.measureAt(input.text, fontSize) > input.maxWidth) fontSize -= 0.5;
+  return { text: input.text, fontSize: Math.max(EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE, fontSize) };
+};
+
 export const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, label: string, onTimeout?: () => void) =>
   new Promise<T>((resolve, reject) => {
     const timer = window.setTimeout(() => {
@@ -190,6 +198,22 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     ctx.fillText(fitText(text, maxWidth), rect.x + insetX, rect.y, maxWidth || undefined);
   };
 
+  const drawExactTextElement = (element: Element, availableElement: Element) => {
+    const text = element.textContent?.trim(); if (!text) return;
+    const rect = relativeRect(element), available = relativeRect(availableElement);
+    if (rect.height <= 0 || available.width <= 0) return;
+    const style = getComputedStyle(element);
+    const originalSize = Number.parseFloat(style.fontSize) || 12;
+    const maxWidth = Math.max(1, available.x + available.width - rect.x - 6);
+    const fitted = fitExactStructuralText({ text, fontSize: originalSize, maxWidth, measureAt: (value, size) => {
+      ctx.font = `${style.fontStyle || "normal"} ${style.fontWeight || "400"} ${size}px ${style.fontFamily || "sans-serif"}`;
+      return ctx.measureText(value).width;
+    }});
+    ctx.font = `${style.fontStyle || "normal"} ${style.fontWeight || "400"} ${fitted.fontSize}px ${style.fontFamily || "sans-serif"}`;
+    ctx.fillStyle = style.color || "#111827";
+    ctx.fillText(fitted.text, rect.x, rect.y);
+  };
+
   const drawWrappedEventText = (element: Element, maxLines = 3) => {
     const text = element.textContent?.trim(); if (!text) return;
     const rect = relativeRect(element); if (rect.width <= 0 || rect.height <= 0) return;
@@ -234,15 +258,17 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     const title = header.querySelector("h1");
     if (title) drawTextElement(title);
     header.querySelectorAll("p").forEach((paragraph) => drawTextElement(paragraph));
-    header.querySelectorAll<HTMLElement>('[aria-label="Categories"] > div > span').forEach((entry) => {
+    header.querySelectorAll<HTMLElement>('[data-publication-legend-entry="true"]').forEach((entry) => {
       const entryRect = relativeRect(entry);
       const swatch = entry.querySelector<HTMLElement>("span");
       if (swatch) drawBox(swatch);
-      setElementFont(entry);
-      const label = entry.textContent?.trim() ?? "";
+      const labelElement = entry.querySelector<HTMLElement>('[data-publication-legend-label="true"]');
+      if (!labelElement) return;
+      setElementFont(labelElement);
+      const label = labelElement.textContent?.trim() ?? "";
       const x = swatch ? relativeRect(swatch).x + relativeRect(swatch).width + 6 : entryRect.x;
       const maxWidth = Math.max(0, entryRect.x + entryRect.width - x);
-      const lineHeight = Number.parseFloat(getComputedStyle(entry).lineHeight) || 16;
+      const lineHeight = Number.parseFloat(getComputedStyle(labelElement).lineHeight) || 16;
       wrapCanvasText({ text: label, maxWidth, maxLines: 3, measureText: value => ctx.measureText(value).width })
         .forEach((line, index) => ctx.fillText(line, x, entryRect.y + index * lineHeight, maxWidth));
     });
@@ -285,7 +311,7 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     if (!targetedCell && !monthCell) return;
     if (targetedCell) {
       const headerRow = cell.firstElementChild;
-      if (headerRow) headerRow.querySelectorAll("span").forEach((span) => drawTextElement(span));
+      if (headerRow) headerRow.querySelectorAll('[data-publication-exact-text="true"]').forEach((span) => drawExactTextElement(span, headerRow));
     } else if (testId.startsWith("row-day-")) {
       drawTextElement(cell, 0, Math.max(0, relativeRect(cell).width - 4));
     } else {

@@ -21,6 +21,7 @@ jobs:
       - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/rolling-grid-export-v0527.spec.ts --project=chromium
       - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/publication-readability-v0528.spec.ts --project=chromium
       - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/operational-export-v0529.spec.ts --project=chromium
+      - run: pnpm --filter @workspace/lifegrid exec playwright test e2e/export-fidelity-v0530.spec.ts --project=chromium
   cross-browser:
     runs-on: ubuntu-latest
     strategy:

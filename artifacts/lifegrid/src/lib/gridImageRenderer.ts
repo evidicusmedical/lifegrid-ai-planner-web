@@ -31,6 +31,9 @@ export const gridRendererStrategy = (options: Pick<GridPngOptions, "targeted" | 
 };
 
 const RENDER_TIMEOUT_MS = 22_000;
+export const LEGEND_CANVAS_MEASUREMENT_TOLERANCE = 3;
+export const getLegendCanvasWrapWidth = (geometry: { width: number; clientWidth: number; scrollWidth: number }) =>
+  Math.max(geometry.width, geometry.clientWidth, Math.min(geometry.scrollWidth, geometry.width)) + LEGEND_CANVAS_MEASUREMENT_TOLERANCE;
 
 /** Deterministic publication-title wrapping. Date labels intentionally never use this helper. */
 export const wrapCanvasText = (input: { text: string; maxWidth: number; maxLines: number; measureText: (text: string) => number }) => {
@@ -238,18 +241,19 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     if (title) drawTextElement(title);
     header.querySelectorAll("p").forEach((paragraph) => drawTextElement(paragraph));
     header.querySelectorAll<HTMLElement>('[data-publication-legend-entry="true"]').forEach((entry) => {
-      const entryRect = relativeRect(entry);
       const swatch = entry.querySelector<HTMLElement>("span");
       if (swatch) drawBox(swatch);
       const labelElement = entry.querySelector<HTMLElement>('[data-publication-legend-label="true"]');
       if (!labelElement) return;
       setElementFont(labelElement);
       const label = labelElement.textContent?.trim() ?? "";
-      const x = swatch ? relativeRect(swatch).x + relativeRect(swatch).width + 6 : entryRect.x;
-      const maxWidth = Math.max(0, entryRect.x + entryRect.width - x);
+      const labelRect = relativeRect(labelElement);
+      // DOM layout owns legend geometry. The tolerance absorbs small DOM/Canvas
+      // font-metric differences without allowing the 16rem label cap to grow.
+      const maxWidth = getLegendCanvasWrapWidth({ width: labelRect.width, clientWidth: labelElement.clientWidth, scrollWidth: labelElement.scrollWidth });
       const lineHeight = Number.parseFloat(getComputedStyle(labelElement).lineHeight) || 16;
       wrapCanvasText({ text: label, maxWidth, maxLines: 3, measureText: value => ctx.measureText(value).width })
-        .forEach((line, index) => ctx.fillText(line, x, entryRect.y + index * lineHeight, maxWidth));
+        .forEach((line, index) => ctx.fillText(line, labelRect.x, labelRect.y + index * lineHeight));
     });
   }
 

@@ -140,24 +140,27 @@ export const layoutPublicationTextLines = ({
   tokens.forEach(pushToken);
   if (line) lines.push(line);
 
+  const truncated = lines.length > maxLines;
+  const visibleLines = lines.slice(0, maxLines);
   let balancedFinalLine = false;
-  if (balanceFinalLine && lines.length >= 2) {
-    const lastIndex = lines.length - 1;
-    const lastTokens = lines[lastIndex].split(" ");
-    const lastWidth = measureText(lines[lastIndex]);
+  if (balanceFinalLine && visibleLines.length >= 2) {
+    const lastIndex = visibleLines.length - 1;
+    const lastTokens = visibleLines[lastIndex].split(" ");
+    const visibleFinal = (value: string) => truncated ? `${value}…` : value;
+    const lastWidth = measureText(visibleFinal(visibleLines[lastIndex]));
     const shortOrphan = lastTokens.length === 1 && (lastTokens[0].length <= 2 || ORPHAN_TOKENS.has(lastTokens[0]));
     if (shortOrphan || lastWidth / maxWidth < 0.3) {
-      const previousTokens = lines[lastIndex - 1].split(" ");
+      const previousTokens = visibleLines[lastIndex - 1].split(" ");
       for (const moveCount of [1, 2]) {
         if (previousTokens.length <= moveCount) continue;
         const revisedPrevious = previousTokens.slice(0, -moveCount).join(" ");
         const revisedLast = [...previousTokens.slice(-moveCount), ...lastTokens].join(" ");
-        if (measureText(revisedPrevious) > maxWidth || measureText(revisedLast) > maxWidth) continue;
-        const oldMinimum = Math.min(measureText(lines[lastIndex - 1]), lastWidth);
-        const newMinimum = Math.min(measureText(revisedPrevious), measureText(revisedLast));
+        if (measureText(revisedPrevious) > maxWidth || measureText(visibleFinal(revisedLast)) > maxWidth) continue;
+        const oldMinimum = Math.min(measureText(visibleLines[lastIndex - 1]), lastWidth);
+        const newMinimum = Math.min(measureText(revisedPrevious), measureText(visibleFinal(revisedLast)));
         if (newMinimum > oldMinimum) {
-          lines[lastIndex - 1] = revisedPrevious;
-          lines[lastIndex] = revisedLast;
+          visibleLines[lastIndex - 1] = revisedPrevious;
+          visibleLines[lastIndex] = revisedLast;
           balancedFinalLine = true;
           break;
         }
@@ -165,15 +168,13 @@ export const layoutPublicationTextLines = ({
     }
   }
 
-  const truncated = lines.length > maxLines;
   if (truncated) {
-    lines.length = maxLines;
-    let final = lines[maxLines - 1].trimEnd();
+    let final = visibleLines[visibleLines.length - 1].trimEnd();
     while (final && measureText(`${final}…`) > maxWidth) {
       const boundary = final.lastIndexOf(" ");
       final = boundary >= 0 ? final.slice(0, boundary) : final.slice(0, -1);
     }
-    lines[maxLines - 1] = `${final}…`;
+    visibleLines[visibleLines.length - 1] = `${final}…`;
   }
-  return { lines, truncated, usedInternalTokenBreak, balancedFinalLine };
+  return { lines: visibleLines, truncated, usedInternalTokenBreak, balancedFinalLine };
 };

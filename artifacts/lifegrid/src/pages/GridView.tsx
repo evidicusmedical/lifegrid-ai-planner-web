@@ -177,14 +177,14 @@ const ExportPublicationHeader = ({
         {legend.map((entry) => (
           <span
             key={entry.id}
-            className="inline-flex flex-none items-start gap-1.5 text-xs font-medium leading-4"
+            className="inline-flex flex-none max-w-full items-start gap-1.5 text-xs font-medium leading-4"
             data-publication-legend-entry="true"
           >
             <span
               className="mt-0.5 h-3 w-3 shrink-0 rounded-sm border border-black/10"
               style={{ backgroundColor: entry.color }}
             />
-            <span data-publication-legend-label="true" className="max-w-[16rem] whitespace-normal text-foreground [word-break:normal] [overflow-wrap:break-word]">{entry.label}</span>
+            <span data-publication-legend-label="true" className="inline-block w-max max-w-[16rem] shrink-0 whitespace-normal text-foreground [hyphens:none] [word-break:normal] [overflow-wrap:break-word]">{entry.label}</span>
           </span>
         ))}
       </div>
@@ -1607,7 +1607,7 @@ export const GridView = () => {
                                   <span
                                     data-publication-event-title={monthPublication ? "true" : "false"}
                                     className={monthPublication
-                                      ? "min-w-0 font-semibold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]"
+                                      ? "min-w-0 flex-1 font-semibold whitespace-normal [hyphens:none] [overflow-wrap:break-word] [text-wrap:balance] [word-break:normal]"
                                       : "min-w-0 font-semibold truncate"}
                                     style={monthPublication ? {
                                       fontSize: publicationPlan.eventFontSize,
@@ -1706,9 +1706,9 @@ export const GridView = () => {
             <section data-testid="day-agenda" className="rounded-xl border border-border bg-card p-5">
               <h2 data-testid="day-agenda-heading" data-publication-date={exportRange.start} className="mb-1 text-xl font-extrabold">{parseISODate(exportRange.start).toLocaleDateString(undefined, { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</h2>
               <p className="mb-4 text-sm text-muted-foreground">{exportLegend.recordCount} event{exportLegend.recordCount === 1 ? '' : 's'}</p>
-              {(() => { const agendaEvents = exportGridData.get(exportRange.start) ?? []; const split = Math.ceil(agendaEvents.length / 2); const columns = agendaEvents.length > 16 ? [agendaEvents.slice(0, split), agendaEvents.slice(split)] : [agendaEvents]; return <div className={`grid gap-3 ${columns.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} data-publication-agenda-columns={columns.length}>{columns.map((column, columnIndex) => <div key={columnIndex} className="flex flex-col gap-3" data-publication-agenda-column={columnIndex + 1}>{column.map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" data-export-title-lines={publicationPlan.eventTitleLines} className="break-inside-avoid rounded-lg border border-black/10 p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color), height:agendaCardHeight}}><div data-publication-agenda-time="true" className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div data-publication-event-title="true" className="font-bold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]" style={{fontSize:publicationPlan.eventFontSize,lineHeight:`${publicationPlan.eventLineHeight}px`,display:'-webkit-box',WebkitLineClamp:publicationPlan.eventTitleLines,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{evt.title}</div></article>)}</div>)}</div>; })()}
+              {(() => { const agendaEvents = exportGridData.get(exportRange.start) ?? []; const split = Math.ceil(agendaEvents.length / 2); const columns = agendaEvents.length > 16 ? [agendaEvents.slice(0, split), agendaEvents.slice(split)] : [agendaEvents]; return <div className={`grid gap-3 ${columns.length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`} data-publication-agenda-columns={columns.length}>{columns.map((column, columnIndex) => <div key={columnIndex} className="flex flex-col gap-3" data-publication-agenda-column={columnIndex + 1}>{column.map(evt => <article key={evt.id} data-source-event-id={evt.id} data-publication-event="true" data-export-title-lines={publicationPlan.eventTitleLines} className="break-inside-avoid rounded-lg border border-black/10 p-3" style={{backgroundColor:evt.color ?? undefined, color:getReadableTextColor(evt.color), height:agendaCardHeight}}><div data-publication-agenda-time="true" className="text-xs font-semibold">{evt.startTime || 'All day'}</div><div data-publication-event-title="true" className="min-w-0 flex-1 font-bold whitespace-normal [hyphens:none] [overflow-wrap:break-word] [text-wrap:balance] [word-break:normal]" style={{fontSize:publicationPlan.eventFontSize,lineHeight:`${publicationPlan.eventLineHeight}px`,display:'-webkit-box',WebkitLineClamp:publicationPlan.eventTitleLines,WebkitBoxOrient:'vertical',overflow:'hidden'}}>{evt.title}</div></article>)}</div>)}</div>; })()}
             </section>
-          ) : <table className={`min-h-0 w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background ${publicationPlan.layout === 'month-matrix' ? 'flex-1' : ''}`}>
+          ) : <table className="min-h-0 w-full table-fixed border-collapse overflow-hidden rounded-xl border border-border bg-background">
             <thead>
               <tr>
                 {targetedWeekdayHeadings.map((heading) => (
@@ -1774,7 +1774,7 @@ export const GridView = () => {
                                 )}
                                 <span
                                   data-publication-event-title="true"
-                                  className="font-bold whitespace-normal [overflow-wrap:anywhere] [word-break:normal]"
+                                  className="min-w-0 flex-1 font-bold whitespace-normal [hyphens:none] [overflow-wrap:break-word] [text-wrap:balance] [word-break:normal]"
                                   style={{ fontSize: publicationPlan.eventFontSize, lineHeight: `${publicationPlan.eventLineHeight}px`, display: "-webkit-box", WebkitLineClamp: publicationPlan.eventTitleLines, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                                 >
                                   {evt.title}

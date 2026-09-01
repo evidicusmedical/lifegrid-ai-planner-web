@@ -1,3 +1,13 @@
+# Changelog
+
+## v0.5.31 — Natural publication wrapping and month-matrix polish
+
+- Keep Category legend entries non-shrinking with intrinsic capped labels and normal whole-word wrapping.
+- Share deterministic Canvas2D word wrapping, bounded orphan balancing, oversized-token containment, and final-line ellipsis.
+- Use natural targeted Event-title wrapping without changing card typography or geometry.
+- Keep sparse month-matrix weekday headers compact by making the table content-bound inside the unchanged Letter frame.
+- Preserve AI interchange v5 and backup schema v7; defer latency work pending measurement.
+
 ## v0.5.29
 
 - Final merge qualification aligns planner/capture routing, seven-column rolling headings, orientation-aware planning, scoped export accents, and DOM/Canvas2D agenda fitting.

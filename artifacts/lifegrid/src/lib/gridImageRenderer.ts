@@ -1,3 +1,5 @@
+import { layoutPublicationTextLines } from './gridPublicationText.js';
+
 export type GridImageRendererName = "html-to-image" | "html2canvas" | "canvas2d";
 
 export interface GridPngResult {
@@ -29,33 +31,13 @@ export const gridRendererStrategy = (options: Pick<GridPngOptions, "targeted" | 
 };
 
 const RENDER_TIMEOUT_MS = 22_000;
+export const LEGEND_CANVAS_MEASUREMENT_TOLERANCE = 3;
+export const getLegendCanvasWrapWidth = (geometry: { width: number; clientWidth: number; scrollWidth: number }) =>
+  Math.max(geometry.width, geometry.clientWidth, Math.min(geometry.scrollWidth, geometry.width)) + LEGEND_CANVAS_MEASUREMENT_TOLERANCE;
 
 /** Deterministic publication-title wrapping. Date labels intentionally never use this helper. */
 export const wrapCanvasText = (input: { text: string; maxWidth: number; maxLines: number; measureText: (text: string) => number }) => {
-  const { maxWidth, maxLines, measureText } = input;
-  if (maxWidth <= 0 || maxLines <= 0) return [];
-  const tokens = input.text.trim().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = '';
-  const appendToken = (token: string) => {
-    while (measureText(token) > maxWidth && token.length > 1) {
-      let cut = 1;
-      while (cut < token.length && measureText(token.slice(0, cut + 1)) <= maxWidth) cut += 1;
-      if (line) { lines.push(line); line = ''; }
-      lines.push(token.slice(0, cut)); token = token.slice(cut);
-    }
-    const candidate = line ? `${line} ${token}` : token;
-    if (line && measureText(candidate) > maxWidth) { lines.push(line); line = token; }
-    else line = candidate;
-  };
-  tokens.forEach(appendToken);
-  if (line) lines.push(line);
-  if (lines.length <= maxLines) return lines;
-  const result = lines.slice(0, maxLines);
-  let final = result[maxLines - 1];
-  while (final.length && measureText(`${final}…`) > maxWidth) final = final.slice(0, -1);
-  result[maxLines - 1] = `${final.trimEnd()}…`;
-  return result;
+  return layoutPublicationTextLines({ ...input, breakOversizedTokens: true, balanceFinalLine: true }).lines;
 };
 
 export const EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE = 9;
@@ -259,18 +241,19 @@ const renderWithCanvas2d = async (node: HTMLElement, options: GridPngOptions): P
     if (title) drawTextElement(title);
     header.querySelectorAll("p").forEach((paragraph) => drawTextElement(paragraph));
     header.querySelectorAll<HTMLElement>('[data-publication-legend-entry="true"]').forEach((entry) => {
-      const entryRect = relativeRect(entry);
       const swatch = entry.querySelector<HTMLElement>("span");
       if (swatch) drawBox(swatch);
       const labelElement = entry.querySelector<HTMLElement>('[data-publication-legend-label="true"]');
       if (!labelElement) return;
       setElementFont(labelElement);
       const label = labelElement.textContent?.trim() ?? "";
-      const x = swatch ? relativeRect(swatch).x + relativeRect(swatch).width + 6 : entryRect.x;
-      const maxWidth = Math.max(0, entryRect.x + entryRect.width - x);
+      const labelRect = relativeRect(labelElement);
+      // DOM layout owns legend geometry. The tolerance absorbs small DOM/Canvas
+      // font-metric differences without allowing the 16rem label cap to grow.
+      const maxWidth = getLegendCanvasWrapWidth({ width: labelRect.width, clientWidth: labelElement.clientWidth, scrollWidth: labelElement.scrollWidth });
       const lineHeight = Number.parseFloat(getComputedStyle(labelElement).lineHeight) || 16;
       wrapCanvasText({ text: label, maxWidth, maxLines: 3, measureText: value => ctx.measureText(value).width })
-        .forEach((line, index) => ctx.fillText(line, x, entryRect.y + index * lineHeight, maxWidth));
+        .forEach((line, index) => ctx.fillText(line, labelRect.x, labelRect.y + index * lineHeight));
     });
   }
 

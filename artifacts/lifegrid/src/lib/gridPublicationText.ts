@@ -82,3 +82,98 @@ export const getPublicationCaptureBounds = (node: HTMLElement) => ({
   height: Math.ceil(Math.max(node.getBoundingClientRect().height, node.scrollHeight)),
 });
 import { getMonthPublicationWidth } from './gridPublicationGeometry.js';
+export interface PublicationTextLayoutOptions {
+  text: string;
+  maxWidth: number;
+  maxLines: number;
+  measureText: (text: string) => number;
+  breakOversizedTokens?: boolean;
+  balanceFinalLine?: boolean;
+}
+
+export interface PublicationTextLayout {
+  lines: string[];
+  truncated: boolean;
+  usedInternalTokenBreak: boolean;
+  balancedFinalLine: boolean;
+}
+
+const ORPHAN_TOKENS = new Set(["/", "&", "-", "("]);
+
+/** Pure, metric-driven publication wrapping shared by Canvas and contract tests. */
+export const layoutPublicationTextLines = ({
+  text,
+  maxWidth,
+  maxLines,
+  measureText,
+  breakOversizedTokens = true,
+  balanceFinalLine = true,
+}: PublicationTextLayoutOptions): PublicationTextLayout => {
+  if (maxWidth <= 0 || maxLines <= 0) return { lines: [], truncated: text.trim().length > 0, usedInternalTokenBreak: false, balancedFinalLine: false };
+  const tokens = text.trim().split(/\s+/u).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  let usedInternalTokenBreak = false;
+
+  const pushToken = (sourceToken: string) => {
+    let token = sourceToken;
+    if (breakOversizedTokens && measureText(token) > maxWidth) {
+      if (line) { lines.push(line); line = ""; }
+      usedInternalTokenBreak = true;
+      while (token && measureText(token) > maxWidth) {
+        let low = 1, high = token.length;
+        while (low < high) {
+          const mid = Math.ceil((low + high) / 2);
+          if (measureText(token.slice(0, mid)) <= maxWidth) low = mid; else high = mid - 1;
+        }
+        const cut = Math.max(1, low);
+        lines.push(token.slice(0, cut));
+        token = token.slice(cut);
+      }
+      line = token;
+      return;
+    }
+    const candidate = line ? `${line} ${token}` : token;
+    if (line && measureText(candidate) > maxWidth) { lines.push(line); line = token; }
+    else line = candidate;
+  };
+  tokens.forEach(pushToken);
+  if (line) lines.push(line);
+
+  let balancedFinalLine = false;
+  if (balanceFinalLine && lines.length >= 2) {
+    const lastIndex = lines.length - 1;
+    const lastTokens = lines[lastIndex].split(" ");
+    const lastWidth = measureText(lines[lastIndex]);
+    const shortOrphan = lastTokens.length === 1 && (lastTokens[0].length <= 2 || ORPHAN_TOKENS.has(lastTokens[0]));
+    if (shortOrphan || lastWidth / maxWidth < 0.3) {
+      const previousTokens = lines[lastIndex - 1].split(" ");
+      for (const moveCount of [1, 2]) {
+        if (previousTokens.length <= moveCount) continue;
+        const revisedPrevious = previousTokens.slice(0, -moveCount).join(" ");
+        const revisedLast = [...previousTokens.slice(-moveCount), ...lastTokens].join(" ");
+        if (measureText(revisedPrevious) > maxWidth || measureText(revisedLast) > maxWidth) continue;
+        const oldMinimum = Math.min(measureText(lines[lastIndex - 1]), lastWidth);
+        const newMinimum = Math.min(measureText(revisedPrevious), measureText(revisedLast));
+        if (newMinimum > oldMinimum) {
+          lines[lastIndex - 1] = revisedPrevious;
+          lines[lastIndex] = revisedLast;
+          balancedFinalLine = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const truncated = lines.length > maxLines;
+  if (truncated) {
+    lines.length = maxLines;
+    let final = lines[maxLines - 1].trimEnd();
+    while (final && measureText(`${final}…`) > maxWidth) {
+      const boundary = final.lastIndexOf(" ");
+      final = boundary >= 0 ? final.slice(0, boundary) : final.slice(0, -1);
+    }
+    lines[maxLines - 1] = `${final}…`;
+  }
+  return { lines, truncated, usedInternalTokenBreak, balancedFinalLine };
+};

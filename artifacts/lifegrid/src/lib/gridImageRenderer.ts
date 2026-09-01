@@ -1,3 +1,5 @@
+import { layoutPublicationTextLines } from './gridPublicationText.js';
+
 export type GridImageRendererName = "html-to-image" | "html2canvas" | "canvas2d";
 
 export interface GridPngResult {
@@ -32,30 +34,7 @@ const RENDER_TIMEOUT_MS = 22_000;
 
 /** Deterministic publication-title wrapping. Date labels intentionally never use this helper. */
 export const wrapCanvasText = (input: { text: string; maxWidth: number; maxLines: number; measureText: (text: string) => number }) => {
-  const { maxWidth, maxLines, measureText } = input;
-  if (maxWidth <= 0 || maxLines <= 0) return [];
-  const tokens = input.text.trim().split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = '';
-  const appendToken = (token: string) => {
-    while (measureText(token) > maxWidth && token.length > 1) {
-      let cut = 1;
-      while (cut < token.length && measureText(token.slice(0, cut + 1)) <= maxWidth) cut += 1;
-      if (line) { lines.push(line); line = ''; }
-      lines.push(token.slice(0, cut)); token = token.slice(cut);
-    }
-    const candidate = line ? `${line} ${token}` : token;
-    if (line && measureText(candidate) > maxWidth) { lines.push(line); line = token; }
-    else line = candidate;
-  };
-  tokens.forEach(appendToken);
-  if (line) lines.push(line);
-  if (lines.length <= maxLines) return lines;
-  const result = lines.slice(0, maxLines);
-  let final = result[maxLines - 1];
-  while (final.length && measureText(`${final}…`) > maxWidth) final = final.slice(0, -1);
-  result[maxLines - 1] = `${final.trimEnd()}…`;
-  return result;
+  return layoutPublicationTextLines({ ...input, breakOversizedTokens: true, balanceFinalLine: true }).lines;
 };
 
 export const EXACT_STRUCTURAL_TEXT_MIN_FONT_SIZE = 9;
